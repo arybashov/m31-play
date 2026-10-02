@@ -1,0 +1,1 @@
+window.M31_EVENTS = ['agro-watch', 'handover', 'kora-class', 'ring-council', 'cooling-loop', 'kora-asleep', 'watch-review', 'approach-watch', 'beacon-memory', 'colony-greeting', 'council-at-target', 'dark-star-rite', 'infirmary-first-words', 'xylona-lock', 'first-morning', 'last-council', 'rich-site', 'terminator-storm'];

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>М31 · Бортовая энциклопедия</title>
+<style>
+:root{color-scheme:dark;--bg:#0b141a;--panel:#111e26;--line:#2c3f4a;--text:#e6e6da;--muted:#9fb3b6;--gold:#e7c68f;--blue:#9cc7e4;--mint:#afd5bd;--bp:#0a1824;--bpline:#8fc3e6}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font:16px/1.6 Georgia,"PT Serif",serif}
+a{color:var(--blue)}
+.wrap{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1320px;margin:0 auto}
+nav{position:sticky;top:0;height:100vh;overflow:auto;padding:22px 16px;border-right:1px solid var(--line);font:13px/1.5 system-ui,sans-serif}
+nav b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+nav a{display:block;color:var(--muted);text-decoration:none;padding:3px 0}
+nav a:hover{color:var(--text)}
+nav .back{margin-bottom:14px;color:var(--mint)}
+main{padding:26px 34px 80px;min-width:0}
+h1{font:500 26px/1.3 system-ui,sans-serif;margin:0 0 4px}
+.lead{color:var(--muted);margin:0 0 26px}
+section{border-top:1px solid var(--line);padding-top:18px;margin-top:26px}
+h2{font:500 20px/1.3 system-ui,sans-serif;margin:0 0 10px;color:var(--gold)}
+h3{font:500 15px/1.3 system-ui,sans-serif;margin:18px 0 6px}
+p{margin:0 0 10px;max-width:78ch}
+ul{margin:0 0 12px;padding-left:22px;max-width:76ch}li{margin:0 0 6px}
+.f{font:15px/1.5 "Cambria Math",Georgia,serif;background:var(--panel);border-left:3px solid var(--gold);padding:8px 14px;margin:8px 0 12px;border-radius:0 8px 8px 0;max-width:78ch}
+.f i{font-style:italic}
+table{border-collapse:collapse;margin:8px 0 14px;font:13.5px/1.45 system-ui,sans-serif;max-width:100%}
+th,td{border-bottom:1px solid var(--line);padding:5px 12px 5px 0;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:500}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.no{color:#efa791}
+figure{margin:10px 0 16px}
+figure img{max-width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+figcaption{font:12.5px system-ui,sans-serif;color:var(--muted);margin-top:5px}
+.bp{background:var(--bp);border:1px solid var(--line);border-radius:10px;overflow:auto;margin:10px 0 6px}
+.bp svg{display:block;width:100%;height:auto;min-width:760px}
+.bp .o{fill:none;stroke:var(--bpline);stroke-width:1.1}
+.bp .t{fill:none;stroke:var(--bpline);stroke-width:.8;opacity:.8}
+.bp .grid{stroke:#16304a;stroke-width:.6}
+.bp .axis{stroke:#3d6283;stroke-width:.8;stroke-dasharray:10 4 2 4}
+.bp .dim{stroke:var(--gold);stroke-width:.8;fill:none}
+.bp .dimt{fill:var(--gold);font:11px system-ui,sans-serif}
+.bp .lab{fill:#cfe3ef;font:11px system-ui,sans-serif}
+.bp .kit{fill:none;stroke:var(--gold);stroke-width:1;stroke-dasharray:4 3;opacity:.85}
+.bp .kitt{fill:var(--gold);font:10.5px system-ui,sans-serif;opacity:.9}
+.bp .sep{stroke:#efa791;stroke-width:1;stroke-dasharray:6 4}
+.note{font:13px/1.5 system-ui,sans-serif;color:var(--muted)}
+.src{font:12px system-ui,sans-serif;color:var(--muted)}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:18px 16px 60px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav id="toc"></nav>
+  <main id="enc"></main>
+</div>
+<script src="../ship-builder/data/stars.js"></script>
+<script src="mission.js?v=51"></script>
+<script src="content.js?v=51"></script>
+<script src="assets/blueprints/variants.js?v=51"></script>
+<script src="assets/blueprints/physics.js?v=51"></script>
+<script src="assets/eind/planet.js?v=51"></script>
+<script src="encyclopedia.js?v=51"></script>
+</body>
+</html>

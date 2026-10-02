@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>М31 · Срез: пролог и разгон</title>
+<link rel="stylesheet" href="slice.css?v=189">
+</head>
+<body>
+<div class="app">
+  <section class="scene">
+    <div class="bg" id="bg0" aria-hidden="true"></div>
+    <div class="bg" id="bg1" aria-hidden="true"></div>
+    <div class="space" id="space"></div>
+    <div class="shade" aria-hidden="true"></div>
+    <div class="hud" id="hud"></div>
+    <div class="overlay" id="overlay"></div>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <button class="sceneskip" id="sceneSkip" type="button" data-act="go" hidden></button>
+    <div class="cinebar"><button class="pill" id="cineNext" type="button">Дальше</button><button class="pill" id="cineSkip" type="button">Пропустить</button></div>
+  </section>
+  <div class="timeline" id="timeline" hidden></div>
+  <aside class="panel">
+    <header class="top">
+      <div><b>М31</b><h1 id="title">М31 · Срез: пролог и разгон</h1></div>
+      <div class="controls">
+        <a class="pill" id="encBtn" href="encyclopedia.html" target="_blank" rel="noopener">Энциклопедия</a>
+        <button class="pill" id="archiveBtn" type="button">Архив</button>
+        <button class="pill" id="lang" type="button">EN</button>
+        <button class="pill" id="settingsBtn" type="button" aria-haspopup="dialog">Настройки</button>
+      </div>
+    </header>
+    <div class="scroll" id="panelScroll">
+      <div id="current" aria-live="polite"></div>
+      <div id="stop"></div>
+    </div>
+  </aside>
+</div>
+<div class="archive settings" id="settings" role="dialog" aria-labelledby="settingsTitle" hidden>
+  <div class="archive-head">
+    <h2 id="settingsTitle">Настройки</h2>
+    <button class="pill" id="closeSettings" type="button">Закрыть</button>
+  </div>
+  <div class="settings-body" id="settingsBody"></div>
+</div>
+<div class="archive" id="archive" hidden>
+  <div class="archive-head">
+    <nav class="filters" id="filters" aria-label="Фильтр архива"></nav>
+    <button class="pill" id="closeArchive" type="button">Закрыть</button>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script src="../ship-builder/data/stars.js"></script>
+<script src="../ship-builder/data/solar.js"></script>
+<script src="mission.js?v=189"></script>
+<script src="space3d.js?v=189"></script>
+<script src="engine.js?v=189"></script>
+<script src="content.js?v=189"></script>
+<script src="assets/portraits/index.js?v=189"></script>
+<script src="assets/events/index.js?v=189"></script>
+<script src="game.js?v=189"></script>
+</body>
+</html>
