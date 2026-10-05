@@ -341,7 +341,10 @@ a.pill{font-family:system-ui,sans-serif;line-height:1.3;color:inherit;text-decor
   transform:translate(-50%,-46%);opacity:0;pointer-events:none;transition:opacity 1.4s ease,transform 1.4s ease;text-align:center;
   padding:26px 30px 18px;border-radius:20px;background:radial-gradient(ellipse at center,rgba(5,9,12,.78),rgba(5,9,12,.42) 70%,rgba(5,9,12,0));text-shadow:0 2px 22px rgba(0,0,0,.9)}
 .headline.on{opacity:1;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer}
-.hud,.overlay{transition:opacity .9s ease}.app.hl-on .hud,.app.hl-on .overlay{opacity:.12}
+.hud,.overlay{transition:opacity .9s ease}
+.app.hl-on .hud,.app.hl-on .overlay{opacity:.12}
+/* новый круг — как загрузка: 3D проявляется из чёрного */
+.space.fresh{animation:spacefresh 1.6s ease both}@keyframes spacefresh{from{opacity:0}to{opacity:1}}
 .headline .hl-k{font:12px/1.4 system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--mint);margin-bottom:10px}
 .headline .hl-t{font:clamp(30px,4.4vw,58px)/1.08 Georgia,"PT Serif",serif;color:var(--text);margin-bottom:14px}
 .headline .hl-l{font:clamp(15px,1.6vw,20px)/1.45 Georgia,"PT Serif",serif;color:#d7d6cb}

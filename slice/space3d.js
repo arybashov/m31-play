@@ -1878,6 +1878,7 @@
   // щит, кольца, зал, трюм) и ступень торможения 24,1 тыс. т (~−425 м) → ~−314 м. Со ступенью разгона
   // (1,26 млн т топлива в баках ~−500…−1000 м) центр масс ~−760 м.
   const COM = new THREE.Vector3(), comTmp = new THREE.Vector3();
+  let shipFarM = Infinity;                                               // расстояние камеры до корабля (прошлый кадр), м
   function placeShipAboutCom() {
     COM.set(world.separated ? -314 : -760, 0, 0);
     ship.position.copy(COM).applyQuaternion(shipQBase).sub(comTmp.copy(COM).applyQuaternion(ship.quaternion));
@@ -1990,6 +1991,7 @@
   }
   function go(name, instant, dur) {
     const p = PRESETS[name]; if (!p) return;
+    goLog.push([Math.round(performance.now()), name, !!instant]); if (goLog.length > 60) goLog.shift();   // отладка: журнал перелётов
     const d = offsetDir();
     cam.frame = p.frame || 'ship';
     const a = frameAngles(d); cam.yaw = a.yaw; cam.pitch = a.pitch;
@@ -2098,7 +2100,7 @@
       if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 4) return; drag.live = true; dragging = true; tween = null; cam.fit = null; if (down) down.dragged = true; }
       cam.yaw -= (e.clientX - drag.x) * 0.006;
       cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + (e.clientY - drag.y) * 0.006));
-      drag = { x: e.clientX, y: e.clientY };
+      drag.x = e.clientX; drag.y = e.clientY;                         // признаки начала (x0, y0, live) сохраняются
     });
     let down = null;
     el.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
@@ -2254,6 +2256,10 @@
     shipQWant.copy(shipQBase); if (lastLeg) shipQWant.multiply(QFLIP);
     const busy = pm.a > 0.08 || (engines[0] && engines[0].a > 0.05 && !lastLeg);
     if (!busy || !shown) shipQTo.copy(shipQWant);
+    // корабль вне кадра (камера далеко и смотрит не на него — заставка, карта): поворот сразу, без анимации. Иначе новый
+    // круг (корабль из прошлой партии развёрнут кормой вперёд), смена цели или разворот на карте доезжали бы в кадр
+    // вторым движением: разворот и переезд точки взгляда сразу после перелёта камеры к кораблю
+    if (shipFarM > 1e7 && cam.focus !== 'ship') { rotQ.to.copy(shipQTo); rotQ.t = 1; ship.quaternion.copy(shipQTo); }
     stepRotation(dt); stepShield(dt);
     stepWreck(dt);
     stepLaunches(dt);
@@ -2335,6 +2341,7 @@
     starCam.lookAt(0, 0, 0); starCam.updateProjectionMatrix();
     // свечение корабля вдали: вблизи его нет (виден сам корабль), с отъездом проявляется, дальше сжимается в точку
     const camLy = cam.F.clone().addScaledVector(dir, dly), shipM = camLy.distanceTo(shipPos()) * LY;
+    shipFarM = shipM;
     const mA = band(shipM, 4e4, 4e5, 1e30, 1e30), mS = 0.005 + 0.085 * band(shipM, 4e5, 4e6, 3e7, 3e10);
     marker.scale.set(mS, mS, 1); fadeObj(marker, mA, 1);
     marker.material.color.set(engines.some(e => e.a > 0.2) ? 0x9cc8ff : 0xafd5bd);
@@ -2491,6 +2498,7 @@
   api.debugJump = function (view) { go(view, true); };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
   // отладка: где центр масс в кадре (−1…1) и как идёт поворот корпуса — проверка «поворот вокруг центра масс»
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
+  const goLog = []; api.debugGoLog = () => goLog.slice();
   api.debugTick = function (ms) { let t = Math.max(last, performance.now()); const end = t + ms; while (t < end) { t += 16; frame(t, true); } };   // отладка: прокрутить кадры
   // Кадры заявочного плана: точка фокуса в св. годах, дистанция, ракурс, эффекты
   let shotRing = 0;
@@ -2507,12 +2515,19 @@
     const to = { F, dist: p.dist * LY, yaw: p.yaw, pitch: p.pitch, pivot: cam.pivot };
     let dy = to.yaw - from.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
     to.yaw = from.yaw + dy;                                                 // поворот кратчайшим путём
-    if (p.cut && !shown) { Object.assign(cam, to); tween = null; }
+    if (p.cut && (!shown || freshCut)) { Object.assign(cam, to); tween = null; freshCut = false; }   // начало круга — кадр, как при загрузке
     else if (p.cut) tween = { from, to, t0: performance.now(), dur: 4500, upFrom: camUp.clone(), upTo: frameUp(cam.frame) };
     else tween = { from, to, t0: performance.now(), dur: p.move || 4000, upFrom: camUp.clone(), upTo: frameUp(cam.frame) };
     shotRing = p.ring || 0;
     signal.visible = !!p.signal;
     highlight('');
+  };
+  // новый круг (новый мир): сцена гаснет в чёрное (интерфейс), вступление начинается кадром, как при загрузке страницы —
+  // без перелёта от корабля прошлой партии; состояние корабля — начальное, без доворотов и переездов взгляда
+  let freshCut = false;
+  api.resetVoyage = function () {
+    freshCut = true; tween = null; pivInit = false; world.sepT = 0; streaks.a = 0; pm.a = 0;
+    engines.forEach(e => { e.a = 0; });
   };
   api.endShots = function () { shotRing = 0; signal.visible = false; hiLine.visible = false; };
   // отладка кадров: встать камерой так, чтобы за кораблём была Земля или Солнце

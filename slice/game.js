@@ -885,6 +885,9 @@
   const closeSettings = () => { if ($('settings').hidden) return; $('settings').hidden = true; $('settingsBtn').focus(); };
   function startOver() {
     if (cine) { clearTimeout(cine.timer); cine = null; document.body.classList.remove('cine'); }
+    // новый круг начинается как при загрузке: 3D гаснет и проявляется, вступление — с кадра, а не перелётом от прошлой партии
+    if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
+    camView = null; sceneId = null; clearTimeout(viewTimer);
     world = { passTug: true }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
     tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; yearAnim = null; mapPick = null; draft = null;
   }
