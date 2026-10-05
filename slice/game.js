@@ -307,7 +307,7 @@
     // Слева всегда корабль в 3D; сцена задаёт только ракурс. Без WebGL или сети — кадр Blender.
     const live = !!(window.M31Space && M31Space.ok);
     $('space').classList.toggle('on', live);
-    if (live) { requestView(sc.view); return; }
+    if (live) { if (!insp) requestView(sc.view); return; }               // ручной осмотр щита держит камеру до закрытия
     layer = 1 - layer;
     const next = $('bg' + layer), prev = $('bg' + (1 - layer));
     next.style.backgroundImage = `url("${sc.fallback || sc.img}")`;
@@ -328,7 +328,10 @@
       lines.push(ly < 2 ? `${u.lag} <b>${num(ly * 12, 1)} ${u.months}</b>` : `${u.lag} <b>${num(ly, 1)} ${lang === 'ru' ? 'г.' : 'yr'}</b>`);
     }
     const gs = relief ? [] : C.gauges(result.state, lang);
-    const gHtml = gs.length ? `<div class="gauges"><span class="gt">${esc(u.gaugesTitle)}</span>${gs.map(g => `<span>${esc(g.label)} <b>${esc(g.value)}</b></span>`).join('')}</div>` : '';
+    const canInspect = shieldOf(result.state);
+    const gHtml = gs.length ? `<div class="gauges"><span class="gt">${esc(u.gaugesTitle)}</span>${gs.map(g => g.id === 'shield' && canInspect
+      ? `<button type="button" class="gbtn" data-act="inspect" aria-pressed="${!!insp}" title="${esc(SI[lang].open)}">${esc(g.label)} <b>${esc(g.value)}</b></button>`
+      : `<span>${esc(g.label)} <b>${esc(g.value)}</b></span>`).join('')}</div>` : '';
     return lines.map(l => `<span>${l}</span>`).join('') + gHtml;
   }
   // таймлайн — полоса внизу экрана во всю ширину; до отлёта и у спасателей его нет
@@ -425,7 +428,12 @@
     const u = C.ui[lang], s = result.state, ch = s.choices['d.cloud'], y = s.year;
     const cls = k => !ch ? 'path' : (ch === k ? 'path chosen' : 'path dim');
     let res = '';
-    const msg = ch && y >= 4.5 ? (ch === 'trust' ? u.edgeTrust : (s.measured ? u.measured : u.edgeMan)) : (s.measured ? u.measured : '');
+    // правила v5: исход прохода — из модели щита (удар крупного зерна), а не прежние «×1,4 и полтора года щита»
+    const modelMsg = () => { const h = s.cloudHit, ru = lang === 'ru';
+      if (!h) return ru ? 'край чистый · удары пыли в прогнозе' : 'clean edge · dust within forecast';
+      return ru ? `полоса крупной пыли · ${h.panel}: ${h.breached ? 'пробой' : 'выбоина'}` : `coarse-dust band · ${h.panel}: ${h.breached ? 'breach' : 'scar'}`; };
+    const passed = s.riskVersion >= 5 ? (ch === 'trust' && !!s.cloudHit) || (!!s.beta && y >= C.edgeOut(s) - 1e-9) : y >= 4.5;
+    const msg = ch && passed ? (ch === 'trust' ? (s.riskVersion >= 5 ? modelMsg() : u.edgeTrust) : (s.measured ? u.measured : u.edgeMan)) : (s.measured ? u.measured : '');
     if (msg) res = `<text x="16" y="222" class="res">${esc(msg)}</text>`;
     return `<svg viewBox="0 0 520 240" class="panel-svg traj">
       <defs><radialGradient id="cl" cx="70%" cy="50%" r="60%"><stop offset="0" stop-color="#c4895f" stop-opacity=".55"/><stop offset="1" stop-color="#c4895f" stop-opacity="0"/></radialGradient></defs>
@@ -552,7 +560,77 @@
     }
     return true;
   }
+  // ---------------------------------------------------------------- осмотр щита (правила v5, шаг 6)
+  // Отдельное состояние экрана: открыт вручную (прибор, клик по щиту в 3D) — держится при прокрутке, камера стоит
+  // на щите, пока осмотр не закрыт; у решения о панели (оверлей 'shield') — открыт с повреждённой панелью, Esc и
+  // «Закрыть» убирают его на этом экране. Схема 2D — она же запасной вид без WebGL.
+  const SI = {
+    ru: { title: 'Щит · осмотр', open: 'Осмотреть щит', close: 'Закрыть', hist: 'История', last: 'Последняя запись прибора',
+      legend: '✕ пробой · ▣ заплата · • выбоина · ◇ заменена', note: 'Вид спереди, сектора 00–15 по часовой. Отметки условные: размер и место на панели не в масштабе.' },
+    en: { title: 'Shield · inspection', open: 'Inspect the shield', close: 'Close', hist: 'History', last: 'Latest instrument record',
+      legend: '✕ breach · ▣ patch · • scar · ◇ replaced', note: 'Front view, sectors 00–15 clockwise. Marks are schematic: size and position on the panel are not to scale.' }
+  };
+  let insp = null, shieldSel = null, selFor = null, inspClosed = null, inspKey = null;
+  const shieldOf = st => !relief && st && st.riskVersion >= 5 && st.shield ? st.shield : null;
+  const shieldScreen = beat => beat && beat.overlay === 'shield' && inspClosed !== beat.id;
+  const screenStop = result => result && result.stop && result.stop.beat;           // решение экрана (осмотр — по нему, не по прокрутке)
+  const inspOn = result => !!(insp || shieldScreen(screenStop(result)));
+  // выбранная панель: у решения о панели — она (один раз на экран), иначе — прежний выбор или худшая
+  function ensureSel(result) {
+    const sb = screenStop(result);
+    if (!insp && shieldScreen(sb) && sb.inspect && selFor !== sb.id) { selFor = sb.id; shieldSel = sb.inspect; }
+    if (!shieldSel) shieldSel = worstPanel(result.state);
+  }
+  function worstPanel(st) {
+    const V = C.shield.publicView(st.shield), bad = V.panels.filter(p => p.state !== 'ok' && p.state !== 'new').sort((a, b) => a.residual - b.residual);
+    return bad.length ? bad[0].id : 'H0';
+  }
+  function shieldInspHtml(result, beat) {
+    const st = result.state, ru = lang === 'ru', T = SI[lang];
+    ensureSel(result);
+    const info = C.shieldInspect(st, shieldSel, lang); if (!info) return '';
+    const V = info.view, cx = 130, cy = 130, K = 106 / 175, SYM = { scarred: '•', patched: '▣', breached: '✕', new: '◇' };
+    const pt = (r, a) => `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`;
+    let g = '';
+    for (const p of V.panels) {
+      const sel = p.id === shieldSel ? ' sel' : '';
+      if (!p.belt) { g += `<circle cx="${cx}" cy="${cy}" r="${(p.r1 * K - 0.6).toFixed(2)}" class="pn st-${p.state}${sel}" data-panel="${p.id}"><title>${p.id}</title></circle>`; }
+      else {
+        const a0 = 2 * Math.PI * (p.az - 0.5) / 16 + 0.012, a1 = 2 * Math.PI * (p.az + 0.5) / 16 - 0.012, r0 = p.r0 * K + 0.6, r1 = p.r1 * K - 0.6;
+        g += `<path d="M${pt(r1, a0)} A${r1.toFixed(2)} ${r1.toFixed(2)} 0 0 1 ${pt(r1, a1)} L${pt(r0, a1)} A${r0.toFixed(2)} ${r0.toFixed(2)} 0 0 0 ${pt(r0, a0)} Z" class="pn st-${p.state}${sel}" data-panel="${p.id}"><title>${p.id}</title></path>`;
+      }
+      if (SYM[p.state]) { const a = p.belt ? 2 * Math.PI * p.az / 16 : 0, r = p.belt ? (p.r0 + p.r1) / 2 * K : 0;
+        g += `<text x="${(cx + r * Math.sin(a)).toFixed(1)}" y="${(cy - r * Math.cos(a) + 3.5).toFixed(1)}" class="sym" text-anchor="middle">${SYM[p.state]}</text>`; }
+    }
+    for (let k = 0; k < 16; k++) { const a = 2 * Math.PI * k / 16; g += `<text x="${(cx + 117 * Math.sin(a)).toFixed(1)}" y="${(cy - 117 * Math.cos(a) + 3).toFixed(1)}" class="sec" text-anchor="middle">${String(k).padStart(2, '0')}</text>`; }
+    [['A', 39], ['B', 82.5], ['C', 123.5], ['D', 158.5]].forEach(([b, r]) => { const a = -Math.PI / 16; g += `<text x="${(cx + r * K * Math.sin(a)).toFixed(1)}" y="${(cy - r * K * Math.cos(a) + 3).toFixed(1)}" class="belt" text-anchor="middle">${b}</text>`; });
+    const last = [...result.log].reverse().find(e => /^sim\.shield\./.test(String(e.beat.id)));
+    const lastTxt = last ? E.text(last.beat.text, lang, last.state) : '';
+    return `<div class="shield-insp" role="region" aria-label="${esc(T.title)}">
+      <div class="si-head"><span>${esc(T.title)}</span><button type="button" class="pill" data-act="inspect-close">${esc(T.close)}</button></div>
+      <div class="si-body"><svg viewBox="0 0 260 260" class="si-map" role="img" aria-label="${esc(T.legend)}">${g}</svg>
+        <div class="si-card"><h3>${esc(info.title)}</h3><p class="si-where">${esc(info.where)}</p>${info.lines.map(l => `<p>${esc(l)}</p>`).join('')}
+          <h4>${esc(T.hist)}</h4><ul>${info.history.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
+          ${lastTxt ? `<h4>${esc(T.last)}</h4><p class="si-note">${esc(lastTxt)}</p>` : ''}</div></div>
+      <p class="si-foot">${esc(T.legend)}. ${esc(T.note)}</p></div>`;
+  }
+  function openInspect(panel) {
+    if (!view || !shieldOf(view.result.state)) return;
+    insp = {}; if (panel) shieldSel = panel; else if (!shieldSel) shieldSel = worstPanel(view.result.state);
+    if (window.M31Space && M31Space.ok) { clearTimeout(viewTimer); camView = 'manual:shield'; camAt = performance.now(); M31Space.show('shield'); }
+    shown.hud = null; syncScene();
+  }
+  function closeInspect() {
+    const beat = view && screenStop(view.result), was = !!insp || shieldScreen(beat);
+    if (!was) return;
+    insp = null; if (beat && beat.overlay === 'shield') inspClosed = beat.id;   // и ручной, и автоматический осмотр этого решения
+    // ракурс экрана — явно: сцена могла не смениться (setScene пропускает тот же sceneId)
+    if (window.M31Space && M31Space.ok && sceneId && C.scenes[sceneId]) applyView(C.scenes[sceneId].view);
+    shown.hud = null; syncScene();
+  }
+
   function overlayHtml(result, beat) {
+    if (shieldOf(result.state) && inspOn(result)) return shieldInspHtml(result, beat);
     const o = beat.overlay;
     if (o === 'lens') return lensSvg(result);
     if (o === 'probe') return probeSvg(result);
@@ -619,14 +697,17 @@
     const y2 = view.result.state.year;
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
-      M31Space.setWorld({ store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target), relic: inc.target === M.SOURCE,
+      M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target), relic: inc.target === M.SOURCE,
         burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0,
         relief: { P: R.P, sent: inc.sent, council: R.council.id, list: R.list.map(r => ({ id: r.id, colony: r.colony || null, hear: r.hear, launch: r.launch, complete: r.complete })),
           voyages: res ? res.voyages : [] }, legacy: { passTug: relief.world.passTug !== false, settled: relief.world.settled || [] } });
     } else if (window.M31Space && M31Space.ok) {
       const ids = new Set(view.result.log.map(i => i.beat.id));
       const st = view.result.state;
-      M31Space.setWorld({ launches: [st.scout > 0 ? { id: 'scout', at: st.scout } : null, st.choices['d.stream'] === 'probe' ? { id: 'stream', at: st.arrive - 5 } : null].filter(Boolean),
+      const sh = shieldOf(st);
+      if (sh && inspOn(view.result)) ensureSel(view.result);
+      M31Space.setWorld({ shield: sh ? C.shield.publicView(sh) : null, shieldSel: sh && inspOn(view.result) ? shieldSel : null,
+        launches: [st.scout > 0 ? { id: 'scout', at: st.scout } : null, st.choices['d.stream'] === 'probe' ? { id: 'stream', at: st.arrive - 5 } : null].filter(Boolean),
         wreck: !!st.lostShip, dark: st.dutchman ? 'empty' : st.outcome === 'sos' ? 'sleep' : null, relief: null, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, legacy: { passTug: world.passTug !== false, settled: world.settled || [] }, year: y, separated: ids.has('a1.stage'), cloudSeen: ids.has('a1.cloud'),
         worldClass: st.target ? M.worldOf(st.target) : null, relic: st.target === M.SOURCE,
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
@@ -646,6 +727,14 @@
     setHtml('hud', hudHtml(view.result, cam, y)); setTimeline(view.result, y);
     if (!applyPassportPanel()) { delete $('overlay').dataset.pp; setHtml('overlay', overlayHtml(view.result, beat)); }
     $('overlay').dataset.side = (C.scenes[beat.scene] || {}).side || 'left';
+    // осмотр щита: центр щита в 3D — между карточкой осмотра и колонкой записей (на узком экране — по центру свободной части)
+    if (window.M31Space && M31Space.setShieldFocus) {
+      const box = $('space').getBoundingClientRect(), ins = document.querySelector('.shield-insp'), col = $('panelScroll').getBoundingClientRect();
+      if (!ins) M31Space.setShieldFocus(null);
+      else { const o = ins.getBoundingClientRect(), right = Math.min(box.right, col.left > box.left + 200 ? col.left : box.right);
+        const x = right - o.right > 260 ? (o.right + right) / 2 : (box.left + right) / 2;
+        M31Space.setShieldFocus({ x: x - box.left, y: (o.top - box.top) > 0.5 * box.height ? 0.36 * box.height : 0.42 * box.height }); }
+    }
   }
   let ticking = false;
   document.addEventListener('scroll', () => {
@@ -714,6 +803,10 @@
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии
     const hide = st => { if (st) st.riskSeed = null; };
     hide(result.state); result.log.forEach(i => hide(i.state)); if (result.stop) hide(result.stop.state);
+    // осмотр щита — состояние экрана: новый ход, «назад», спасатель или новая экспедиция — новый экран, осмотр закрыт;
+    // камера возвращается к ракурсу сцены нового экрана (setScene пропускает тот же sceneId — сбрасываем)
+    const screenKey = `${exp}|${relief ? 'r' : 'm'}|${cur().length}`;
+    if (screenKey !== inspKey) { if (insp && sceneId) sceneId = null; insp = null; inspClosed = null; selFor = null; shieldSel = null; inspKey = screenKey; }
     // итог основной партии — в мир, один раз по id экспедиции (повторное открытие финала не дублирует);
     // старое сохранение, где спасатели начаты до записи, — из сохранённых ходов основной партии (снимок спасателей не трогаем)
     const main = !relief ? result : (world.applied || []).includes(`${exp}|done`) ? null : (() => { try { return E.run(C, tokens, ctx()); } catch (e) { return null; } })();
@@ -767,9 +860,13 @@
   }
 
   document.addEventListener('click', e => {
+    const pn = e.target.closest('[data-panel]');
+    if (pn && pn.closest('.shield-insp')) { shieldSel = pn.dataset.panel; syncScene(); return; }
     const btn = e.target.closest('button');
     if (!btn) return;
     const act = btn.dataset.act;
+    if (act === 'inspect') { if (insp) closeInspect(); else openInspect(); return; }
+    if (act === 'inspect-close') { closeInspect(); return; }
     if (act === 'go') {
       const st = view && view.result.stop, from = st && st.beat && st.beat.kind === 'skip' ? view.result.state.year : null;
       cur().push('go'); save(); render(true);
@@ -808,11 +905,16 @@
     else if (btn.id === 'closeArchive') { $('archive').hidden = true; $('archiveBtn').focus(); }
     else if (btn.dataset.filter) { filter = btn.dataset.filter; render(false); }
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('archive').hidden = true; closeSettings(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('archive').hidden = true; closeSettings(); closeInspect(); } });
 
   if (window.M31Space && M31Space.mount) {
     try { M31Space.mount($('space')); } catch (err) { M31Space.ok = false; console.warn('3D недоступно:', err); }
     M31Space.onPick = name => { if (atStop('map')) { mapPick = name; refreshStop(); } };
+    M31Space.onPartPick = ({ part, panel }) => {
+      if (part !== 'shield' || !view || !shieldOf(view.result.state)) return;
+      const beat = view.result.stop && view.result.stop.beat;
+      if (inspOn(view.result)) { shieldSel = panel; syncScene(); } else openInspect(panel);
+    };
     const shiftForCards = () => { if (!M31Space.setViewShift) return;
       const wide = innerWidth > 900 && !document.body.classList.contains('cine');
       M31Space.setViewShift(wide ? $('panelScroll').getBoundingClientRect().width / 2 + 9 : 0); };

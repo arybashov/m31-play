@@ -11,6 +11,8 @@
 
   // Миссия: цель, паспорт, поворот курса — расчёты в mission.js (браузер: M31Mission).
   const M = root.M31Mission || require('./mission.js');
+  // Щит как прибор (правила v5, симулятор): shield.js (браузер: M31Shield).
+  const SH = root.M31Shield || require('./shield.js');
   const nm = (s, lang) => M.nameOf(s.target || M.DECLARED, lang);
   // «звезда Барнарда» склоняется: у звезды, к звезде; остальные названия каталога — нет
   const nmG = s => nm(s, 'ru').replace(/^звезда /, 'звезды '), nmD = s => nm(s, 'ru').replace(/^звезда /, 'звезде ');
@@ -276,6 +278,20 @@ Kassel signs for the Council last.`
   // облако (версия 1): в 25% партий в крае — полоса крупной пыли; затмение видит её в 90% случаев
   const CLOUD = { band: 0.25, sense: 0.9, check: 2, dead: 8, patch: 5 };
   const cloudBand = s => (hidden(s, 'contact.cloud.band') ?? 1) < CLOUD.band;
+  // правила v5: край облака D2 — место на пути, не год (DOC «Симулятор v1 — время и щит», шаг 4): вход и выход, св. лет
+  // от Солнца — из прежнего эталона (0,08c: вход на году 4,6, проход 21 сутки); на разгоне путь β·t²/(2·ACC).
+  // Мелкая пыль края — 10 фонов; полоса крупной пыли (скрытый факт cloudBand) — средняя треть края, 40 фонов, и одно
+  // крупное зерно 0,500–0,515 мм: его удар считает модель щита (энергия → выбоина → пробой, если не хватило остатка)
+  const CLOUD_X = [0.1058, 0.108461292158756], CLOUD_RHO = { edge: 10, band: 40 };
+  const cloudYear = (s, x) => Math.sqrt(2 * M.ACC * x / s.beta);
+  const edgeIn = s => cloudYear(s, CLOUD_X[0]), edgeOut = s => cloudYear(s, CLOUD_X[1]);
+  const edgeAt = s => s.riskVersion >= 5 ? edgeOut(s) : 4.6;            // год записей о проходе края
+  const edgeDays = s => Math.round((edgeOut(s) - edgeIn(s)) * 365.25);
+  const edgeMonths = (s, lang) => { const m = Math.max(1, Math.round((edgeIn(s) - 4) * 12));
+    return lang === 'ru' ? `${m} ${plural(m, ['месяц', 'месяца', 'месяцев'])}` : `${m} month${m === 1 ? '' : 's'}`; };
+  // исход полосы для текстов: в v5 — из модели щита, раньше — из «полутора лет износа»
+  const bandHit = s => s.riskVersion >= 5 ? !!s.cloudHit : s.shieldWear > 0;
+  const bandBreach = s => s.riskVersion >= 5 ? !!(s.cloudHit && s.cloudHit.breached) : !!s.shieldBreach;
   // контур воды (версия 1, контакт): после пробуждения группы Б в 66,5% партий повреждена общая магистраль колец;
   // обычная проверка (7 суток, −2) видит дефект в половине случаев, углублённая (42 суток, −8) — в девяти из десяти
   const LOOP = { common: 0.665, ordinary: { days: 7, cost: 2, sense: 0.5 }, deep: { days: 42, cost: 8, sense: 0.9 }, dead: 31, materials: 20 };
@@ -480,10 +496,10 @@ Kassel signs for the Council last.`
         stream: ru ? {
           what: 'Поток у Тёмной звезды', obs: 'счётчики ударов росли; модель давала 91% за безопасный проход',
           check: inc.check ? (inc.found ? 'измерение показало полосу на курсе' : 'измерение полосы не показало') : 'поток не измеряли',
-          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: 'уйти сразу, не дожидаясь измерений' }
+          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: inc.route === 'evade' ? (s.riskVersion >= 5 ? 'манёвр сократит время в ядре потока' : 'манёвр успеет увести корабль из потока') : 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: 'уйти сразу, не дожидаясь измерений' }
           : { what: 'The stream at the Dark Star', obs: 'the impact counters were rising; the model gave 91% for a safe passage',
           check: inc.check ? (inc.found ? 'the measurement showed the band on course' : 'the measurement showed no band') : 'the stream was not measured',
-          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: 'leaving at once, without waiting for measurements' }
+          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: inc.route === 'evade' ? (s.riskVersion >= 5 ? "the manoeuvre would shorten the time in the stream's core" : 'the manoeuvre would take the ship out of the stream in time') : 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: 'leaving at once, without waiting for measurements' }
       }[inc.kind];
       return ru
         ? `Год ${incYear(inc)} · ${P.what}. Наблюдение: ${P.obs}. Проверка: ${P.check}. Решение: ${P.dec}${recPart ? ` (${recPart}; допущение — ${P.assume})` : ''}. Причина: ${P.cause}${inc.lost ? '; ранее пробитый сектор щита и нехватка мощности для быстрого ухода' : ''}. ${inc.lost ? `Корабль погиб: на борту было ${ppl(inc.aboard)}, среди них ${castNames('ru').join(', ')}.` : inc.dead ? `Погибли ${ppl(inc.dead)}${inc.pop === 'thaw' ? ' Оттепели' : /^rescue/.test(inc.kind) ? ' экипажа' : ''}: ${namesLine(inc, 'ru')}.` : 'Погибших нет: насосы на отдельной сети удержали людей; капсульная секция потеряна.'} Можно было: ${P.alt}.`
@@ -614,6 +630,7 @@ There are no longer years of waiting between question and answer.`;
     g('alive', ru ? 'живы' : 'alive', `${aliveOf(s)}`, aliveOf(s));
     g('watch', ru ? 'на вахте' : 'on watch', `${s.watch}`, s.watch);
     g('loop', ru ? 'контур' : 'cooling loop', s.highPower ? (ru ? 'полный' : 'full') : (ru ? 'без резерва мощности' : 'no high-power reserve'));
+    if (v5(s) && s.shield) g('shield', ru ? 'щит' : 'shield', shieldGaugeV5(s, lang), SH.observe(s.shield).min); else
     g('shield', ru ? 'щит' : 'shield', breached(s) && s.year < Y(s, 0.25) && !v1(s) ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г. — пробьёт сектор` : `wear ${pct(s.shieldWear, 'en')} yr — will breach a sector`) : breached(s) ? (ru ? 'сектор пробит' : 'sector breached') : s.shieldWear > 0 ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г.` : `wear ${pct(s.shieldWear, 'en')} yr`) : (ru ? 'цел' : 'whole'));
     g('probes', ru ? 'зонды' : 'probes', `${probesOf(s)}`, probesOf(s));
     g('power', ru ? 'энергия у цели' : 'power at target', s.support === 'found' ? (ru ? 'топливо поддержки' : 'support fuel') : powerOK(s) ? M.eqOpt('energy', eqOf(s).energy)[lang].toLowerCase() : (ru ? 'только корабль' : 'the ship only'));
@@ -625,6 +642,299 @@ There are no longer years of waiting between question and answer.`;
     g('arrive', ru ? 'прибытие' : 'arrival', `${ru ? 'год' : 'year'} ${s.arrive}`, s.arrive);
     return out;
   }
+  // ---- модель времени (правила v5, DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
+  // Пока одна система — фронтальный щит: фоновая эрозия по скорости корабля, прибор и приборный журнал. Облако и поток
+  // ещё на прежней механике (шаги 4–5); решений модель пока не требует.
+  const v5 = s => s.riskVersion >= 5;
+  const SIM_TITLE = { ru: 'Приборный журнал · щит', en: 'Instrument log · shield' };
+  const SIM_NOTE = 0.05;                                                // кг/м²: шаг сводки износа в журнале
+  // среда на пути: множитель фоновой плотности пыли на год y (край облака — только при проходе через край)
+  const cloudThrough = s => M.episode(s) === 'cloud' && s.choices['d.cloud'] === 'trust';
+  function cloudSpan(s) {
+    const a = edgeIn(s), b = edgeOut(s);
+    return { a, b, band: [a + (b - a) / 3, a + 2 * (b - a) / 3] };
+  }
+  const streamOn = src;                                                // предвестник — с точки предупреждения; ядро — по решению о маршруте
+  function rhoAt(s, y) {
+    if (streamOn(s)) {
+      const P = streamPlan(s);
+      if (P.coreEnd != null && y >= P.core && y <= P.coreEnd) return STREAM_RHO.core / SH.RULES.rhoDust;
+      if (y >= P.warn && y <= P.preEnd) return STREAM_RHO.pre / SH.RULES.rhoDust;
+    }
+    if (!cloudThrough(s)) return 1;
+    const c = cloudSpan(s);
+    if (y < c.a || y > c.b) return 1;
+    return cloudBand(s) && y >= c.band[0] && y <= c.band[1] ? CLOUD_RHO.band : CLOUD_RHO.edge;
+  }
+  // имя среды для сводки журнала
+  function envOf(s, y) {
+    if (streamOn(s)) { const P = streamPlan(s);
+      if (P.coreEnd != null && y >= P.core && y <= P.coreEnd) return 'core';
+      if (y >= P.warn && y <= P.preEnd) return 'pre'; }
+    if (cloudThrough(s)) { const c = cloudSpan(s); if (y >= c.a && y <= c.b) return 'cloud'; }
+    return 'ism';
+  }
+  // удар зерна ядра: панель — по площади, радиус и момент — по сиду (только повреждение; последствия — на выходе из ядра)
+  function streamGrain(s, t) {
+    const beta = M.speedAt(t, s.beta, s.arrive, s.tMag);
+    const panel = SH.panelAt(hidden(s, 'shield.stream.hit.0.position') ?? 0.5);
+    const a = 1.9e-3 + 0.2e-3 * (hidden(s, 'shield.stream.hit.0.radius') ?? 0.5);
+    const h = SH.hit(s.shield, { id: 'stream.hit.0', panel, radius: a, beta, at: t, energy: SH.grainEnergy(a, beta) });
+    s.streamImpact = { panel, breached: h.breached, removed: h.removed, residual: h.residual, energy: h.energy, radius: a, beta, at: t };
+  }
+  // последствия на выходе из ядра: тяжесть — по реальным уязвимостям, а не по формуле прежних правил:
+  // +1, если пыль ядра прожгла другое слабое место щита; +1, если после удара корабль оставался в ядре больше суток
+  function streamOutcome(s, P) {
+    const sh = s.shield, burnt = sh.hits.some(x => x.id !== 'stream.hit.0' && x.state !== 'replaced' && x.residual <= 0);
+    const long = (P.coreEnd - P.g) * 365.25 > 1, lv = 1 + (burnt ? 1 : 0) + (long ? 1 : 0);
+    s.streamHit = lv; s.streamCause = burnt ? 'shield' : 'power'; Object.assign(s.streamImpact, { level: lv, burnt, out: P.coreEnd, done: P.done });
+    if (lv >= 3) { incident(s, 'stream', 0, { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, lost: true, aboard: aliveOf(s), year: P.coreEnd }); s.lostShip = true; return null; }
+    s.dead += STREAM.dead[lv]; s.materials -= STREAM_MAT5[lv]; s.streamDead = STREAM.dead[lv]; s.shieldBreach = true; s.shieldFixed = false;
+    incident(s, 'stream', STREAM.dead[lv], { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, year: P.coreEnd });
+    const h = SH.hitOf(sh, 'stream.hit.0');
+    return h.residual < SH.RULES.service ? { id: 'stream.hit.0', kind: 'shieldService', panel: h.panel, cause: 'stream' } : null;
+  }
+  // эрозия отрезка [y0, y1] при постоянном множителе среды и сводка журнала — не на каждую перемотку (тиков в
+  // журнале нет): когда с прошлой снято SIM_NOTE кг/м², и у цели
+  function erodeSpan(s, y0, y1, k) {
+    const r = SH.erode(s.shield, y0, y1, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k);
+    if (y1 > y0) s.shield.flux = { at: y1, w: r.energy / ((y1 - y0) * SH.YEAR_S) };   // последний измеренный поток, Вт/м² (для прогноза осмотра)
+    const acc = s.shield.acc || (s.shield.acc = { y0, dSigma: 0, energy: 0, env: [] });
+    acc.dSigma += r.dSigma; acc.energy += r.energy;
+    const env = envOf(s, (y0 + y1) / 2); if (!(acc.env || (acc.env = [])).includes(env)) acc.env.push(env);
+    if (acc.dSigma >= SIM_NOTE || (y1 >= s.arrive && acc.dSigma > 0)) {
+      const o = SH.observe(s.shield);                                  // наблюдение — на момент сводки, не на момент выдачи в журнал
+      SH.note(s.shield, { kind: 'summary', y0: acc.y0, y1, dSigma: acc.dSigma, flux: acc.energy / ((y1 - acc.y0) * SH.YEAR_S), env: acc.env,
+        obs: { min: o.min, at: o.at, hurt: o.damaged.length > 0, bulk: Math.min(...s.shield.sigma) } });
+      s.shield.acc = { y0: y1, dSigma: 0, energy: 0, env: [] };
+    }
+  }
+  // удар крупного зерна полосы: панель — по площади, радиус и момент — по сиду; пробой — люди за сектором
+  function cloudHit(s, t) {
+    const sh = s.shield, beta = M.speedAt(t, s.beta, s.arrive, s.tMag);
+    const panel = SH.panelAt(hidden(s, 'shield.cloud.hit.0.position') ?? 0.5);
+    const a = (0.5 + 0.015 * (hidden(s, 'shield.cloud.hit.0.radius') ?? 0.5)) * 1e-3;
+    const h = SH.hit(sh, { id: 'cloud.hit.0', panel, radius: a, beta, at: t, energy: SH.grainEnergy(a, beta) });
+    s.cloudHit = { panel, breached: h.breached, removed: h.removed, residual: h.residual, energy: h.energy, radius: a, beta, at: t };
+    if (h.breached) {                                                  // за сектором — жилой отсек: потери — сценарный слой
+      s.shieldBreach = true; s.dead += CLOUD.dead; s.cloudDead = CLOUD.dead;
+      incident(s, 'cloud', CLOUD.dead, { check: s.cloudCheck, found: s.cloudFound, year: t });
+    }
+    // решение — если в месте удара не осталось сервисного допуска (удвоенный щит держит с запасом — без решения)
+    return h.residual < SH.RULES.service ? { id: 'cloud.hit.0', kind: 'shieldService', panel } : null;
+  }
+  function simAdvance(s, target) {
+    if (!s.shield && s.eq) { s.shield = SH.create(s.eq.shield); s.simYear = s.year; SH.note(s.shield, { kind: 'accept' }); }
+    const from = s.simYear != null ? s.simYear : s.year;
+    if (s.shield && target > from) {
+      // границы среды и удар на отрезке: модель останавливается на ударе, если он требует решения
+      const marks = [];
+      let hitT = null, grainT = null, outT = null;
+      if (cloudThrough(s)) {
+        const c = cloudSpan(s); marks.push(c.a, c.b, c.band[0], c.band[1]);
+        if (cloudBand(s) && !SH.hitOf(s.shield, 'cloud.hit.0')) hitT = c.band[0] + (hidden(s, 'shield.cloud.hit.0.time') ?? 0.5) * (c.band[1] - c.band[0]);
+      }
+      if (streamOn(s)) {
+        const P = streamPlan(s); marks.push(P.warn, P.core, P.preEnd);
+        if (P.coreEnd != null) marks.push(P.coreEnd);
+        if (P.hit && !SH.hitOf(s.shield, 'stream.hit.0')) grainT = P.g;
+        if (P.hit && !(s.streamImpact && s.streamImpact.level != null)) outT = P.coreEnd;   // выход — пока исход не записан (перемотка могла встать между ударом и выходом)
+      }
+      const stops = marks.concat([hitT, grainT, outT].filter(t => t != null)).filter(t => t > from && t <= target).sort((x, y) => x - y);
+      let t0 = from;
+      for (const t1 of stops.concat([target])) {
+        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); t0 = t1; s.simYear = t1; }
+        if (t1 === hitT && !SH.hitOf(s.shield, 'cloud.hit.0')) {
+          const ev = cloudHit(s, hitT);
+          if (ev) { s.year = hitT; return ev; }
+        }
+        if (t1 === grainT && !SH.hitOf(s.shield, 'stream.hit.0')) streamGrain(s, grainT);
+        if (t1 === outT && s.streamImpact && s.streamImpact.level == null) {
+          const ev = streamOutcome(s, streamPlan(s));
+          if (ev || s.lostShip) { s.year = outT; if (ev) return ev; }
+        }
+      }
+    }
+    s.year = target;                                                     // как прежде: перемотка ставит год цели
+    return null;
+  }
+  // решение по повреждению щита (вставка модели посреди перемотки)
+  const beltOf = id => SH.PANELS[SH.panelIndex(id)].belt;
+  const canReplace = (s, panel) => !!s.repairQual && s.shield.spares[beltOf(panel)] > 0 && s.materials >= SHIELD_WORK.replace;
+  const SHIELD_WORK = { patch: 5, replace: 3 };
+  function serviceDecision(st, ev) {
+    const panel = ev.panel, hitId = ev.id, cause = ev.cause || 'cloud', rec5 = s => cause === 'stream' ? s.streamImpact : s.cloudHit;
+    if (cause === 'stream') return Object.assign(serviceOptions(panel, hitId, rec5, cause), {
+      id: 'd.shieldService.stream', scene: 'shield', overlay: 'shield', inspect: panel, kind: 'decision',
+      title: { ru: `Пробита панель щита ${panel}`, en: `Shield panel ${panel} breached` },
+      context: {
+        ru: s => { const h = s.streamImpact; return `Ядро потока. Зерно около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж: панель ${panel} пробита насквозь. ${streamLossLine(s, 'ru')} Щит с открытой пробоиной в 0,06 м².`; },
+        en: s => { const h = s.streamImpact; return `The stream's core. A grain of about ${nf(h.radius * 1000, 1, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ: panel ${panel} breached through. ${streamLossLine(s, 'en')} The shield has an open hole of 0.06 m².`; }
+      }
+    });
+    return Object.assign(serviceOptions(panel, hitId, rec5, cause), {
+      id: 'd.shieldService.cloud', scene: 'shield', overlay: 'shield', inspect: panel, kind: 'decision',
+      title: { ru: `Пробита панель щита ${panel}`, en: `Shield panel ${panel} breached` },
+      context: {
+        ru: s => { const h = s.cloudHit; return `Полоса крупной пыли. Зерно около ${nf(h.radius * 1000, 2, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж. В месте удара выбито ${nf(h.removed, 1, 'ru')} кг/м² из ${s.shield.nominal}: панель ${panel} пробита насквозь. За ней — жилой отсек: разгерметизация, погибли ${ppl(s.cloudDead)} смены, отсек перекрыт. Щит с открытой пробоиной в 0,06 м².`; },
+        en: s => { const h = s.cloudHit; return `A band of coarse dust. A grain of about ${nf(h.radius * 1000, 2, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ. ${nf(h.removed, 1, 'en')} kg/m² of ${s.shield.nominal} knocked out at the impact point: panel ${panel} is breached through. Behind it, a living compartment: decompression, ${s.cloudDead} of the shift dead, the compartment sealed. The shield has an open hole of 0.06 m².`; }
+      }
+    });
+  }
+  // варианты обслуживания пробитой панели (общие для облака и потока); rec5(s) — запись удара в состоянии
+  // другие открытые повреждения щита (кроме панели panel) — для честных текстов замены
+  const DMG = { breached: ['пробоина', 'hole'], patched: ['заплата', 'patch'], scarred: ['выбоина', 'scar'] };
+  const otherDmg = (s, panel, lang) => SH.observe(s.shield).damaged.filter(d => d.panel !== panel)
+    .map(d => `${d.panel} — ${DMG[d.state] ? DMG[d.state][lang === 'ru' ? 0 : 1] : d.state}`).join(', ');
+  const fullLine = (s, panel, lang) => { const o = otherDmg(s, panel, lang);
+    return lang === 'ru' ? (o ? `Панель ${panel} снова держит полный расчёт; другие повреждения щита остаются: ${o}.` : 'Щит снова держит полный расчёт.')
+      : (o ? `Panel ${panel} holds its full rating again; other shield damage remains: ${o}.` : 'The shield holds its full rating again.'); };
+  function serviceOptions(panel, hitId, rec5, cause) {
+    return {
+      rec: s => canReplace(s, panel) ? { id: 'replace', why: otherDmg(s, panel, 'ru') ? { ru: `запасная панель есть — панель ${panel} снова держит полный расчёт`, en: `a spare panel is aboard — panel ${panel} holds its full rating again` }
+          : { ru: 'запасная панель есть — щит снова держит полный расчёт', en: 'a spare panel is aboard — the shield holds its full rating again' } }
+        : { id: 'patch', why: { ru: 'открытая пробоина пропустит следующий удар', en: 'an open hole lets the next impact through' } },
+      options: s => [{
+        id: 'replace',
+        label: { ru: `Заменить панель ${panel} запасной`, en: `Replace panel ${panel} with a spare` },
+        known: {
+          ru: x => [`Запасных панелей пояса ${beltOf(panel)} в трюме: ${x.shield.spares[beltOf(panel)]}.`, `Роботы с тыльной стороны, 16 часов; крепёж — материалы для высадки −${SHIELD_WORK.replace}%.`, fullLine(x, panel, 'ru')],
+          en: x => [`Spare belt ${beltOf(panel)} panels in the hold: ${x.shield.spares[beltOf(panel)]}.`, `Robots from the rear side, 16 hours; fasteners from the landing materials −${SHIELD_WORK.replace}%.`, fullLine(x, panel, 'en')]
+        },
+        cost: x => { x.materials -= SHIELD_WORK.replace; },
+        effect: x => { SH.replace(x.shield, panel, x.year); x.materials -= SHIELD_WORK.replace; x.shieldFixed = !SH.observe(x.shield).damaged.some(d => d.residual <= 0); rec5(x).repair = 'replace'; },
+        record: { ru: x => `Панель ${panel} снята целиком, на её место встала запасная. ${fullLine(x, panel, 'ru')}`, en: x => `Panel ${panel} removed whole, a spare fitted in its place. ${fullLine(x, panel, 'en')}` }
+      }, {
+        id: 'patch',
+        label: { ru: 'Поставить аварийную заплату', en: 'Fit an emergency patch' },
+        known: {
+          ru: [`48 часов работы; материалы для высадки −${SHIELD_WORK.patch}%.`, `Пробоина закрыта: в месте удара ${SH.RULES.patch} кг/м² вместо полного расчёта.`, cause === 'stream' ? 'Слабое место остаётся до прибытия.' : 'Слабое место остаётся — у потока это важно.'],
+          en: [`48 hours of work; landing materials −${SHIELD_WORK.patch}%.`, `The hole is closed: ${SH.RULES.patch} kg/m² at the impact point instead of the full rating.`, cause === 'stream' ? 'A weak spot remains until arrival.' : 'A weak spot remains — it matters at the stream.']
+        },
+        cost: x => { x.materials -= SHIELD_WORK.patch; },
+        effect: x => { SH.patch(x.shield, hitId, x.year); x.materials -= SHIELD_WORK.patch; rec5(x).repair = 'patch'; },
+        record: { ru: `Пробоина в панели ${panel} закрыта заплатой: ${SH.RULES.patch} кг/м² в месте удара.`, en: `The hole in panel ${panel} is closed with a patch: ${SH.RULES.patch} kg/m² at the impact point.` }
+      }, {
+        id: 'defer',
+        label: { ru: 'Отложить ремонт', en: 'Defer the repair' },
+        known: {
+          ru: ['Материалы целы.', 'Пробоина остаётся открытой: следующий удар в эту панель пройдёт насквозь.'],
+          en: ['The materials are kept.', 'The hole stays open: the next impact on this panel goes straight through.']
+        },
+        effect: x => { rec5(x).repair = 'defer'; },
+        record: { ru: `Ремонт панели ${panel} отложен. Пробоина открыта.`, en: `The repair of panel ${panel} is deferred. The hole is open.` }
+      }].filter(o => o.id === 'replace' ? canReplace(s, panel) : o.id === 'patch' ? s.materials >= SHIELD_WORK.patch : true)
+    };
+  }
+  const nf = (x, d, lang) => { const v = x.toFixed(d); return lang === 'ru' ? v.replace('.', ',') : v; };
+  function noteText(s, n, lang) {
+    const ru = lang === 'ru', sh = s.shield, o = SH.observe(sh), rho = SH.RULES.rhoDust.toExponential(1).replace('e-', '·10⁻').replace('24', '²⁴');
+    if (n.kind === 'accept') {
+      const sp = sh.spares.A;
+      return ru ? `Приёмка фронтального щита. Пакет — 64 сменные панели в четырёх поясах и центральная защита носа, Ø 350 м. Норма — ${sh.nominal} кг/м² по проекции${sp ? `; в трюме запас — по ${sp} панелей каждого пояса` : ''}. Сервисный допуск — ${o.service} кг/м². Модель среды — средняя межзвёздная: пыль ${ru ? rho.replace('.', ',') : rho} кг/м³.`
+        : `Forward shield acceptance. The pack: 64 replaceable panels in four belts and the central nose guard, 350 m across. Rating — ${sh.nominal} kg/m² of projected area${sp ? `; spares in the hold — ${sp} panels for each belt` : ''}. Service limit — ${o.service} kg/m². Environment model — average interstellar medium: dust ${rho} kg/m³.`;
+    }
+    const ob = n.obs || { min: o.min, at: o.at, hurt: o.damaged.length > 0, bulk: Math.min(...sh.sigma) };
+    const done = (sh.nominal - ob.bulk) * 1000;                          // снятое пылью — без локальных повреждений
+    const lim = ob.min < o.service ? (ru ? `ниже сервисного допуска (${o.service} кг/м²) — нужен ремонт` : `below the service limit (${o.service} kg/m²) — repair needed`)
+      : ob.min < 2 * o.service ? (ru ? 'запас до сервисного допуска мал' : 'little margin above the service limit')
+      : (ru ? 'до сервисного допуска далеко' : 'far from the service limit');
+    const where = ob.hurt ? (ru ? ` (место удара на ${ob.at})` : ` (impact point on ${ob.at})`) : '';
+    const fd = n.flux >= 100 ? 0 : n.flux >= 1 ? 2 : 4;                  // точность — по величине потока
+    const short = n.y1 - n.y0 < 0.1, yd = n.y1 - n.y0 < 0.002 ? 4 : short ? 3 : 1;   // короткий отрезок — с сутками
+    const dur = short ? (ru ? ` (${nf((n.y1 - n.y0) * 365.25, 1, 'ru')} сут.)` : ` (${nf((n.y1 - n.y0) * 365.25, 1, 'en')} days)`) : '';
+    const ENV = { ism: ['средняя межзвёздная среда', 'average interstellar medium'], cloud: ['край облака D2', "the D2 cloud's edge"],
+      pre: ['предвестник потока у Тёмной звезды', "the stream's precursor at the Dark Star"], core: ['ядро потока', "the stream's core"] };
+    const env = (n.env && n.env.length ? n.env : ['ism']).map(k => ENV[k][ru ? 0 : 1]).join(', ');
+    const Env = env[0].toUpperCase() + env.slice(1);
+    return ru ? `Годы ${nf(n.y0, yd, 'ru')}–${nf(n.y1, yd, 'ru')}${dur}. ${Env}. Средний поток энергии пыли на щит — ${nf(n.flux, fd, 'ru')} Вт/м². Снято за отрезок — ${nf(n.dSigma * 1000, 1, 'ru')} г/м² проекции, с приёмки — ${nf(done, 1, 'ru')} г/м². Минимум по щиту — ${nf(ob.min, 3, 'ru')} кг/м²${where}, ${lim}.`
+      : `Years ${nf(n.y0, yd, 'en')}–${nf(n.y1, yd, 'en')}${dur}. ${Env}. Mean dust energy flux on the shield — ${nf(n.flux, fd, 'en')} W/m². Removed over the interval — ${nf(n.dSigma * 1000, 1, 'en')} g/m² of projected area, since acceptance — ${nf(done, 1, 'en')} g/m². Shield minimum — ${nf(ob.min, 3, 'en')} kg/m²${where}, ${lim}.`;
+  }
+  // потери удара потока v5 — одной строкой (тяжесть — streamOutcome)
+  function streamLossLine(s, lang) {
+    const ru = lang === 'ru', h = s.streamImpact;
+    if (!h || h.level == null) return '';
+    if (h.level === 1) return ru ? `В носовом отсеке гибнут ${ppl(s.streamDead)}.` : `${s.streamDead} die in the forward compartment.`;
+    return h.burnt ? (ru ? `Пыль ядра прожгла старое место у облака: удар проходит в зал анабиоза. Погибли ${ppl(s.streamDead)}.` : `The core dust burned through the old spot from the cloud: the strike reaches the anabiosis hall. ${s.streamDead} are dead.`)
+      : (ru ? `Без резерва мощности корабль уходит из ядра сутками: поток успевает пройти по корпусу. Погибли ${ppl(s.streamDead)}.` : `Without the high-power reserve the ship takes days to leave the core: the stream has time to sweep the hull. ${s.streamDead} are dead.`);
+  }
+  // журнал прохода края облака в v5: сутки прохода — из профиля, удар и ремонт — из модели щита
+  function edgeLogV5(s, lang) {
+    const ru = lang === 'ru', d = edgeDays(s), h = s.cloudHit, kg = ru ? 'кг/м²' : 'kg/m²';
+    const head = ru ? `Проход края облака: ${d} ${plural(d, ['сутки', 'суток', 'суток'])}.` : `Passage through the cloud's edge: ${d} days.`;
+    if (!h) return head + (ru ? `\nУдары пыли — в пределах прогноза модели. Щит: ${shieldGaugeV5(s, 'ru')}.\nРезерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.`
+      : `\nDust impacts within the model forecast. Shield: ${shieldGaugeV5(s, 'en')}.\nManoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.`);
+    const band = ru ? ` В средней трети — полоса крупной пыли: мелкой пыли в сорок раз больше фона и одно крупное зерно, около ${nf(h.radius * 1000, 2, 'ru')} мм, ${nf(h.energy / 1e6, 0, 'ru')} МДж.`
+      : ` In the middle third, a band of coarse dust: forty times the background in fine dust and one coarse grain, about ${nf(h.radius * 1000, 2, 'en')} mm, ${nf(h.energy / 1e6, 0, 'en')} MJ.`;
+    if (!h.breached) return head + band + (ru ? `\nУдвоенный щит держит: на панели ${h.panel} выбито ${nf(h.removed, 1, 'ru')} ${kg} на 0,06 м², в месте удара осталось ${nf(h.residual, 1, 'ru')} ${kg}. Сквозного пробоя нет, ремонт не нужен.`
+      : `\nThe doubled shield holds: ${nf(h.removed, 1, 'en')} ${kg} knocked out of panel ${h.panel} over 0.06 m², ${nf(h.residual, 1, 'en')} ${kg} left at the impact point. No breach through, no repair needed.`);
+    const fix = h.repair === 'replace' ? (ru ? `Панель заменена запасной, −${SHIELD_WORK.replace}% материалов.` : `The panel was replaced with a spare, −${SHIELD_WORK.replace}% of materials.`)
+      : h.repair === 'patch' ? (ru ? `Заплата: ${SH.RULES.patch} ${kg} в месте удара, −${SHIELD_WORK.patch}% материалов.` : `Patch: ${SH.RULES.patch} ${kg} at the impact point, −${SHIELD_WORK.patch}% of materials.`)
+      : (ru ? 'Ремонт отложен: пробоина открыта.' : 'Repair deferred: the hole is open.');
+    return head + band + (ru ? `\nЗерно пробивает панель ${h.panel}; за ней — жилой отсек кольца. Разгерметизация.\nПогибли ${ppl(s.cloudDead)} смены. Отсек перекрыт. ${fix}`
+      : `\nThe grain breaks through panel ${h.panel}; behind it, a living compartment of the ring. Decompression.\n${s.cloudDead} of the shift are dead. The compartment is sealed. ${fix}`);
+  }
+  function streamLogV5(s, lang) {
+    const ru = lang === 'ru', h = s.streamImpact;
+    const head = s.streamRoute === 'evade' ? (ru ? 'Манёвр опоздал: корабль ещё в потоке. ' : 'The manoeuvre came too late: the ship is still in the stream. ')
+      : (ru ? 'Корабль идёт по краю потока — и ядро потока на курсе. ' : 'The ship runs along the edge of the stream — and the stream\'s core is on its course. ');
+    if (!h) return head;
+    const grain = ru ? `Зерно около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж — пробивает панель ${h.panel}. `
+      : `A grain of about ${nf(h.radius * 1000, 1, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ — breaks through panel ${h.panel}. `;
+    if (s.lostShip) return head + grain;
+    const fix = h.repair === 'replace' ? (ru ? ` Панель заменена запасной, −${SHIELD_WORK.replace}%.` : ` The panel was replaced with a spare, −${SHIELD_WORK.replace}%.`)
+      : h.repair === 'patch' ? (ru ? ` Заплата на пробоину, −${SHIELD_WORK.patch}%.` : ` A patch over the hole, −${SHIELD_WORK.patch}%.`)
+      : h.repair === 'defer' ? (ru ? ' Ремонт отложен: пробоина открыта.' : ' Repair deferred: the hole is open.') : '';
+    return head + grain + streamLossLine(s, lang) + (ru ? ` Отсеки — материалы для высадки −${STREAM_MAT5[h.level]}%.` : ` The compartments — landing materials −${STREAM_MAT5[h.level]}%.`) + fix;
+  }
+  function simNotes(s) {
+    if (!s.shield) return [];
+    return SH.take(s.shield).map(n => ({ id: `sim.shield.${n.kind}.${nf(n.y1 != null ? n.y1 : s.year, 3, 'en')}`, kind: 'instrument', title: SIM_TITLE,
+      text: { ru: noteText(s, n, 'ru'), en: noteText(s, n, 'en') } }));
+  }
+  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => serviceDecision(s, ev) };
+  // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
+  function shieldGaugeV5(s, lang) {
+    const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
+    const worst = o.damaged.slice().sort((a, b) => a.residual - b.residual)[0];
+    const dmg = !worst ? (ru ? 'повреждений нет' : 'no damage')
+      : worst.state === 'breached' ? (ru ? `${worst.panel}: сквозной пробой` : `${worst.panel}: through-breach`)
+      : worst.state === 'patched' ? (ru ? `${worst.panel}: заплата, ${nf(worst.residual, 1, lang)} ${kg}` : `${worst.panel}: patch, ${nf(worst.residual, 1, lang)} ${kg}`)
+      : (ru ? `${worst.panel}: выбоина, остаток ${nf(worst.residual, 1, lang)} ${kg}` : `${worst.panel}: scar, ${nf(worst.residual, 1, lang)} ${kg} left`);
+    return `${ru ? 'минимум' : 'minimum'} ${nf(o.min, 2, lang)} ${kg} · ${dmg}`;
+  }
+  // осмотр щита (шаг 6): карточка панели — состояние, остаток, прогноз при нынешнем потоке, история работ.
+  // Прогноз — по среде, в которой корабль уже идёт (её видит вахта), без скрытых опасностей впереди
+  const PANEL_STATE = { ok: ['цела', 'intact'], scarred: ['выбоина', 'scar'], patched: ['заплата', 'patch'], breached: ['сквозной пробой', 'through-breach'], new: ['заменена', 'replaced'] };
+  function shieldInspect(s, id, lang) {
+    if (!(v5(s) && s.shield)) return null;
+    const ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²', V = SH.publicView(s.shield), p = V.panels.find(x => x.id === id) || V.panels[0];
+    const yr = y => ru ? `год ${nf(y, 2, 'ru')}` : `year ${nf(y, 2, 'en')}`;
+    const where = p.belt ? (ru ? `пояс ${p.belt}, ${p.r0}–${p.r1} м от оси` : `belt ${p.belt}, ${p.r0}–${p.r1} m from the axis`) : (ru ? `центр носа, до ${p.r1} м` : `nose centre, out to ${p.r1} m`);
+    const lines = [`${ru ? 'Остаток' : 'Residual'} — ${nf(p.residual, 2, lang)} ${kg} ${ru ? 'из' : 'of'} ${V.nominal}; ${ru ? 'сервисный допуск' : 'service limit'} — ${V.service} ${kg}.`];
+    if (p.belt && V.spares[p.belt] != null && s.shield.kind === 'sectors') lines.push(ru ? `Запасных панелей пояса ${p.belt}: ${V.spares[p.belt]}.` : `Spare belt ${p.belt} panels: ${V.spares[p.belt]}.`);
+    // прогноз: сколько до допуска при последнем измеренном потоке пыли (наблюдение модели, не план среды впереди)
+    const F = s.shield.flux, rate = F ? SH.RULES.eta / SH.RULES.Q * F.w * SH.YEAR_S : 0;   // кг/м² в год
+    const left = p.residual - V.service, fw = F ? nf(F.w, F.w >= 100 ? 0 : F.w >= 1 ? 2 : 4, lang) : '';
+    lines.push(left <= 0 ? (ru ? 'Допуск исчерпан: нужна замена или заплата.' : 'The limit is exhausted: a replacement or a patch is needed.')
+      : !(rate > 0) ? (ru ? 'При нынешнем потоке пыли допуск не достигается.' : 'At the present dust flux the limit is not reached.')
+      : left / rate > 1000 ? (ru ? `При последнем измеренном потоке (${fw} Вт/м²) запас до допуска — больше тысячи лет.` : `At the last measured flux (${fw} W/m²) the margin to the limit is over a thousand years.`)
+      : left / rate >= 1 ? (ru ? `При последнем измеренном потоке (${fw} Вт/м²) допуск — через ${yrs(left / rate)}.` : `At the last measured flux (${fw} W/m²) the limit is reached in about ${yrsEn(left / rate)}.`)
+      : (ru ? `При последнем измеренном потоке (${fw} Вт/м²) допуск — через ${days(Math.max(1, Math.round(left / rate * 365.25)), 'ru')}.` : `At the last measured flux (${fw} W/m²) the limit is reached in ${days(Math.max(1, Math.round(left / rate * 365.25)), 'en')}.`));
+    // история: удары, работы, прогорание — по годам
+    const hist = [];
+    for (const h of V.hits.filter(x => x.panel === p.id)) {
+      hist.push({ at: h.at, t: ru ? `${yr(h.at)} — удар зерна ${nf(h.radius * 1000, 2, 'ru')} мм, ${nf(h.energy / 1e6, 0, 'ru')} МДж: ${h.first === 'breached' ? 'пробой' : 'выбоина'}`
+        : `${yr(h.at)} — grain ${nf(h.radius * 1000, 2, 'en')} mm, ${nf(h.energy / 1e6, 0, 'en')} MJ: ${h.first === 'breached' ? 'breach' : 'scar'}` });
+      if (h.patchedAt != null) hist.push({ at: h.patchedAt, t: ru ? `${yr(h.patchedAt)} — аварийная заплата, ${SH.RULES.patch} ${kg}` : `${yr(h.patchedAt)} — emergency patch, ${SH.RULES.patch} ${kg}` });
+      if (h.burntAt != null) hist.push({ at: h.burntAt, t: ru ? `к ${yr(h.burntAt).replace('год', 'году')} — пыль прожгла заплату` : `by ${yr(h.burntAt)} — dust burned through the patch` });
+    }
+    if (p.renewedAt != null) hist.push({ at: p.renewedAt, t: ru ? `${yr(p.renewedAt)} — панель заменена запасной` : `${yr(p.renewedAt)} — the panel was replaced with a spare` });
+    hist.sort((a, b) => a.at - b.at);
+    return { id: p.id, state: p.state, title: `${ru ? 'Панель' : 'Panel'} ${p.id} · ${PANEL_STATE[p.state][ru ? 0 : 1]}`, where, lines,
+      history: hist.length ? hist.map(h => h.t) : [ru ? 'Ударов и работ не было.' : 'No impacts or work.'], view: V };
+  }
+
   // что изменится: только отличающиеся приборы, с разницей для чисел
   function gaugeDiff(a, b, lang) {
     const A = gauges(a, lang), B = gauges(b, lang), sign = x => (x > 0 ? '+' : '−') + (Math.abs(x) % 1 ? pct(Math.abs(x), lang) : Math.abs(x));
@@ -647,20 +957,60 @@ There are no longer years of waiting between question and answer.`;
   // целый щит и полная мощность — 8 погибших, нет одного — 27, нет обоих — гибель корабля
   const STREAM = { wide: 0.3, sense: { probe: 0.9, kora: 0.95, student: 0.8 }, dead: { 1: 8, 2: 27 }, mat: { 1: 10, 2: 15 } };
   const streamWide = s => (hidden(s, 'contact.stream.wide') ?? 1) < STREAM.wide;
+  // правила v5: поток у Тёмной звезды — место на пути, отсчитанное от цели (DOC «Симулятор v1 — время и щит», шаг 5):
+  // предупреждение и вход в ядро — на 0,0328 и 0,0315 св. года до цели (на эталоне — «прибытие − 5» и 30 суток до
+  // ядра), ядро толщиной 0,00012 св. года (около трёх суток на 0,015c). Предвестник — 10⁻¹⁸ кг/м³; ядро на курсе —
+  // только при широкой полосе (скрытый факт streamWide): 10⁻¹⁶ кг/м³ и одно зерно 1,9–2,1 мм.
+  const STREAM_X = { warn: 0.032809771231847, core: 0.031545807335968, thick: 0.00012 };
+  const STREAM_RHO = { pre: 1e-18, core: 1e-16 }, STREAM_MAT5 = { 1: 5, 2: 10 };   // v5: отсеки; щит — отдельным решением
+  const STREAM_MEMO = new Map();
+  // года предупреждения, входа в ядро и выхода из него: остаток пути до цели — интеграл той же скорости, что у модели
+  function streamTimes(s) {
+    const key = `${s.beta}|${s.arrive}|${s.tMag}`;
+    if (STREAM_MEMO.has(key)) return STREAM_MEMO.get(key);
+    const v = t => M.speedAt(t, s.beta, s.arrive, s.tMag), h = 0.002;
+    const left = y => { const n = Math.max(2, 2 * Math.ceil((s.arrive - y) / h / 2)), dt = (s.arrive - y) / n; let a = 0;
+      for (let i = 0; i <= n; i++) a += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) * v(y + i * dt); return a * dt / 3; };
+    const at = x => { let lo = s.arrive - 30, hi = s.arrive; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (left(m) > x) lo = m; else hi = m; } return (lo + hi) / 2; };
+    const T = { warn: at(STREAM_X.warn), core: at(STREAM_X.core), exit: at(STREAM_X.core - STREAM_X.thick) };
+    STREAM_MEMO.set(key, T); return T;
+  }
+  const streamWin = s => (streamTimes(s).core - streamTimes(s).warn) * 365.25;      // окно до ядра, сутки
+  const warnAt = s => s.riskVersion >= 5 && src(s) ? streamTimes(s).warn : s.arrive - 5;   // v5: вход в систему — точка предупреждения
+  const streamAt = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? s.streamImpact.out : s.arrive - 5;   // v5: выход из ядра после удара
+  const sosAtStream = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? Math.max(s.streamImpact.out, s.streamImpact.done ?? s.streamImpact.out) : s.arrive - 5;   // сигнал — после манёвра ухода
+  const days = (n, lang) => lang === 'ru' ? `${n} ${plural(n, ['сутки', 'суток', 'суток'])}` : `${n} day${n === 1 ? '' : 's'}`;
+  // сколько снимает пыль ядра за весь проход (кг/м²) — для подсказки о слабом месте; на свежей копии, без скрытых фактов
+  const coreLoss = s => { const T = streamTimes(s); return SH.erode(SH.create('dust20'), T.core, T.exit, y => M.speedAt(y, s.beta, s.arrive, s.tMag), STREAM_RHO.core).dSigma; };
+  const win = s => s.riskVersion >= 5 ? Math.round(streamWin(s)) : WINDOW;
+  // план прохода v5: когда начат и закончен манёвр ухода, когда удар зерна, сколько корабль в предвестнике и в ядре
+  function streamPlan(s) {
+    const T = streamTimes(s), wide = streamWide(s);
+    const start = s.streamRoute === 'evade' ? T.warn + (s.streamDays || 0) / 365.25 : null;
+    const done = start != null ? start + burnDays(s) / 365.25 : null;
+    const g = T.core + (hidden(s, 'shield.stream.hit.0.time') ?? 0.5) * (T.exit - T.core);
+    let coreEnd = null, hit = false;
+    if (wide && s.streamRoute && (done == null || done > T.core)) {                 // ядро на курсе и уйти до него не успели
+      if (done != null) { coreEnd = Math.min(done, T.exit); hit = g < coreEnd; }
+      else { hit = true; coreEnd = Math.min(T.exit, g + burnDays(s) / 365.25); } // после удара — уход из ядра
+    }
+    return Object.assign({}, T, { done, g, hit, coreEnd, preEnd: done != null ? Math.min(done, T.exit) : T.exit });
+  }
   const streamDv = s => dvPct(s, s.highPower ? DV.stream : DV.streamWeak);
   const canEvade = s => s.reserve >= streamDv(s);
-  const lateV1 = s => (s.streamDays || 0) + burnDays(s) > WINDOW;     // граница включительна: ровно 30 — вовремя
+  const lateV1 = s => (s.streamDays || 0) + burnDays(s) > (s.riskVersion >= 5 ? streamWin(s) : WINDOW);   // граница включительна: ровно 30 — вовремя
   const streamHitNow = s => streamWide(s) && (s.streamRoute === 'pass' || (s.streamRoute === 'evade' && lateV1(s)));
-  const windowLine1 = (s, lang) => { const ru = lang === 'ru', d = s.streamDays || 0, bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days'), over = d + burnDays(s) - WINDOW;
-    return ru ? `Окно — ${WINDOW} суток: прошло ${d}, манёвр — ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : ' Успеваем.')
-      : `Window: ${WINDOW} days — ${d} gone, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : ' In time.'); };
+  const windowLine1 = (s, lang) => { const ru = lang === 'ru', d = s.streamDays || 0, bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days'), W = s.riskVersion >= 5 ? streamWin(s) : WINDOW, over = d + burnDays(s) - W;
+    return ru ? `Окно — ${days(win(s), 'ru')}: прошло ${d}, манёвр — ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : ' Успеваем.')
+      : `Window: ${days(win(s), 'en')} — ${d} gone, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : ' In time.'); };
   // версия 1: проверка у потока даёт сведения; маршрут — отдельным решением (d.streamRoute)
   function streamCheckEffect(st, k) {
     st.streamCheck = k; st.streamDays = checkDays(st, k);
     st.streamFound = streamWide(st) && (hidden(st, 'contact.stream.check') ?? 1) < STREAM.sense[k];
   }
-  const streamFoundRecord = { ru: s => s.streamFound ? 'Ответ: крупных частиц больше расчётного — опасная полоса пересекает наш курс.' : 'Ответ: опасной полосы на нашем курсе не видно. Метод может её не захватить.',
-    en: s => s.streamFound ? 'The answer: more coarse particles than calculated — the dangerous band crosses our course.' : 'The answer: no dangerous band on our course. The method may not catch it.' };
+  // v5: ответ приходит в свой срок — в совете о маршруте; в записи выбора — только начало проверки
+  const streamFoundRecord = { ru: s => s.riskVersion >= 5 ? `Проверка начата: ответ — через ${days(s.streamDays, 'ru')}.` : s.streamFound ? 'Ответ: крупных частиц больше расчётного — опасная полоса пересекает наш курс.' : 'Ответ: опасной полосы на нашем курсе не видно. Метод может её не захватить.',
+    en: s => s.riskVersion >= 5 ? `The check has begun: the answer in ${days(s.streamDays, 'en')}.` : s.streamFound ? 'The answer: more coarse particles than calculated — the dangerous band crosses our course.' : 'The answer: no dangerous band on our course. The method may not catch it.' };
   const probeOK = s => probesLeft(s) || s.materials >= 5;              // зонд: готовый или из материалов
   const pctFrom = (p, lang) => lang === 'ru' ? { 0.9: 'в девяти случаях из десяти', 0.95: 'в девятнадцати случаях из двадцати', 0.8: 'в восьми случаях из десяти' }[p] : { 0.9: 'nine times in ten', 0.95: 'nineteen times in twenty', 0.8: 'eight times in ten' }[p];
   function streamOptions1(s) {
@@ -727,12 +1077,16 @@ There are no longer years of waiting between question and answer.`;
     else st.lostShip = true;
   }
   const windowLine = (s, k, lang) => {
-    const t = checkDays(s, k) + burnDays(s), over = t - WINDOW, ru = lang === 'ru', bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days');
-    return ru ? `Окно — ${WINDOW} суток: проверка ${checkDays(s, k)}, манёвр ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : '')
-      : `Window: ${WINDOW} days — check ${checkDays(s, k)}, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : '');
+    const t = checkDays(s, k) + burnDays(s), over = t - (s.riskVersion >= 5 ? streamWin(s) : WINDOW), ru = lang === 'ru', bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days');
+    return ru ? `Окно — ${days(win(s), 'ru')}: проверка ${checkDays(s, k)}, манёвр ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : '')
+      : `Window: ${days(win(s), 'en')} — check ${checkDays(s, k)}, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : '');
   };
   const riskLine = (s, lang) => { const ru = lang === 'ru', r = [];
-    if (breached(s)) r.push(ru ? 'сектор щита, пробитый у облака, держит меньше' : 'the shield sector breached at the cloud holds less');
+    if (s.riskVersion >= 5 && s.shield) {                              // v5: слабое место — по модели щита (ядро снимает ~10 кг/м²)
+      const cl = coreLoss(s), w = SH.observe(s.shield).damaged.filter(d => d.residual < cl).sort((a, b) => a.residual - b.residual)[0];
+      if (w) r.push(ru ? (w.residual <= 0 ? `в панели ${w.panel} открытая пробоина — пыль ядра пойдёт прямо в отсек` : `в панели ${w.panel} ${nf(w.residual, 1, 'ru')} кг/м², а ядро потока снимает до ${nf(cl, 1, 'ru')}`)
+        : (w.residual <= 0 ? `panel ${w.panel} has an open hole — the core dust goes straight into the compartment` : `panel ${w.panel} has ${nf(w.residual, 1, 'en')} kg/m², and the stream's core removes up to ${nf(cl, 1, 'en')}`));
+    } else if (breached(s)) r.push(ru ? 'сектор щита, пробитый у облака, держит меньше' : 'the shield sector breached at the cloud holds less');
     if (!s.highPower) r.push(ru ? 'без полного контура быстро уйти из потока нельзя' : 'without the full loop there is no quick way out of the stream');
     return r.length ? (ru ? 'Если поток ударит: ' : 'If the stream hits: ') + r.join('; ') + '.' : (ru ? 'Если поток ударит — щит цел, контур полный.' : 'If the stream hits — the shield is whole, the loop full.'); };                   // в комплекте два зонда: один остаётся всегда
   const bad = w => ['hostile', 'ruined', 'none'].includes(w);
@@ -1284,11 +1638,24 @@ All this time, "nominal" described the equipment's operating mode.`;
   function eqSummary(s, lang, ids) {
     const ru = lang === 'ru', eq = eqOf(s), help = [], miss = [], used = new Set(), had = id => ids.has(id), L = (r, e) => ru ? r : e;
     const rq = s.repairQual ? '' : L(` и ${DV.probe} км/с резерва манёвров`, ` and ${DV.probe} km/s of manoeuvre reserve`);
-    if (had('a1.edge.t1') && v1(s) && s.shieldWear > 0) {
+    if (s.riskVersion >= 5 && s.cloudHit) {                            // v5: исход полосы — из модели щита
+      const h = s.cloudHit;
+      if (!h.breached) { help.push(L(`Удвоенный щит выдержал удар крупного зерна у облака: на панели ${h.panel} выбоина, сквозного пробоя нет, ремонт не понадобился.`, `The doubled shield withstood the coarse grain at the cloud: a scar on panel ${h.panel}, no through-breach, no repair needed.`)); used.add('shield'); }
+      else {
+        miss.push(L(`Щит пробит крупным зерном у облака (панель ${h.panel}). Удвоенный слой выдержал бы этот удар; расчётная разница потерь — ${CLOUD.dead} человек.`, `The shield was breached by a coarse grain at the cloud (panel ${h.panel}). A doubled layer would have held this impact; the estimated loss difference is ${CLOUD.dead} people.`));
+        if (h.repair === 'replace') { help.push(L(`Запасная панель установлена ремонтниками с допуском: щит снова держит полный расчёт; крепёж — ${SHIELD_WORK.replace}% материалов.`, `Qualified repair hands fitted a spare panel: the shield holds its full rating again; fasteners took ${SHIELD_WORK.replace}% of materials.`)); used.add('shield'); }
+        else if (eq.shield === 'sectors' && !s.repairQual) miss.push(L('Запасную панель не поставили: нет допуска к работе под тягой.', 'No spare panel was fitted: no qualification for work under thrust.'));
+      }
+    } else if (had('a1.edge.t1') && v1(s) && s.shieldWear > 0) {
       if (eq.shield === 'dust40') { help.push(L(`Удвоенный щит выдержал полосу крупной пыли у облака: сквозного пробоя нет; на наружный слой ушло ${CLOUD.patch}% материалов.`, `The doubled shield withstood the cloud's coarse-dust band: no through-breach; the outer layer took ${CLOUD.patch}% of materials.`)); used.add('shield'); }
       else miss.push(L(`Щит пробит полосой крупной пыли. По зарегистрированному удару удвоенный слой выдержал бы нагрузку; расчётная разница потерь — ${CLOUD.dead} человек.`, `The shield was breached by the coarse-dust band. For the recorded impact a doubled layer would have held; the estimated loss difference is ${CLOUD.dead} people.`));
     }
-    if (had('a2.sector')) { help.push(L('Запасной сектор установлен ремонтниками с допуском: щит снова держит полный расчёт; крепёж — 3% материалов.', 'Qualified repair hands fitted the spare sector: the shield holds its full rating again; fasteners took 3% of materials.')); used.add('shield'); }
+    if (s.riskVersion >= 5) {                                          // v5: замена панели — решение у пробоя (облако — выше, поток — здесь)
+      const h = s.streamImpact;
+      if (h && h.repair === 'replace') { help.push(L(`После удара потока запасная панель ${h.panel} установлена ремонтниками с допуском; крепёж — ${SHIELD_WORK.replace}% материалов.`, `After the stream strike qualified repair hands fitted a spare panel ${h.panel}; fasteners took ${SHIELD_WORK.replace}% of materials.`)); used.add('shield'); }
+      else if (h && h.level != null && !s.lostShip && eq.shield === 'sectors' && !s.repairQual) miss.push(L('После удара потока запасную панель не поставили: нет допуска к работе под тягой.', 'After the stream strike no spare panel was fitted: no qualification for work under thrust.'));
+    }
+    else if (had('a2.sector')) { help.push(L('Запасной сектор установлен ремонтниками с допуском: щит снова держит полный расчёт; крепёж — 3% материалов.', 'Qualified repair hands fitted the spare sector: the shield holds its full rating again; fasteners took 3% of materials.')); used.add('shield'); }
     else if ((s.shieldBreach || had('a2.breach')) && eq.shield === 'sectors' && !s.repairQual) miss.push(L('Полный сектор не установлен: нет допуска к работе под тягой. Заплата не восстанавливает полный расчёт щита.', 'No full sector was fitted: no qualification for work under thrust. The patch does not restore the shield\'s full rating.'));
     if (s.scout > 0) {
       if (hasScouts(s)) { help.push(L(`Выпущен готовый разведчик: сохранены 10% материалов${rq}.`, `A ready scout was launched: 10% of materials saved${rq}.`)); used.add('probes'); }
@@ -1346,7 +1713,7 @@ All this time, "nominal" described the equipment's operating mode.`;
   const setWorld = w => { WORLD = Object.assign({ passTug: true }, w || {}); };
   // cargo: год сигнала — целый (сутки работ — в журнале)
   // год сигнала — целый (у склада — после консервации зала: прибытие округляется вверх)
-  const SOS_AT = { cargo: s => Y(s, 0.5), drift: s => loopV1(s) ? loopAt(s) : Y(s, 0.75) + 2, stream: s => s.arrive - 5, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
+  const SOS_AT = { cargo: s => Y(s, 0.5), drift: s => loopV1(s) ? loopAt(s) : Y(s, 0.75) + 2, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
   function incidentOf(s, cause) {
     const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, s.arrive)).total + s.dead + (s.rescueCrewDead || 0));
     return { id: `${s.target}|${sent}|${cause}`, cause, target: s.target, beta: s.beta, arrive: s.arrive, tMag: s.tMag, capRate: capsSafe(s) ? 1e-4 : 2e-4, sent, mission: s.mission,
@@ -1663,7 +2030,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
     return h >>> 0;
   }
-  const RISK = 4;                                                       // версия правил новых экспедиций: 1 — цена ошибки контакта, 2 — сюжет снабженца, 3 — сюжет спасателя, 4 — оснащение (Совет снабженцу без сети колонии; станки и печать удешевляют разделение платы)
+  const RISK = 5;                                                       // версия правил новых экспедиций: 1 — цена ошибки контакта, 2 — сюжет снабженца, 3 — сюжет спасателя, 4 — оснащение (Совет снабженцу без сети колонии; станки и печать удешевляют разделение платы); 5 — симулятор: время, щит, облако и поток на модели
   // публичное состояние — то, что знает экипаж: без сида скрытое недоступно (hidden → null). По нему строятся
   // тексты карточки, «Что известно», рекомендация Совета и «После»; исход — только эффектом на полном состоянии.
   const publicOf = s => { const p = JSON.parse(JSON.stringify(s)); p.riskSeed = null; return p; };
@@ -2399,13 +2766,13 @@ The trays have names on them.`
       when: s => M.episode(s) === 'cloud',
       title: { ru: 'Научная модель · навигационный прогноз', en: 'Science model · navigation forecast' },
       text: {
-        ru: s => `Скорость ${fb(s.beta / 2, 'ru')}. На курсе — газово-пылевое облако класса D2, край пересекается через 7 месяцев.
+        ru: s => `Скорость ${fb(s.beta / 2, 'ru')}. На курсе — газово-пылевое облако класса D2, край пересекается через ${s.riskVersion >= 5 ? edgeMonths(s, 'ru') : '7 месяцев'}.
 Обнаружено на подлёте: линии поглощения в спектрах звёзд за ним, счётчики щита выше фона. С Земли не наблюдалось — слишком мало и темно.
 Проход без коррекции: безопасен. Уверенность 94% — при условии, что модель верна и набор гипотез полон.
 Модель проверена для облаков D1–D3 плотностью до 40 частиц/см³.
 Ресурс фронтального щита: ~150 лет дрейфа.` + (v1(s) ? `
 Не установлено: наибольший размер частиц у края. За фронтальным щитом в этом секторе — жилые отсеки кольца: крупная частица, пробив щит, убьёт людей.` : ''),
-        en: s => `Velocity ${fb(s.beta / 2, 'en')}. A class D2 gas-and-dust cloud on course; edge crossing in 7 months.
+        en: s => `Velocity ${fb(s.beta / 2, 'en')}. A class D2 gas-and-dust cloud on course; edge crossing in ${s.riskVersion >= 5 ? edgeMonths(s, 'en') : '7 months'}.
 Detected on approach: absorption lines in the spectra of stars behind it, shield counters above background. Not observed from Earth — too small and too dark.
 Passage without correction: safe. Confidence 94% — given the model is correct and the hypothesis set complete.
 Model validated for D1–D3 clouds up to 40 particles/cm³.
@@ -2486,7 +2853,8 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
       id: 'd.cloudCheck', scene: 'cloud', overlay: 'trajectory', kind: 'decision', year: 4,
       when: s => M.episode(s) === 'cloud' && v1(s),
       title: { ru: 'Проверить край облака?', en: "Check the cloud's edge?" },
-      context: { ru: 'До края — семь месяцев: время на проверку есть.', en: 'Seven months to the edge: there is time for a check.' },
+      context: { ru: s => s.riskVersion >= 5 ? `До края — ${edgeMonths(s, 'ru')}: время на проверку есть.` : 'До края — семь месяцев: время на проверку есть.',
+        en: s => s.riskVersion >= 5 ? `${edgeMonths(s, 'en')} to the edge: there is time for a check.` : 'Seven months to the edge: there is time for a check.' },
       rec: s => ({ id: 'measure', why: { ru: 'проверка дешевле ошибки', en: 'a check costs less than a mistake' } }),
       options: s => [{
         id: 'measure',
@@ -2904,9 +3272,9 @@ He puts it on record. The trays with names go to storage.`
 Teya accepts the work without a word. That evening the trays with names move into the new module.`
       }
     },
-    { id: 's.edge', kind: 'skip', when: s => M.episode(s) === 'cloud', toYear: 4.6, label: { ru: 'Промотать до края облака', en: "Skip ahead to the cloud's edge" } },
+    { id: 's.edge', kind: 'skip', when: s => M.episode(s) === 'cloud', toYear: edgeAt, label: { ru: 'Промотать до края облака', en: "Skip ahead to the cloud's edge" } },
     {
-      id: 'a1.edge.m', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: 4.6,
+      id: 'a1.edge.m', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
       when: s => s.choices['d.cloud'] === 'manoeuvre',
       title: { ru: 'Навигационный журнал', en: 'Navigation log' },
       text: {
@@ -2921,7 +3289,7 @@ Side-view spectrograph: the edge is denser than the model forecast; by how much 
       }
     },
     {
-      id: 'a1.edge.t', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: 4.6,
+      id: 'a1.edge.t', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
       when: s => s.choices['d.cloud'] === 'trust' && !v1(s),
       title: { ru: 'Журнал фронтального щита', en: 'Forward shield log' },
       text: {
@@ -2936,15 +3304,15 @@ Manoeuvre reserve: 100.0% of rated.`
       }
     },
     {
-      id: 'a1.edge.t1', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: 4.6,
+      id: 'a1.edge.t1', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
       when: s => s.choices['d.cloud'] === 'trust' && v1(s),
-      effect: s => { if (!cloudBand(s)) return;
+      effect: s => { if (s.riskVersion >= 5 || !cloudBand(s)) return;          // v5: проход и удар считает модель щита
         s.shieldWear += 1.5; s.materials -= CLOUD.patch;
         if (eqOf(s).shield !== 'dust40') { s.shieldBreach = true; s.dead += CLOUD.dead; s.cloudDead = CLOUD.dead;
           incident(s, 'cloud', CLOUD.dead, { check: s.cloudCheck, found: s.cloudFound, year: 4.6 }); } },
       title: { ru: 'Журнал фронтального щита', en: 'Forward shield log' },
       text: {
-        ru: s => !s.shieldWear ? `Проход края облака: три недели.
+        ru: s => s.riskVersion >= 5 ? edgeLogV5(s, 'ru') : !s.shieldWear ? `Проход края облака: три недели.
 Удары пыли — в пределах прогноза модели. Износ щита — в норме.
 Резерв манёвров: 100,0% паспортного.`
           : !s.shieldBreach ? `Проход края облака: три недели. На второй неделе — полоса крупной пыли: удары в сорок раз выше прогноза.
@@ -2953,7 +3321,7 @@ Manoeuvre reserve: 100.0% of rated.`
           : `Проход края облака: три недели. На второй неделе — полоса крупной пыли.
 Частица массой в несколько миллиграммов пробивает сектор фронтального щита; за ним — жилой отсек кольца. Разгерметизация.
 Погибли ${ppl(s.cloudDead)} смены. Отсек перекрыт; заплата — из материалов для высадки, −${CLOUD.patch}%.`,
-        en: s => !s.shieldWear ? `Passage through the cloud's edge: three weeks.
+        en: s => s.riskVersion >= 5 ? edgeLogV5(s, 'en') : !s.shieldWear ? `Passage through the cloud's edge: three weeks.
 Dust impacts within the model forecast. Shield wear normal.
 Manoeuvre reserve: 100.0% of rated.`
           : !s.shieldBreach ? `Passage through the cloud's edge: three weeks. In the second week, a band of coarse dust: impacts forty times the forecast.
@@ -2965,20 +3333,20 @@ ${s.cloudDead} of the shift are dead. The compartment is sealed; patch from the 
       }
     },
     {
-      id: 'a1.orin.t1', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: 4.6,
+      id: 'a1.orin.t1', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: edgeAt,
       when: s => s.choices['d.cloud'] === 'trust' && v1(s),
       author: { ru: 'Орин Дал', en: 'Orin Dal' },
       text: {
-        ru: s => !s.shieldWear ? (s.cloudCheck === 'measured' ? 'Проверка и модель сошлись: край чистый. Записываю расчёт и результат рядом.' : 'Модель была права: край чистый. Проверку мы не делали — значит, нам повезло, а не мы угадали. Записываю и это.')
-          : !s.shieldBreach ? 'Полоса была. Удвоенный щит её выдержал — за него на Земле спорили дольше, чем за любой другой узел. Записываю расчёт, проверку и результат рядом.'
+        ru: s => !bandHit(s) ? (s.cloudCheck === 'measured' ? 'Проверка и модель сошлись: край чистый. Записываю расчёт и результат рядом.' : 'Модель была права: край чистый. Проверку мы не делали — значит, нам повезло, а не мы угадали. Записываю и это.')
+          : !bandBreach(s) ? 'Полоса была. Удвоенный щит её выдержал — за него на Земле спорили дольше, чем за любой другой узел. Записываю расчёт, проверку и результат рядом.'
           : (s.cloudFound ? 'Проверка нашла полосу — и совет всё равно пошёл через край.' : s.cloudCheck === 'measured' ? 'Проверка не увидела полосу: одну из десяти метод пропускает — и это была она.' : 'Мы не проверяли край.') + ` ${s.cloudDead === 8 ? 'Восемь человек' : ppl(s.cloudDead)}. Записываю в протокол наблюдение, допущение и решение — рядом с их именами. Своё несогласие я внёс как данные; этого оказалось мало.`,
-        en: s => !s.shieldWear ? (s.cloudCheck === 'measured' ? 'The check and the model agreed: the edge was clean. I am writing the calculation and the result side by side.' : 'The model was right: the edge was clean. We did not check — so we were lucky, not right. I am writing that down too.')
-          : !s.shieldBreach ? 'There was a band. The doubled shield held it — on Earth they argued over it longer than over any other part. I am writing the calculation, the check and the result side by side.'
+        en: s => !bandHit(s) ? (s.cloudCheck === 'measured' ? 'The check and the model agreed: the edge was clean. I am writing the calculation and the result side by side.' : 'The model was right: the edge was clean. We did not check — so we were lucky, not right. I am writing that down too.')
+          : !bandBreach(s) ? 'There was a band. The doubled shield held it — on Earth they argued over it longer than over any other part. I am writing the calculation, the check and the result side by side.'
           : (s.cloudFound ? 'The check found the band — and the council went through the edge anyway.' : s.cloudCheck === 'measured' ? 'The check did not see the band: the method misses one in ten — and this was the one.' : 'We did not check the edge.') + ` ${s.cloudDead} people. I am entering the observation, the assumption and the decision in the minutes — next to their names. I entered my dissent as data; it was not enough.`
       }
     },
     {
-      id: 'a1.orin.t', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: 4.6,
+      id: 'a1.orin.t', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: edgeAt,
       when: s => s.choices['d.cloud'] === 'trust' && !s.measured && !v1(s),
       author: { ru: 'Орин Дал', en: 'Orin Dal' },
       text: {
@@ -3035,7 +3403,7 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
 Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.
 Цель: ${nm(s, 'ru')} · прибытие около года ${s.arrive}.` +
           (s.materials !== 100 ? `\nМатериалы для высадки: ${s.materials}% запаса.` : '') + (s.turned ? `\nКурс изменён на году ${s.turned}: к ε Индейца.` : '') +
-          (s.shieldWear > 0 ? `\nФронтальный щит: износ сверх нормы — ${pct(s.shieldWear, 'ru')} года из ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : ''),
+          (s.riskVersion >= 5 && s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : s.shieldWear > 0 ? `\nФронтальный щит: износ сверх нормы — ${pct(s.shieldWear, 'ru')} года из ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : ''),
         en: s => `Acceleration-stage thrust cut. Velocity ${fb(s.beta, 'en')}.
 Acceleration stage separated. For the last ${stageOff(s).days} days thrust was angled 10°: the stage drifts off sideways at ${kms(stageOff(s).dv)} km/s. The core cancelled its own sideways velocity — manoeuvre reserve −${pct(stageOff(s).reservePct, 'en')}%.
 The stage will pass ${nm(s, 'en')} a thousand AU aside around year ${Math.round(M.ACC + stageYears(s))}, ${yrsEn(s.arrive - M.ACC - stageYears(s))} ahead of us, and fly on. On a straight line it would have caught the core on the first day of braking and entered the target system at ${fb(s.beta, 'en')}: ${M.STAGE_DRY} kt — ${f1(M.stageMt(s.beta), 'en')} million megatons.
@@ -3043,7 +3411,7 @@ Plasma magnet: switch-on in year ${Math.round(brake(s))}.
 Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.
 Target: ${nm(s, 'en')} · arrival around year ${s.arrive}.` +
           (s.materials !== 100 ? `\nLanding materials: ${s.materials}% of stock.` : '') + (s.turned ? `\nCourse changed in year ${s.turned}: for ε Indi.` : '') +
-          (s.shieldWear > 0 ? `\nForward shield: wear beyond norm — ${pct(s.shieldWear, 'en')} years of ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : '')
+          (s.riskVersion >= 5 && s.shield ? `\nForward shield: ${shieldGaugeV5(s, 'en')}.` : s.shieldWear > 0 ? `\nForward shield: wear beyond norm — ${pct(s.shieldWear, 'en')} years of ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : '')
       }
     },
     {
@@ -3196,7 +3564,7 @@ Repair: a patch from landing materials, −5% of stock. No casualties.`
     },
     {
       id: 'a2.sector', scene: 'drift', kind: 'instrument', year: s => Y(s, 0.25),
-      when: s => (v1(s) ? s.shieldBreach : s.shieldWear > shieldAllow(s)) && eqOf(s).shield === 'sectors' && s.repairQual,
+      when: s => s.riskVersion < 5 && (v1(s) ? s.shieldBreach : s.shieldWear > shieldAllow(s)) && eqOf(s).shield === 'sectors' && s.repairQual,
       effect: s => { s.shieldFixed = true; s.materials -= 3; },
       title: { ru: 'Инженерный журнал · замена сектора', en: 'Engineering log · sector replacement' },
       text: {
@@ -3920,23 +4288,23 @@ The radiation keeps counting: in the sleepers, cancers will show years later, at
       }
     },
 
-    { id: 's.e2', kind: 'skip', toYear: s => s.arrive - 5, when: s => !supplyS(s),
+    { id: 's.e2', kind: 'skip', toYear: warnAt, when: s => !supplyS(s),
       label: { ru: s => `Промотать до года ${s.arrive - 5} · вход в систему`, en: s => `Skip ahead to year ${s.arrive - 5} · entering the system` } },
     // ---- у источника сигнала: Тёмная звезда
     {
-      id: 'a3.dark', scene: 'dark', kind: 'instrument', year: s => s.arrive - 5, when: src,
+      id: 'a3.dark', scene: 'dark', kind: 'instrument', year: warnAt, when: src,
       title: { ru: 'Навигационный журнал · вход в систему', en: 'Navigation log · entering the system' },
       text: {
-        ru: s => `Скорость ${fb(vAt(s, s.arrive - 5), 'ru')}. Вход в систему ${nmG(s)}.
+        ru: s => `Скорость ${fb(vAt(s, warnAt(s)), 'ru')}. Вход в систему ${nmG(s)}.
 Тёмная звезда: пара коричневых карликов классов T1 и T6 в полутора тысячах а.е. от главной звезды. В видимом свете их почти нет, в инфракрасном они ярки; вахта ведёт их ${hasIR(s) ? `с года ${Y(s, 0.87)} — инфракрасной обсерваторией из паспорта` : 'последние три года'}. Источник сигнала — у них.
 Неизвестно: поток пыли, который пара собирает из слабого пояса обломков — с Земли его не видно.`,
-        en: s => `Velocity ${fb(vAt(s, s.arrive - 5), 'en')}. Entering the ${nm(s, 'en')} system.
+        en: s => `Velocity ${fb(vAt(s, warnAt(s)), 'en')}. Entering the ${nm(s, 'en')} system.
 The Dark Star: a pair of brown dwarfs, classes T1 and T6, fifteen hundred AU from the main star. In visible light they are almost absent; in infrared they are bright. The watch has tracked them ${hasIR(s) ? `since year ${Y(s, 0.87)} — with the infrared observatory from the passport` : 'for the last three years'}. The signal source is beside them.
 Unknown: the dust stream the pair gathers from a faint debris belt — too faint to see from Earth.`
       }
     },
     {
-      id: 'a3.error', scene: 'dark', kind: 'transcript', year: s => s.arrive - 5, when: src,
+      id: 'a3.error', scene: 'dark', kind: 'transcript', year: warnAt, when: src,
       title: { ru: 'Ошибка вахты', en: 'The watch error' },
       text: {
         ru: `На вахте — Дан Осгер и двое инженеров; до конца смены два дня. Счётчики ударов на фронтальном щите медленно растут. Дан давно не интерпретатор: он записывает рост как скачок плотности среды — по инструкции Орина, ниже её порога.
@@ -3952,17 +4320,17 @@ One of the engineers demands the error be put down to Dan. Selina opens the inst
       }
     },
     {
-      id: 'a3.check', scene: 'dark', kind: 'transcript', year: s => s.arrive - 5, when: src,
+      id: 'a3.check', scene: 'dark', kind: 'transcript', year: warnAt, when: src,
       title: { ru: 'Совет смены · поток', en: 'Watch council · the stream' },
       text: {
-        ru: s => (v1(s) ? 'Окно для манёвра — тридцать суток; прежняя задержка вахты уже учтена. Измерение может и не захватить опасную полосу.\n\n' : '') + `Научная модель оценивает проход по краю потока как безопасный — 91%, при условии, что модель верна и набор гипотез полон. Селина поднимает архивный отчёт другой экспедиции Кольца: там верно определили природу похожего объекта и ошиблись в плотности потока вокруг. Спектр рассеянного света с такого расстояния не различает, мелкая там пыль или крупная.
+        ru: s => (v1(s) ? `Окно для манёвра — ${s.riskVersion >= 5 ? days(win(s), 'ru') : 'тридцать суток'}; прежняя задержка вахты уже учтена. Измерение может и не захватить опасную полосу.\n\n` : '') + `Научная модель оценивает проход по краю потока как безопасный — 91%, при условии, что модель верна и набор гипотез полон. Селина поднимает архивный отчёт другой экспедиции Кольца: там верно определили природу похожего объекта и ошиблись в плотности потока вокруг. Спектр рассеянного света с такого расстояния не различает, мелкая там пыль или крупная.
 
 — Разбудить Кору, — говорит Селина. — Она увидит неоднозначность раньше нас.
 
 Врач называет цену: у Коры один полный цикл. Пробуждение будет последним, три недели до работоспособности.
 
 — Не надо будить, — говорит Тамир. — Нужна не догадка, а измерение. ${probesLeft(s) ? (eqOf(s).probes === 'inspect' ? 'Инспекционный зонд ещё в трюме' : 'Второй зонд из комплекта ещё в трюме') : 'Малый зонд с прямыми детекторами частиц соберём из материалов'}.`,
-        en: s => (v1(s) ? "The manoeuvre window is thirty days; the watch's earlier delay is already counted. A measurement may not catch the dangerous band.\n\n" : '') + `The science model rates passage along the stream's edge as safe — 91%, given the model is correct and the hypothesis set complete. Selina pulls an archived report from another Ring expedition: they identified the nature of a similar object correctly and got the density of the stream around it wrong. From this range the spectrum of scattered light cannot tell fine dust from coarse.
+        en: s => (v1(s) ? `The manoeuvre window is ${s.riskVersion >= 5 ? days(win(s), 'en') : 'thirty days'}; the watch's earlier delay is already counted. A measurement may not catch the dangerous band.\n\n` : '') + `The science model rates passage along the stream's edge as safe — 91%, given the model is correct and the hypothesis set complete. Selina pulls an archived report from another Ring expedition: they identified the nature of a similar object correctly and got the density of the stream around it wrong. From this range the spectrum of scattered light cannot tell fine dust from coarse.
 
 "Wake Kora," says Selina. "She'll see the ambiguity sooner than we will."
 
@@ -3972,7 +4340,7 @@ The physician names the price: Kora has one full cycle left. This waking will be
       }
     },
     {
-      id: 'd.stream', scene: 'dark', kind: 'decision', year: s => s.arrive - 5, when: src,
+      id: 'd.stream', scene: 'dark', kind: 'decision', year: warnAt, when: src,
       title: { ru: 'Поток у Тёмной звезды', en: 'The stream at the Dark Star' },
       context: {
         ru: 'Через несколько дней поток будет ближе. Решение не отложить.',
@@ -4035,13 +4403,16 @@ The physician names the price: Kora has one full cycle left. This waking will be
       }])
     },
     {
-      id: 'd.streamRoute', scene: 'dark', kind: 'decision', year: s => s.arrive - 5, when: s => src(s) && v1(s) && !!s.streamCheck && !s.streamRoute,
+      id: 'd.streamRoute', scene: 'dark', kind: 'decision', when: s => src(s) && v1(s) && !!s.streamCheck && !s.streamRoute,
+      year: s => s.riskVersion >= 5 ? Math.min(streamTimes(s).warn + (s.streamDays || 0) / 365.25, streamTimes(s).core) : s.arrive - 5,   // v5: решение — когда проверка закончена
       title: { ru: 'Уходить из потока?', en: 'Leave the stream?' },
       context: {
         ru: s => `${s.streamFound ? 'Опасная полоса пересекает курс.' : 'Опасной полосы на курсе не видно — метод видит её не всегда.'} ${windowLine1(s, 'ru')}`,
         en: s => `${s.streamFound ? 'The dangerous band crosses our course.' : 'No dangerous band on our course — the method does not always see it.'} ${windowLine1(s, 'en')}`
       },
-      rec: s => s.streamFound ? (canEvade(s) && !lateV1(s) ? { id: 'evade', why: { ru: 'полоса на курсе, уйти успеваем', en: 'the band is on our course and we are in time' } } : { id: 'pass', why: { ru: 'уйти уже не успеваем: удар будет тем же, резерв сбережём', en: 'we can no longer leave in time: the strike will be the same, so the reserve is kept' } })
+      rec: s => s.streamFound ? (canEvade(s) && !lateV1(s) ? { id: 'evade', why: { ru: 'полоса на курсе, уйти успеваем', en: 'the band is on our course and we are in time' } }
+        : canEvade(s) && s.riskVersion >= 5 && streamTimes(s).warn + ((s.streamDays || 0) + burnDays(s)) / 365.25 < streamTimes(s).exit ? { id: 'evade', why: { ru: 'до ядра не успеваем, но манёвр сократит время в нём', en: 'we cannot clear the core in time, but the manoeuvre shortens the time inside it' } }
+        : { id: 'pass', why: { ru: 'уйти уже не успеваем: удар будет тем же, резерв сбережём', en: 'we can no longer leave in time: the strike will be the same, so the reserve is kept' } })
         : { id: 'pass', why: { ru: 'полосы на курсе не видно', en: 'no band seen on our course' }, assume: { ru: 'опасная полоса не пересекает курс', en: 'the dangerous band does not cross our course' } },
       options: s => (canEvade(s) ? [{
         id: 'evade', label: { ru: 'Уходить', en: 'Leave' },
@@ -4063,23 +4434,25 @@ The physician names the price: Kora has one full cycle left. This waking will be
       }])
     },
     {
-      id: 'a3.hit1', scene: 'dark', kind: 'instrument', year: s => s.arrive - 5, when: s => src(s) && v1(s) && streamHitNow(s),
-      effect: s => { const lv = hitLevel(s); s.streamHit = lv; s.streamCause = breached(s) ? 'shield' : 'power';   // причина — до пробоя у кромки
+      id: 'a3.hit1', scene: 'dark', kind: 'instrument', year: s => s.riskVersion >= 5 ? streamPlan(s).coreEnd : s.arrive - 5,
+      when: s => src(s) && v1(s) && (s.riskVersion >= 5 ? streamPlan(s).hit : streamHitNow(s)),
+      effect: s => { if (s.riskVersion >= 5) return;                     // v5: удар и последствия считает модель щита
+        const lv = hitLevel(s); s.streamHit = lv; s.streamCause = breached(s) ? 'shield' : 'power';   // причина — до пробоя у кромки
         if (lv >= 3) { incident(s, 'stream', 0, { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, lost: true, aboard: aliveOf(s), year: s.arrive - 5 }); s.lostShip = true; return; }
         s.dead += STREAM.dead[lv]; s.materials -= STREAM.mat[lv]; s.streamDead = STREAM.dead[lv]; s.shieldBreach = true; s.shieldFixed = false;
         incident(s, 'stream', STREAM.dead[lv], { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, year: s.arrive - 5 }); },
       title: { ru: 'Журнал вахты · удар потока', en: 'Watch log · the stream hits' },
       text: {
-        ru: s => (s.streamRoute === 'evade' ? 'Манёвр опоздал: корабль ещё в потоке. ' : 'Корабль идёт по краю потока — и полоса крупных частиц на курсе. ') + (s.lostShip ? '' : s.streamHit === 1
+        ru: s => s.riskVersion >= 5 ? streamLogV5(s, 'ru') : (s.streamRoute === 'evade' ? 'Манёвр опоздал: корабль ещё в потоке. ' : 'Корабль идёт по краю потока — и полоса крупных частиц на курсе. ') + (s.lostShip ? '' : s.streamHit === 1
           ? `Щит пробит у кромки: в носовом отсеке гибнут ${ppl(s.streamDead)}. Заплата — из материалов для высадки, −${STREAM.mat[1]}%.`
           : (s.streamCause === 'shield' ? `Сектор щита, пробитый ещё у облака, не держит: удар проходит в зал анабиоза. Погибли ${ppl(s.streamDead)}; −${STREAM.mat[2]}% материалов.` : `Без резерва мощности слабые коррекции тянутся сутками: поток успевает пройти по корпусу. Погибли ${ppl(s.streamDead)}; −${STREAM.mat[2]}% материалов.`)),
-        en: s => (s.streamRoute === 'evade' ? 'The manoeuvre came too late: the ship is still in the stream. ' : 'The ship runs along the edge of the stream — and the band of coarse particles is on its course. ') + (s.lostShip ? '' : s.streamHit === 1
+        en: s => s.riskVersion >= 5 ? streamLogV5(s, 'en') : (s.streamRoute === 'evade' ? 'The manoeuvre came too late: the ship is still in the stream. ' : 'The ship runs along the edge of the stream — and the band of coarse particles is on its course. ') + (s.lostShip ? '' : s.streamHit === 1
           ? `The shield is breached at the rim: ${s.streamDead} die in the forward compartment. The patch comes from the landing materials, −${STREAM.mat[1]}%.`
           : (s.streamCause === 'shield' ? `The shield sector breached back at the cloud does not hold: the strike reaches the anabiosis hall. ${s.streamDead} are dead; −${STREAM.mat[2]}% materials.` : `Without the high-power reserve the weak corrections drag on for days: the stream has time to sweep the hull. ${s.streamDead} are dead; −${STREAM.mat[2]}% materials.`))
       }
     },
     {
-      id: 'x.lost', scene: 'dark', kind: 'end', year: s => s.arrive - 5, when: s => s.lostShip,
+      id: 'x.lost', scene: 'dark', kind: 'end', year: streamAt, when: s => s.lostShip,
       title: { ru: 'Последняя передача', en: 'The last transmission' },
       text: {
         ru: s => `Поток прошёл сквозь сектор щита, пробитый ещё у облака. За ним — магистрали зала анабиоза. Манёвра, который увёл бы корабль за шесть часов, не было: теплообменники отдали группе Б, а слабые коррекции заняли бы дни.
@@ -4111,7 +4484,7 @@ The expedition is over. The next one — to another target — will receive the 
       }
     },
     {
-      id: 'a3.burn', scene: 'dark', kind: 'instrument', year: s => s.arrive - 5, when: s => src(s) && (!v1(s) || s.streamRoute === 'evade'),
+      id: 'a3.burn', scene: 'dark', kind: 'instrument', year: s => s.riskVersion >= 5 && s.streamRoute === 'evade' ? streamPlan(s).done : s.arrive - 5, when: s => src(s) && (!v1(s) || s.streamRoute === 'evade'),
       effect: s => { if (!v1(s)) s.reserve -= dvPct(s, s.highPower ? DV.stream : DV.streamWeak); },
       title: { ru: 'Инженерный журнал · манёвр', en: 'Engineering log · manoeuvre' },
       text: {
@@ -5598,6 +5971,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     drift: { view: 'drift', fallback: 'assets/drift.jpg', label: { ru: 'Дрейф', en: 'Drift' }, side: 'right' },
     sail: { view: 'sail', fallback: 'assets/drift.jpg', label: { ru: 'Торможение · плазменный магнит', en: 'Braking · plasma magnet' }, side: 'right' },
     dark: { view: 'dark', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда', en: 'The Dark Star' }, side: 'right' },
+    shield: { view: 'shield', fallback: 'assets/drift.jpg', label: { ru: 'Фронтальный щит · осмотр', en: 'Forward shield · inspection' }, side: 'right' },
     flip: { view: 'flip', fallback: 'assets/drift.jpg', label: { ru: 'Торможение', en: 'Braking' }, side: 'right' },
     relic: { view: 'relic', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда · находка', en: 'The Dark Star · the find' }, side: 'right' },
     arrival: { view: 'arrival', fallback: 'assets/drift.jpg', label: { ru: 'Прибытие', en: 'Arrival' }, side: 'right' },
@@ -6100,7 +6474,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, people, mission: M, missionCheck, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

@@ -111,6 +111,11 @@
     M.gold = new THREE.MeshStandardMaterial({ color: 0xd8ad5c, roughness: 0.25, metalness: 0.95 });
     radMat = new THREE.MeshStandardMaterial({ color: 0x0b0b0d, roughness: 0.8, metalness: 0.1, emissive: 0x5a1406, emissiveIntensity: 0.35 });
     M.rad = radMat;
+    // панели щита (шаг 6): тот же цвет; заменённая — светлее; выбранная — с подсветкой; слои пакета — оттенки серого
+    M.panel = M.shield.clone(); M.panel.side = THREE.DoubleSide;
+    M.panelNew = M.panel.clone(); M.panelNew.color.set(0xdcdcd6);
+    M.panelSel = M.panel.clone(); M.panelSel.color.set(0xd9a24a); M.panelSel.emissive.set(0x2a1704);
+    M.layers = [0x8d8a84, 0x5f6266, 0x9aa3a8].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, side: THREE.DoubleSide }));
   }
   function add(parent, geo, mat, fn) { const m = new THREE.Mesh(geo, mat); if (fn) fn(m); parent.add(m); return m; }
   function cylX(p, x0, x1, r, mat, y = 0, z = 0, seg = 40) {
@@ -215,7 +220,7 @@
   function buildShip() {
     ship = new THREE.Group();
     // ядро: щит, кольца, анабиоз, трюм, посадочные аппараты, катушка магнитного паруса
-    coneX(ship, -28, 0, 172, 18, M.shield);
+    buildShield();
     cylX(ship, -20, -350, 20, M.hull);
     [-95, -165].forEach((x, k) => {
       const g = new THREE.Group(); g.position.x = x;
@@ -273,6 +278,158 @@
     ship.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), U);
     shipQTo.copy(ship.quaternion); shipQBase.copy(ship.quaternion); rotQ.to.copy(ship.quaternion);
     shipScene.add(ship);
+  }
+
+  // ---------------------------------------------------------------- щит: 64 панели и нос H0 (осмотр, шаг 6)
+  // Та же поверхность, что у прежнего конуса (x = −28 у кромки r = 172, x = 0 у носа r = 18); радиусы модели щита
+  // (shield.js: 18/60/105/142/175) ложатся на неё как r3 = 18 + (r − 18)·154/157 — нос остаётся 18 м. Швы — зазор 0,8 м
+  // над тёмной подложкой. Сектор k — центр 2πk/16 по часовой, если смотреть спереди (локальная +y — верх):
+  // (y, z) = (r·cos θ, −r·sin θ). Отметки повреждений — условные: размер и место (центр панели) не масштабные.
+  const SHG = { R3: r => 18 + (r - 18) * 154 / 157, X: r3 => -28 * (r3 - 18) / 154, K: 28 / 154, GAP: 0.4, SLIDE: 6 };
+  const shieldUI = { g: null, panels: {}, marks: [], pack: null, packFor: null, slides: {}, key: '', on: false, k: 0, lamp: null, focus: null, focusT: null, roll: null };
+  const panelNormal = th => new THREE.Vector3(1, SHG.K * Math.cos(th), -SHG.K * Math.sin(th)).normalize();
+  function panelGeo(r0, r1, k) {
+    const a0 = 2 * Math.PI * (k - 0.5) / 16, a1 = 2 * Math.PI * (k + 0.5) / 16, NR = 3, NT = 8, pos = [], idx = [];
+    const R0 = SHG.R3(r0) + SHG.GAP, R1 = SHG.R3(r1) - SHG.GAP;
+    for (let i = 0; i <= NR; i++) {
+      const r = R0 + (R1 - R0) * i / NR, d = SHG.GAP / r;
+      for (let j = 0; j <= NT; j++) { const th = a0 + d + (a1 - a0 - 2 * d) * j / NT; pos.push(SHG.X(r), r * Math.cos(th), -r * Math.sin(th)); }
+    }
+    for (let i = 0; i < NR; i++) for (let j = 0; j < NT; j++) { const a = i * (NT + 1) + j, b = a + NT + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  function buildShield() {
+    const g = new THREE.Group(); shieldUI.g = g; ship.add(g);
+    const SHP = window.M31Shield ? M31Shield.PANELS : [];
+    if (!SHP.length) { coneX(g, -28, 0, 172, 18, M.shield); return; }             // без модели щита — прежний конус
+    coneX(g, -29.2, -1.2, 172, 18, M.truss);                                       // подложка: швы между панелями — тёмные
+    for (const p of SHP) {
+      let geo, c, n;
+      if (!p.belt) { geo = new THREE.CircleGeometry(18 - SHG.GAP, 48); geo.rotateY(Math.PI / 2); c = new THREE.Vector3(0, 0, 0); n = new THREE.Vector3(1, 0, 0); }
+      else {
+        const th = 2 * Math.PI * p.az / 16, rc = SHG.R3((p.r0 + p.r1) / 2);
+        geo = panelGeo(p.r0, p.r1, p.az); c = new THREE.Vector3(SHG.X(rc), rc * Math.cos(th), -rc * Math.sin(th)); n = panelNormal(th);
+      }
+      const m = add(g, geo, M.panel); m.userData = { panel: p.id, c, n }; shieldUI.panels[p.id] = m;
+    }
+  }
+  // отметки по наблюдаемому состоянию (world.shield — publicView модели; только правила v5): пятно и контур в центре панели
+  const MARK = { scarred: [0x3a3a3a, 0xd6b45a], breached: [0x050505, 0xff6a1a], patched: [0xe8e2d0, 0x8fc8ff] };
+  const Z1 = new THREE.Vector3(0, 0, 1), qInvTmp = new THREE.Quaternion();
+  function updateShieldMarks() {
+    const V = world.shield, key = V ? V.panels.map(p => p.state).join(',') + '|' + (world.shieldSel || '') : '';
+    if (key === shieldUI.key) return; shieldUI.key = key;
+    for (const o of shieldUI.marks) { o.parent.remove(o); o.geometry.dispose(); o.material.dispose(); }
+    shieldUI.marks = [];
+    for (const [id, m] of Object.entries(shieldUI.panels)) m.material = id === world.shieldSel && V ? M.panelSel : M.panel;
+    if (!V) return;
+    for (const p of V.panels) {
+      const m = shieldUI.panels[p.id]; if (!m) continue;
+      if (p.state === 'new' && p.id !== world.shieldSel) m.material = M.panelNew;
+      const col = MARK[p.state]; if (!col) continue;
+      const { c, n } = m.userData, q = new THREE.Quaternion().setFromUnitVectors(Z1, n), at = c.clone().addScaledVector(n, 0.6);
+      const spot = new THREE.Mesh(new THREE.CircleGeometry(3, 24), new THREE.MeshBasicMaterial({ color: col[0], side: THREE.DoubleSide }));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(3.2, 4.1, 32), new THREE.MeshBasicMaterial({ color: col[1], side: THREE.DoubleSide }));
+      for (const o of [spot, ring]) { o.position.copy(at); o.quaternion.copy(q); o.userData.panel = p.id; m.add(o); shieldUI.marks.push(o); }
+    }
+  }
+  // выбранная панель выдвигается на 6 м по нормали за 0,6 с; за ней — условный пакет из трёх слоёв
+  function stepShield(dt) {
+    if (!shieldUI.g || !Object.keys(shieldUI.panels).length) return;
+    updateShieldMarks();
+    // раскладка панелей повёрнута вокруг оси щита так, чтобы сектор 00 был вверху кадра (верх — E3), как на схеме;
+    // щит осесимметричен — меняется только нумерация. После разворота кормой вперёд раскладка поворачивается с кораблём
+    const lu = E3.clone().applyQuaternion(qInvTmp.copy(ship.quaternion).invert());
+    if (Math.hypot(lu.y, lu.z) > 1e-6) {
+      const want = Math.atan2(lu.z, lu.y);
+      shieldUI.roll = shieldUI.roll == null ? want : shieldUI.roll + wrapPi(want - shieldUI.roll) * (1 - Math.exp(-dt * 2));
+      shieldUI.g.rotation.x = shieldUI.roll;
+    }
+    // осмотр включается и гаснет плавно: прожектор с камеры (у Тёмной звезды света почти нет) и сдвиг кадра
+    const on = shieldUI.on && cam.focus === 'ship' ? 1 : 0;
+    shieldUI.k += (on - shieldUI.k) * (1 - Math.exp(-dt * 2));
+    if (!shieldUI.lamp) { shieldUI.lamp = new THREE.DirectionalLight(0xfff1dc, 0); shipScene.add(shieldUI.lamp, shieldUI.lamp.target); }
+    shieldUI.lamp.intensity = 2.1 * shieldUI.k; shieldUI.lamp.visible = shieldUI.k > 0.01;
+    if (shieldUI.lamp.visible) { shieldUI.lamp.position.copy(shipCam.position); shieldUI.g.getWorldPosition(shieldUI.lamp.target.position); }
+    if (shieldUI.focusT) {                                                    // точка сдвига кадра — плавно (смена раскладки, размер окна)
+      if (!shieldUI.focus || shieldUI.k < 0.01) shieldUI.focus = Object.assign({}, shieldUI.focusT);
+      else { const kk = 1 - Math.exp(-dt * 3); shieldUI.focus.x += (shieldUI.focusT.x - shieldUI.focus.x) * kk; shieldUI.focus.y += (shieldUI.focusT.y - shieldUI.focus.y) * kk; }
+    }
+    const sel = shieldUI.on && world.shield ? world.shieldSel : null;
+    if (sel && !(sel in shieldUI.slides)) shieldUI.slides[sel] = 0;
+    for (const id of Object.keys(shieldUI.slides)) {
+      const m = shieldUI.panels[id]; if (!m) { delete shieldUI.slides[id]; continue; }
+      const want = id === sel ? 1 : 0, v = shieldUI.slides[id] = Math.max(0, Math.min(1, shieldUI.slides[id] + Math.sign(want - shieldUI.slides[id]) * dt / 0.6));
+      const e = v * v * (3 - 2 * v);
+      m.position.copy(m.userData.n).multiplyScalar(SHG.SLIDE * e);
+      if (id === shieldUI.packFor && shieldUI.pack) shieldUI.pack.children.forEach((l, k) => l.position.copy(m.userData.n).multiplyScalar(SHG.SLIDE * e * (k + 1) / 4));
+      if (!want && v === 0) delete shieldUI.slides[id];
+    }
+    if (sel !== shieldUI.packFor) {                                                 // пакет слоёв — за выбранной панелью
+      if (shieldUI.pack) { shieldUI.g.remove(shieldUI.pack); shieldUI.pack = null; }
+      shieldUI.packFor = sel;
+      if (sel && shieldUI.panels[sel]) { const P = new THREE.Group(); M.layers.forEach(mt => P.add(new THREE.Mesh(shieldUI.panels[sel].geometry, mt))); shieldUI.pack = P; shieldUI.g.add(P); }
+    }
+    if (shieldUI.pack) shieldUI.pack.visible = (shieldUI.slides[shieldUI.packFor] || 0) > 0.02;
+  }
+  // ракурс осмотра: по фактической нормали щита (после разворота кормой вперёд щит смотрит назад)
+  function shieldAngles() {
+    const a = frameAngles(new THREE.Vector3(1, 0, 0).applyQuaternion(ship.quaternion));
+    return { yaw: a.yaw + 0.35, pitch: Math.max(-1.45, Math.min(1.45, a.pitch + 0.22)) };
+  }
+
+  // ---------------------------------------------------------------- пыль вокруг корабля: стоит он или летит
+  // Условность, не масштаб: на 0,01–0,1c настоящие пылинки пролетают тысячи километров за кадр. Частицы — в кубе вокруг
+  // точки взгляда (сторона — три дистанции камеры: плотность в кадре не зависит от приближения), неподвижном в осях
+  // курса; летят против курса и вытягиваются в штрихи по скорости: стоит — их нет, малый ход — короткие чёрточки,
+  // крейсерская — длинные линии. У граней куба частица гаснет, поэтому переход через грань не виден.
+  const STREAK_N = 500;
+  const streaks = { mesh: null, f: null, a: 0, S: 0 };
+  function buildStreaks() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STREAK_N * 6), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(STREAK_N * 6), 3));
+    const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.frustumCulled = false; m.visible = false; shipScene.add(m);
+    const r = mulberry(4141);
+    streaks.f = Float32Array.from({ length: STREAK_N * 3 }, () => r());     // положения — доли куба по осям U, E2, E3
+    streaks.mesh = m;
+  }
+  const camOff = new THREE.Vector3(), glareDirS = new THREE.Vector3(), glareDirT = new THREE.Vector3();
+  function stepStreaks(dt, look, camPos, dS) {
+    if (!streaks.mesh) return;
+    const beta = Math.max(0, MI && world.arrive ? MI.speedAt(world.year, world.beta || 0.1, world.arrive, world.tMag)
+      : MI ? MI.speedAt(world.year, world.beta || 0.1, 0, world.tMag) : 0);
+    // видимость: стоит — 0; появляется с первых сотен км/с, плавно (без скачка при смене скорости промоткой)
+    // с удалением камеры (50–500 км) пыль гаснет: дальние ракурсы (пузырь магнита, карта) — без неё, без обрыва на пороге
+    const fz = Math.min(1, Math.max(0, Math.log(dS / 5e4) / Math.log(10))), farK = 1 - fz * fz * (3 - 2 * fz);
+    const want = world.wreck ? 0 : Math.min(1, Math.sqrt(beta / 0.003)) * (1 - 0.6 * shieldUI.k) * farK;
+    streaks.a += (want - streaks.a) * (1 - Math.exp(-dt * 1.5));
+    streaks.mesh.visible = streaks.a > 0.004;
+    if (!streaks.mesh.visible) return;
+    const q = Math.min(1.2, beta / 0.1), sq = Math.sqrt(q);
+    const S = streaks.S = streaks.S ? streaks.S + (3 * dS - streaks.S) * (1 - Math.exp(-dt * 3)) : 3 * dS;
+    const flow = (0.05 + 0.3 * sq) * dt;                                    // доля куба за кадр: на крейсерской — куб за ~3 с
+    const L = S * (0.006 + 0.11 * sq);                                      // длина штриха
+    const pos = streaks.mesh.geometry.attributes.position.array, col = streaks.mesh.geometry.attributes.color.array, f = streaks.f;
+    const near = 0.08 * S, far = 0.55 * S;
+    for (let i = 0; i < STREAK_N; i++) {
+      let u = f[3 * i] - flow; u -= Math.floor(u); f[3 * i] = u;          // против курса, с переносом через грань
+      const v = f[3 * i + 1], w = f[3 * i + 2];
+      const x = look.x + (u - 0.5) * S * U.x + (v - 0.5) * S * E2.x + (w - 0.5) * S * E3.x;
+      const y = look.y + (u - 0.5) * S * U.y + (v - 0.5) * S * E2.y + (w - 0.5) * S * E3.y;
+      const z = look.z + (u - 0.5) * S * U.z + (v - 0.5) * S * E2.z + (w - 0.5) * S * E3.z;
+      // гаснет у граней куба и у самой камеры
+      const edge = 16 * u * (1 - u) * v * (1 - v) * Math.min(1, 4 * w * (1 - w) * 1.4);
+      const d = Math.hypot(x - camPos.x, y - camPos.y, z - camPos.z), fade = Math.min(1, Math.max(0, (d - near) / near)) * Math.max(0, 1 - d / far / 1.6);
+      const k = Math.max(0, Math.min(1, edge)) * fade * streaks.a, j = 6 * i;
+      pos[j] = x; pos[j + 1] = y; pos[j + 2] = z;                            // голова — по ходу пыли (назад по курсу)
+      pos[j + 3] = x + U.x * L; pos[j + 4] = y + U.y * L; pos[j + 5] = z + U.z * L;   // хвост — туда, откуда она летит
+      col[j] = 0.42 * k; col[j + 1] = 0.49 * k; col[j + 2] = 0.58 * k;
+      col[j + 3] = 0; col[j + 4] = 0; col[j + 5] = 0;
+    }
+    streaks.mesh.geometry.attributes.position.needsUpdate = true; streaks.mesh.geometry.attributes.color.needsUpdate = true;
   }
 
   // ---------------------------------------------------------------- груз по паспорту (болванки)
@@ -1329,20 +1486,34 @@
       const v = new THREE.Vector3(gauss(r) * 700, gauss(r) * 450, gauss(r) * 350).add(GC), w = 0.4 + r() * 0.2;
       add(S, v, [1.0 * w, 0.86 * w, 0.66 * w], 1.2 + r() * 1.2);
     }
-    // звёзды рукавов и межрукавья
-    for (let i = 0; i < 95000; i++) {
-      const R = R0 + Math.pow(r(), 0.85) * 46000, h = gauss(r) * (260 + R * 0.005);
-      const tp = taper(R);
+    // звёзды рукавов и межрукавья. Радиус — по экспоненциальному диску (шкала DISC_L): плотность спадает к краю плавно,
+    // без обрыва на одном радиусе (раньше — равномерно до 46 тыс. св. лет, край читался резким кругом); точек вдвое
+    // меньше — зерно уходит, яркость диска держит мягкое свечение ниже
+    // поверхностная плотность ∝ exp(−R/L) → радиус точки распределён как R·exp(−R/L): R = −L·ln(u₁u₂) (ревью Codex:
+    // простое exp(−R/L) стягивало почти половину точек к балджу)
+    const DISC_L = 10000, DISC_MAX = 66000;
+    const discR = () => { for (;;) { const R = -DISC_L * Math.log((1 - r()) * (1 - r())); if (R >= R0 && R < DISC_MAX) return R; } };
+    // яркость к краю дополнительно тает; у ядра звёзды диска приглушены — иначе там, где диск плотнее всего, балдж выгорает
+    const edge = R => { const t = Math.min(1, Math.max(0, (R - R0) / 9000)); return Math.exp(-Math.max(0, R - R0 - 34000) / 10000) * (0.5 + 0.5 * t * t * (3 - 2 * t)); };
+    for (let i = 0; i < 48000; i++) {
+      const R = discR(), h = gauss(r) * (260 + R * 0.005);
+      const tp = taper(R), fe = edge(R);
       if (r() < 0.7 * (0.15 + 0.85 * tp)) {
         const arm = pickArm(), width = (900 + R * 0.025) * (arm.w > 0.5 ? 1 : 0.7) * (0.22 + 0.78 * tp);
         const v = armPoint(arm, R, gauss(r) * width, h);
-        const b = arm.w * (0.75 + r() * 0.25) * (0.45 + 0.55 * tp);
-        add(S, v, [0.72 * b + 0.15, 0.8 * b + 0.12, 1.0 * b], 0.9 + r() * 1.3 * arm.w);
+        const b = arm.w * (0.75 + r() * 0.25) * (0.45 + 0.55 * tp) * fe;
+        add(S, v, [0.72 * b + 0.15 * fe, 0.8 * b + 0.12 * fe, 1.0 * b], 1.0 + r() * 1.4 * arm.w);
       } else {
-        const th = r() * Math.PI * 2;
+        const th = r() * Math.PI * 2, w = 0.5 * fe;
         const v = new THREE.Vector3(GC.x + R * Math.cos(th), GC.y + R * Math.sin(th), h);
-        add(S, v, [0.55, 0.53, 0.5], 0.7 + r() * 0.5);
+        add(S, v, [1.1 * w, 1.06 * w, w], 0.8 + r() * 0.5);
       }
+    }
+    // мягкое свечение диска: крупные тусклые пятна по тому же экспоненциальному профилю — заполняют межзвёздную
+    // «сетку» точек и растворяют край
+    for (let i = 0; i < 1800; i++) {
+      const R = discR(), th = r() * Math.PI * 2, fe = edge(R), b = 0.035 * fe;
+      add(G, new THREE.Vector3(GC.x + R * Math.cos(th), GC.y + R * Math.sin(th), gauss(r) * 400), [0.62 * b, 0.66 * b, 0.8 * b], 30 + r() * 40);
     }
     // отрог Ориона: короткая перемычка между рукавами, на которой лежит Солнце
     for (let i = 0; i < 5000; i++) {
@@ -1529,7 +1700,8 @@
     dark: { focus: 'ship', dist: 2600, yaw: 0.75, pitch: 0.2, pivot: -700 },
     relic: { focus: 'ship', dist: 3600, yaw: 1.2, pitch: 0.3, pivot: -900 },
     arrival: { focus: 'ship', dist: 2600, yaw: 2.5, pitch: 0.16, pivot: -900, fit: 'arrival' },
-    home: { focus: 'ship', dist: 3200, yaw: 2.5, pitch: 0.16, pivot: -900, fit: 'home' }
+    home: { focus: 'ship', dist: 3200, yaw: 2.5, pitch: 0.16, pivot: -900, fit: 'home' },
+    shield: { focus: 'ship', dist: 950, yaw: 0.35, pitch: 0.22, pivot: -14, aim: 'shield' }   // осмотр щита: углы — от нормали щита
   };
   // направление камеры пресета в осях курса — к нему привязаны планета и находка, чтобы они стояли в кадре за кораблём
   const presetDir = (name) => { const p = PRESETS[name], cp = Math.cos(p.pitch);
@@ -1820,6 +1992,8 @@
     const to = { F: focusPoint(p.focus), dist, yaw: p.yaw, pitch: p.pitch, pivot: p.pivot };
     if (p.fit === 'arrival' || p.fit === 'home') Object.assign(to, arrivalLook(p.fit));
     if (name === 'distress') { const f = distressFrame(); to.yaw = f.yaw; to.pitch = f.pitch; }
+    shieldUI.on = p.aim === 'shield';                                     // осмотр — только в ракурсе щита
+    if (p.aim === 'shield') { Object.assign(to, shieldAngles()); to.aim = 'shield'; }
     if (name === 'target' && tsysAx && targetInfo.star === EIND.name) Object.assign(to, frameAngles(tsysAx.n.clone().multiplyScalar(0.8).addScaledVector(tsysAx.p1, 0.6).normalize()));
     cam.fit = p.fit === 'arrival' || p.fit === 'home' ? p.fit : null;
     if (instant) { Object.assign(cam, to, { F: to.F }); tween = null; return; }
@@ -1849,8 +2023,9 @@
   const wrapPi = x => { while (x > Math.PI) x -= 2 * Math.PI; while (x < -Math.PI) x += 2 * Math.PI; return x; };
   function stepTween(now) {
     if (!tween) { if (cam.focus === 'ship') cam.F.copy(shipPos()); return; }
-    const k = ease(Math.min(1, (now - tween.t0) / tween.dur)), a = tween.from, b = tween.to;
+    const k = ease(Math.max(0, Math.min(1, (now - tween.t0) / tween.dur))), a = tween.from, b = tween.to;   // кадр мог начаться чуть раньше перелёта
     if (tween.fit) { const f = arrivalLook(tween.fit); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; tween.upTo = arrivalAxes().up; }   // звезда движется — ракурс вслед
+    if (b.aim === 'shield') { const f = shieldAngles(); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; }   // корабль поворачивается — ракурс вслед
     if (cam.focus === 'ship') b.F = shipPos();
     if (cam.focus === 'ship' && a.focus === 'ship') {
       // с корабля на корабль фокус не отстаёт: корабль может двигаться во время промотки
@@ -1883,6 +2058,14 @@
 
   let dragging = false, lastInput = 0;
   function pick(e) {
+    // панель щита: луч по кораблю, первым должен попасться щит (не корпус и не прозрачные факел и ореолы)
+    if (api.onPartPick && world.shield && cam.focus === 'ship' && cam.dist < 2e4 && shieldUI.g) {
+      const r0 = renderer.domElement.getBoundingClientRect();
+      rayc.setFromCamera(new THREE.Vector2((e.clientX - r0.left) / r0.width * 2 - 1, -((e.clientY - r0.top) / r0.height) * 2 + 1), shipCam);
+      rayc.near = 0; rayc.far = Infinity; rayc.camera = shipCam;
+      const hit = rayc.intersectObject(ship, true).find(h => h.object.visible && h.object.isMesh && !(h.object.material && h.object.material.transparent));
+      if (hit && hit.object.userData.panel) { api.onPartPick({ part: 'shield', panel: hit.object.userData.panel }); return; }
+    }
     if (!api.onPick || cam.dist < 0.5 * LY) return;
     const r = renderer.domElement.getBoundingClientRect(), v = new THREE.Vector3();
     // звёзды сектора и подписанные ловятся с большего расстояния, чем фоновые
@@ -1899,9 +2082,11 @@
   }
   function bindInput(el) {
     let drag = null;
-    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }; dragging = true; lastInput = performance.now(); tween = null; cam.fit = null; el.classList.add('dragging'); });
+    // перелёт обрывает только настоящее перетаскивание (сдвиг больше 4 пикселей), а не клик — клик выбирает панель щита
+    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, live: false }; lastInput = performance.now(); el.classList.add('dragging'); });
     el.addEventListener('pointermove', e => {
       if (!drag) return;
+      if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 4) return; drag.live = true; dragging = true; tween = null; cam.fit = null; if (down) down.dragged = true; }
       cam.yaw -= (e.clientX - drag.x) * 0.006;
       cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + (e.clientY - drag.y) * 0.006));
       drag = { x: e.clientX, y: e.clientY };
@@ -1910,7 +2095,7 @@
     el.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
     const up = e => {
       drag = null; dragging = false; lastInput = performance.now(); el.classList.remove('dragging');
-      if (e && e.type === 'pointerup' && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && performance.now() - down.t < 500) pick(e);
+      if (e && e.type === 'pointerup' && down && !down.dragged && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && performance.now() - down.t < 500) pick(e);
       down = null;
     };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
@@ -1989,6 +2174,16 @@
         out.push(`<span class="l3 cargo" style="left:${((v.x + 1) / 2 * w2).toFixed(1)}px;top:${((1 - v.y) / 2 * h2).toFixed(1)}px">${TXT[lang].kits[k]}</span>`);
       }
     }
+    if (shieldUI.on && world.shield && cam.focus === 'ship' && cam.dist < 4000) {
+      const w2 = container.clientWidth, h2 = container.clientHeight, PS = { scarred: '•', patched: '▣', breached: '✕', new: '◇' };
+      for (const p of world.shield.panels) {
+        if (p.state === 'ok' && p.id !== world.shieldSel) continue;
+        const m = shieldUI.panels[p.id]; if (!m) continue;
+        const v = m.userData.c.clone().addScaledVector(m.userData.n, 2).applyMatrix4(m.matrixWorld).project(shipCam);
+        if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) continue;
+        out.push(`<span class="l3 spn st-${p.state}${p.id === world.shieldSel ? ' sel' : ''}" style="left:${((v.x + 1) / 2 * w2).toFixed(1)}px;top:${((1 - v.y) / 2 * h2).toFixed(1)}px">${PS[p.state] ? PS[p.state] + ' ' : ''}${p.id}</span>`);
+      }
+    }
     const html = out.join('');
     if (html !== labelsHtml) { labelsHtml = html; labelsEl.innerHTML = html; }
     const sc = document.getElementById('spaceScale');
@@ -2050,7 +2245,7 @@
     shipQWant.copy(shipQBase); if (lastLeg) shipQWant.multiply(QFLIP);
     const busy = pm.a > 0.08 || (engines[0] && engines[0].a > 0.05 && !lastLeg);
     if (!busy || !shown) shipQTo.copy(shipQWant);
-    stepRotation(dt);
+    stepRotation(dt); stepShield(dt);
     stepWreck(dt);
     stepLaunches(dt);
     world.finalBurn = !world.wreck && lastLeg && world.year < A - 0.02 && ship.quaternion.angleTo(shipQWant) < 0.035;   // довернулся — меньше 2°
@@ -2110,6 +2305,8 @@
     if (!tween && cam.fit && !dragging) {                     // держим звезду и планету в кадре
       const f = arrivalLook(cam.fit), kk = 1 - Math.exp(-dt * 0.8);
       cam.yaw += wrapPi(f.yaw - cam.yaw) * kk; cam.pitch += (f.pitch - cam.pitch) * kk;
+    } else if (!tween && !dragging && shieldUI.on) {         // осмотр щита: без дрейфа; корабль повернулся — ракурс за щитом
+      if (now - lastInput > 2500) { const f = shieldAngles(), kk = 1 - Math.exp(-dt * 0.8); cam.yaw += wrapPi(f.yaw - cam.yaw) * kk; cam.pitch += (f.pitch - cam.pitch) * kk; }
     } else if (!tween && !dragging && now - lastInput > 2500) cam.yaw += (cam.focus === 'free' ? 0.012 : 0.0045) * dt;
     starsGroup.position.copy(cam.F).multiplyScalar(-1);
     const sp = shipPos();
@@ -2135,9 +2332,21 @@
 
     renderer.clear(); shown = true;
     renderer.render(starScene, starCam);
-    if (cam.focus === 'ship' && cam.dist < 2e11) {
+    // Корабль рисуется, пока он может быть в кадре, а не только при фокусе на нём: перелёт с корабля на маршрут или карту
+    // уводит камеру плавно — корабль уменьшается и сменяется далёким огоньком (marker), а не пропадает в первом кадре.
+    // Камера корабля стоит там же, где звёздная: смещение фокуса от корабля (cam.F − shipPos) — в метрах; при фокусе на
+    // корабле оно нулевое, и ракурс прежний. Дальность dS — до корабля (плоскости отсечения, блики, пыль).
+    if (shipM < 2e11) {
+      const dS = cam.focus === 'ship' ? cam.dist : Math.max(1, shipM);
       const pivot = camPivot(dt);
-      shipCam.position.copy(dir).multiplyScalar(cam.dist).add(pivot);
+      if (shieldUI.k > 0.001 && shieldUI.focus) {                 // осмотр щита: центр щита — в свободной части кадра (точку даёт интерфейс)
+        const w = container.clientWidth || 1, h = container.clientHeight || 1, fwd = dir.clone().negate();
+        const R = new THREE.Vector3().crossVectors(fwd, upVec()).normalize(), Up = new THREE.Vector3().crossVectors(R, fwd);
+        const m = 2 * dS * Math.tan(shipCam.fov * Math.PI / 360) / h;          // метров на пиксель у точки взгляда
+        const dx = shieldUI.focus.x - (w / 2 - viewShift), dy = h / 2 - shieldUI.focus.y;
+        pivot.addScaledVector(R, -dx * m * shieldUI.k).addScaledVector(Up, -dy * m * shieldUI.k);
+      }
+      shipCam.position.copy(dir).multiplyScalar(cam.dist).add(pivot).add(camOff.copy(cam.F).sub(shipPos()).multiplyScalar(LY));
       earthTilt.position.copy(helio(EARTH_PL, world.year)).sub(shipPos()).multiplyScalar(LY);
       const earthD = earthTilt.position.length();
       earthTilt.visible = earthD < 5e13; earthSpin.rotation.y += dt * 0.004;
@@ -2146,7 +2355,7 @@
       const near = Math.min(1, (4.2e7 / earthD) ** 2);
       rim.intensity = 0.35 * near; rim.position.copy(earthTilt.position).normalize();
       // блик Солнца: у Земли — слепящий, дальше — звезда среди звёзд
-      const glareA = band(cam.dist, 0, 0, 2e10, 1.5e11);
+      const glareA = band(dS, 0, 0, 2e10, 1.5e11);
       // Ореол звезды — мягкий порог (soft knee), как у bloom: при экспоненциальном профиле I(r) = L·e^(−r/r0) видимый
       // радиус там, где яркость выше порога, R = r0·ln(L/T); у порога рост сглажен коленом K. Порог — тот же, на котором
       // гаснут блики (LUX_OFF): у оптики один порог. R нормирован на Солнце у Земли и ограничен вблизи звезды
@@ -2159,11 +2368,15 @@
         g.scale.set(GLOW_MAX * R, GLOW_MAX * R, 1); st.scale.set(1.8 * GLOW_MAX * R, 0.12 * GLOW_MAX * R, 1);
         fadeObj(g, glareA * w, 0.6); fadeObj(st, glareA * w, 0.45);         // та же адаптация, что у бликов: блики всегда ярче ореола
       };
-      flare(glare, streak, SUN, lux.sun);
+      // направления бликов — от камеры (вне фокуса на корабле она смещена от него); освещение корабля — прежнее, от корабля
+      const sunC = cam.focus === 'ship' ? SUN : glareDirS.copy(camLy).negate().normalize();
+      const tgtC = cam.focus === 'ship' ? lux.dirT : glareDirT.copy(T).sub(camLy).normalize();
+      flare(glare, streak, sunC, lux.sun);
       tglare.material.color.set(starColor(targetInfo.sp)); tstreak.material.color.copy(tglare.material.color);
-      flare(tglare, tstreak, lux.dirT, lux.tgt);
-      shipCam.up.copy(upVec()); shipCam.near = Math.max(1, cam.dist * 1e-3); shipCam.far = Math.max(cam.dist * 10 + 2e4, earthTilt.visible ? cam.dist + earthD + 1e7 : 0, arrival.planetD ? cam.dist + arrival.planetD + 1e7 : 0, 2e9);
-      shipCam.lookAt(pivot); shipCam.updateProjectionMatrix();
+      flare(tglare, tstreak, tgtC, lux.tgt);
+      shipCam.up.copy(upVec()); shipCam.near = Math.max(1, dS * 1e-3); shipCam.far = Math.max(dS * 10 + 2e4, earthTilt.visible ? dS + earthD + 1e7 : 0, arrival.planetD ? dS + arrival.planetD + 1e7 : 0, 2e9);
+      shipCam.lookAt(camOff.copy(shipCam.position).sub(dir)); shipCam.updateProjectionMatrix();   // взгляд — по направлению камеры
+      stepStreaks(dt, pivot, shipCam.position, dS);
       renderer.clearDepth();
       renderer.render(shipScene, shipCam);
       // блики: звёзды (Солнце, цель), горящий двигатель
@@ -2177,13 +2390,13 @@
         const v = shipCam.position.clone().addScaledVector(dirv, 1e9).project(shipCam); if (v.z > 1) return;
         src.push({ ndc: v, k: 0.9 * k, color, size: 1, occluded: () => occludedShip(shipCam.position, dirv, 1e12) });
       };
-      starSrc(SUN, lux.sun, 0xfff0d8);
-      starSrc(lux.dirT, lux.tgt, starColor(targetInfo.sp));
+      starSrc(sunC, lux.sun, 0xfff0d8);
+      starSrc(tgtC, lux.tgt, starColor(targetInfo.sp));
       for (const e of engines) {
         if (e.a < 0.03) continue;
         const wp = e.core.getWorldPosition(new THREE.Vector3()), v = wp.clone().project(shipCam); if (v.z > 1) continue;
         const toE = wp.clone().sub(shipCam.position), dE = toE.length(); toE.normalize();
-        const far = band(cam.dist, 0, 0, 3e4, 3e7);                           // вдали — меньше и тусклее
+        const far = band(dS, 0, 0, 3e4, 3e7);                                // вдали — меньше и тусклее
         src.push({ ndc: v, k: 0.75 * e.a * (0.35 + 0.65 * far), color: 0x7fb6ff, size: 0.45 + 0.55 * far, ghosts: 0.8,
           occluded: () => occludedShip(shipCam.position, toE, dE - e.r * 1.6) });
       }
@@ -2232,7 +2445,7 @@
     starScene = new THREE.Scene(); shipScene = new THREE.Scene();
     starCam = new THREE.PerspectiveCamera(45, 1, 1e-9, 1e4);
     shipCam = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
-    mats(); buildStars(); buildGalaxy(); buildShip(); buildCargo(); buildEarth(); buildSolar();
+    mats(); buildStars(); buildGalaxy(); buildShip(); buildCargo(); buildEarth(); buildSolar(); buildStreaks();
     starScene.traverse(o => { if (o.material) o.material.toneMapped = false; });
     E0.copy(helio(EARTH_PL, 0));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2269,7 +2482,7 @@
   api.debugJump = function (view) { go(view, true); };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
   // отладка: где центр масс в кадре (−1…1) и как идёт поворот корпуса — проверка «поворот вокруг центра масс»
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
-  api.debugTick = function (ms) { let t = last; const end = t + ms; while (t < end) { t += 16; frame(t, true); } };   // отладка: прокрутить кадры
+  api.debugTick = function (ms) { let t = Math.max(last, performance.now()); const end = t + ms; while (t < end) { t += 16; frame(t, true); } };   // отладка: прокрутить кадры
   // Кадры заявочного плана: точка фокуса в св. годах, дистанция, ракурс, эффекты
   let shotRing = 0;
   api.shot = function (p) {
@@ -2325,5 +2538,7 @@
     if ('legacy' in rest) { const k = JSON.stringify(rest.legacy || null); if (k !== legacyKey) { legacyKey = k; legacyDirty = true; } }
     Object.assign(world, rest); if (target) setTarget(target);
   };
+  // осмотр щита: где на экране (px в контейнере) держать центр щита, чтобы его не закрывали карточки; null — по центру
+  api.setShieldFocus = function (p) { if (p && isFinite(p.x) && isFinite(p.y)) shieldUI.focusT = { x: p.x, y: p.y }; };   // null — прежняя точка: сдвиг гаснет вместе с осмотром
   api.setLang = function (l) { if (l === lang) return; lang = l; if (barEl) buildBar(); };
 })();

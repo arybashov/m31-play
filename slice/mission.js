@@ -95,6 +95,46 @@
     return STOP * Math.max(0, arrive - y) / ENGINE;
   }
 
+  // ---------------------------------------------------------------- единый профиль полёта (правила v5, симулятор)
+  // Спецификация «Симулятор v1 — время и щит», шаг 2: точное время прибытия (без округления года), положение — интеграл
+  // той же скорости, что идёт в модель износа. Скорость кусочно-линейна: разгон 0 → β за ACC, дрейф β, магнит β → STOP
+  // за tMag (tMag == null — прежнее торможение до нуля за DEC), двигатель ядра STOP → 0 за ENGINE. Время — годы от старта
+  // (в модели — целые секунды: toSec/toYears); путь — св. годы.
+  function flightProfile(d, beta, tMag) {
+    // путь короче разгона и торможения — дрейф был бы отрицательным (ревью Codex): такой профиль не строится
+    if (d < beta * ACC / 2 + brakeDist(beta, tMag)) throw new RangeError(`путь ${d} св. лет короче разгона и торможения на ${beta}c`);
+    const arrive = trip(d, beta, tMag), brake = tMag == null ? [[DEC, beta, 0]] : [[tMag, beta, STOP], [ENGINE, STOP, 0]];
+    const legs = [{ t0: 0, t1: ACC, b0: 0, b1: beta, kind: 'accel' }];
+    let t = ACC; const t0 = arrive - brake.reduce((a, l) => a + l[0], 0);
+    legs.push({ t0: t, t1: t0, b0: beta, b1: beta, kind: 'drift' }); t = t0;
+    brake.forEach(([len, b0, b1], i) => { legs.push({ t0: t, t1: t + len, b0, b1, kind: tMag == null ? 'brake' : i ? 'engine' : 'magnet' }); t += len; });
+    let x = 0;
+    for (const l of legs) { l.x0 = x; x += (l.b0 + l.b1) / 2 * (l.t1 - l.t0); l.x1 = x; }
+    legs[legs.length - 1].x1 = d;                       // конец пути — ровно цель: у нулевой скорости ошибка суммы 1e-15 св. лет — это десятки секунд
+    return { d, beta, tMag, arrive, legs };
+  }
+  // положение, скорость и участок на год t (за пределами профиля — края)
+  function sampleFlight(pf, t) {
+    const l = pf.legs.find(g => t <= g.t1) || pf.legs[pf.legs.length - 1], tau = Math.min(Math.max(t, l.t0), l.t1) - l.t0;
+    const a = (l.b1 - l.b0) / (l.t1 - l.t0 || 1);
+    return { x: l.x0 + l.b0 * tau + a * tau * tau / 2, beta: l.b0 + a * tau, kind: l.kind };
+  }
+  // год, когда корабль будет на расстоянии x св. лет от Солнца (обратная к sampleFlight; на краях — точные края).
+  // Численно устойчиво (ревью Codex): разгон — от начала участка, τ = 2·dx / (b0 + √(b0² + 2a·dx)); торможение — от
+  // конца, по оставшемуся пути r: σ = 2r / (b1 + √(b1² − 2a·r)) — без вычитания близких чисел у нулевой скорости.
+  function timeAtDistance(pf, x) {
+    const last = pf.legs[pf.legs.length - 1];
+    if (x <= 0) return 0;
+    if (x >= last.x1) return pf.arrive;
+    const l = pf.legs.find(g => x <= g.x1);
+    if (x === l.x1) return l.t1;
+    const a = (l.b1 - l.b0) / (l.t1 - l.t0);
+    if (a === 0) return l.t0 + (x - l.x0) / l.b0;
+    if (a > 0) { const dx = x - l.x0; return l.t0 + 2 * dx / (l.b0 + Math.sqrt(l.b0 * l.b0 + 2 * a * dx)); }
+    const r = l.x1 - x; return l.t1 - 2 * r / (l.b1 + Math.sqrt(l.b1 * l.b1 - 2 * a * r));
+  }
+  const toSec = years => Math.round(years * YEAR_S), toYears = sec => sec / YEAR_S;
+
   // ---------------------------------------------------------------- ступень разгона после отделения
   // Сухая ступень (48,6 тыс. т) летит дальше с крейсерской скоростью. По прямой она догнала бы ядро
   // в первые сутки торможения и вошла бы в систему цели на 0,1c. Поэтому её уводят вбок:
@@ -371,7 +411,8 @@
     planets, turn, episode, worldOf, hasGiant, badWorld, isRedDwarf, losses, COLONIES, colonyAt, colony, MISSIONS, TRACES, ROAD, knownAtStart, objectsAtStar,
     RESCUERS, WORK, CASCADE, WATCH_TAIL, incidentPos, localColony, rescuers, survivors, lightYears,
     kitsFor, crewOf, LEGACY_KITS, ENGINE, MAG_F, brakeMass, magYears, stdMag, brakeStart, brakeDist, actIII,
-    EQUIP, SWAPS, EQ_BASE, EQ_MISSION, eqDefault, eqOpt, eqMass, eqSwaps, eqCode, eqParse, eqLegacy };
+    EQUIP, SWAPS, EQ_BASE, EQ_MISSION, eqDefault, eqOpt, eqMass, eqSwaps, eqCode, eqParse, eqLegacy,
+    YEAR_S, C_MS, flightProfile, sampleFlight, timeAtDistance, toSec, toYears };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Mission = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
