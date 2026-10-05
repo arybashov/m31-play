@@ -620,6 +620,35 @@
     if (window.M31Space && M31Space.ok) { clearTimeout(viewTimer); camView = 'manual:shield'; camAt = performance.now(); M31Space.show('shield'); }
     shown.hud = null; syncScene();
   }
+  // ---------------------------------------------------------------- важное — крупно, по центру кадра
+  // Итог экспедиции у концовки (держится, пока не закрыт: клик или Esc) и новое происшествие этого хода (гаснет само
+  // через 8 с). Один раз на экран: закрытое не возвращается; при загрузке старые происшествия не объявляются.
+  const HL = { ru: { close: 'нажмите, чтобы закрыть' }, en: { close: 'click to close' } };
+  let incSeen = null, incFor = null, hlKey = null, hlLang = null, hlTimer = null, hlMake = null;
+  const hlDone = new Set();
+  function hideHeadline() {
+    clearTimeout(hlTimer); $('headline').classList.remove('on'); document.querySelector('.app').classList.remove('hl-on');
+    if (hlKey) hlDone.add(hlKey);
+  }
+  function showHeadline(result, isNew) {
+    const st = result.state, stop = result.stop, list = st.incidents || [], n = list.length, story = `${exp}|${relief ? 'r' : 'm'}`;
+    const scr = `${story}|${cur().join('')}`, el = $('headline');            // экран — весь путь ходов: «назад» и другой выбор — другой экран
+    if (incFor !== story || incSeen === null) { incFor = story; incSeen = n; }          // загрузка или другая партия — без объявлений
+    let key = null, sticky = false, make = null;
+    if (stop && stop.end) { key = `${scr}|end`; sticky = true;
+      make = () => Object.assign({ title: t(stop.beat.title, stop.state) }, C.endHeadline(stop.state, stop.beat.id, lang)); }
+    else if (isNew && n > incSeen) { key = `${scr}|inc`; const inc = list[n - 1]; make = () => C.incidentHeadline(inc, lang); }
+    else if (hlKey && hlKey.startsWith(scr + '|') && el.classList.contains('on')) key = hlKey;   // тот же экран (смена языка) — заголовок остаётся
+    incSeen = n;
+    if (!key || hlDone.has(key)) { if (hlKey && key !== hlKey) hideHeadline(); return; }
+    if (make) hlMake = make;
+    const h = hlMake(), html = `<div class="hl-k">${esc(h.kicker)}</div><div class="hl-t">${esc(h.title)}</div>${h.lines.map(l => `<div class="hl-l">${esc(l)}</div>`).join('')}<div class="hl-x">${esc(HL[lang].close)}</div>`;
+    if (key === hlKey && el.classList.contains('on')) { if (hlLang !== lang) { el.innerHTML = html; hlLang = lang; } return; }   // смена языка — без повтора появления
+    hlKey = key; hlLang = lang; el.innerHTML = html;
+    el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); document.querySelector('.app').classList.add('hl-on');   // приборы — приглушены
+    clearTimeout(hlTimer); if (!sticky) hlTimer = setTimeout(hideHeadline, 8000);
+  }
+
   function closeInspect() {
     const beat = view && screenStop(view.result), was = !!insp || shieldScreen(beat);
     if (!was) return;
@@ -835,6 +864,7 @@
     shownTokens = cur().length;
     view = { result, group, cam: screenBeat(result, group) };
     syncScene();
+    showHeadline(result, isNew);
     if (result.stop && result.stop.beat && result.stop.beat.kind === 'cinematic') startCinematic(result.stop.beat);
 
     $('filters').innerHTML = Object.entries(u.filters).map(([k, v]) =>
@@ -860,6 +890,7 @@
   }
 
   document.addEventListener('click', e => {
+    if (e.target.closest('#headline')) { hideHeadline(); return; }
     const pn = e.target.closest('[data-panel]');
     if (pn && pn.closest('.shield-insp')) { shieldSel = pn.dataset.panel; syncScene(); return; }
     const btn = e.target.closest('button');
@@ -905,7 +936,7 @@
     else if (btn.id === 'closeArchive') { $('archive').hidden = true; $('archiveBtn').focus(); }
     else if (btn.dataset.filter) { filter = btn.dataset.filter; render(false); }
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('archive').hidden = true; closeSettings(); closeInspect(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('archive').hidden = true; closeSettings(); closeInspect(); hideHeadline(); } });
 
   if (window.M31Space && M31Space.mount) {
     try { M31Space.mount($('space')); } catch (err) { M31Space.ok = false; console.warn('3D недоступно:', err); }

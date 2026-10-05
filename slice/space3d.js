@@ -274,6 +274,7 @@
         }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
     }), m => { m.rotation.z = -Math.PI / 2; m.position.set(xe - 1300, 0, 0); });
+    { const box = new THREE.Box3(); ship.children.forEach(c => box.expandByObject(c)); if (isFinite(box.min.x)) SHIP_STERN = box.min.x; }   // корма ядра — для тени пыли
     ship.add(stage);
     ship.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), U);
     shipQTo.copy(ship.quaternion); shipQBase.copy(ship.quaternion); rotQ.to.copy(ship.quaternion);
@@ -384,7 +385,10 @@
   // точки взгляда (сторона — три дистанции камеры: плотность в кадре не зависит от приближения), неподвижном в осях
   // курса; летят против курса и вытягиваются в штрихи по скорости: стоит — их нет, малый ход — короткие чёрточки,
   // крейсерская — длинные линии. У граней куба частица гаснет, поэтому переход через грань не виден.
-  const STREAK_N = 500;
+  const STREAK_N = 220;
+  // тень корабля: пыль упирается в передний торец (щит, после разворота — корму) и за ним, внутри радиуса щита, не летит
+  const STREAK_R = 176, shipAxisW = new THREE.Vector3();
+  let SHIP_STERN = -430;                                                  // корма ядра (без ступени разгона), локальная x
   const streaks = { mesh: null, f: null, a: 0, S: 0 };
   function buildStreaks() {
     const g = new THREE.BufferGeometry();
@@ -414,6 +418,7 @@
     const L = S * (0.006 + 0.11 * sq);                                      // длина штриха
     const pos = streaks.mesh.geometry.attributes.position.array, col = streaks.mesh.geometry.attributes.color.array, f = streaks.f;
     const near = 0.08 * S, far = 0.55 * S;
+    const front = shipAxisW.set(1, 0, 0).applyQuaternion(ship.quaternion).dot(U) >= 0 ? shipLocal(0) : shipLocal(SHIP_STERN);
     for (let i = 0; i < STREAK_N; i++) {
       let u = f[3 * i] - flow; u -= Math.floor(u); f[3 * i] = u;          // против курса, с переносом через грань
       const v = f[3 * i + 1], w = f[3 * i + 2];
@@ -423,8 +428,12 @@
       // гаснет у граней куба и у самой камеры
       const edge = 16 * u * (1 - u) * v * (1 - v) * Math.min(1, 4 * w * (1 - w) * 1.4);
       const d = Math.hypot(x - camPos.x, y - camPos.y, z - camPos.z), fade = Math.min(1, Math.max(0, (d - near) / near)) * Math.max(0, 1 - d / far / 1.6);
-      const k = Math.max(0, Math.min(1, edge)) * fade * streaks.a, j = 6 * i;
-      pos[j] = x; pos[j + 1] = y; pos[j + 2] = z;                            // голова — по ходу пыли (назад по курсу)
+      let k = Math.max(0, Math.min(1, edge)) * fade * streaks.a, cut = 0;
+      // за передним торцом корабля, в цилиндре радиуса щита — тень: штрих обрезан плоскостью торца или скрыт
+      const rx = x - front.x, ry = y - front.y, rz = z - front.z, a = rx * U.x + ry * U.y + rz * U.z;
+      if (a < 0 && rx * rx + ry * ry + rz * rz - a * a < STREAK_R * STREAK_R) { if (a + L <= 0) k = 0; else cut = -a; }
+      const j = 6 * i;
+      pos[j] = x + U.x * cut; pos[j + 1] = y + U.y * cut; pos[j + 2] = z + U.z * cut;   // голова — по ходу пыли (назад по курсу)
       pos[j + 3] = x + U.x * L; pos[j + 4] = y + U.y * L; pos[j + 5] = z + U.z * L;   // хвост — туда, откуда она летит
       col[j] = 0.42 * k; col[j + 1] = 0.49 * k; col[j + 2] = 0.58 * k;
       col[j + 3] = 0; col[j + 4] = 0; col[j + 5] = 0;

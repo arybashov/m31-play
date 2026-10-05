@@ -903,6 +903,33 @@ There are no longer years of waiting between question and answer.`;
       : (ru ? `${worst.panel}: выбоина, остаток ${nf(worst.residual, 1, lang)} ${kg}` : `${worst.panel}: scar, ${nf(worst.residual, 1, lang)} ${kg} left`);
     return `${ru ? 'минимум' : 'minimum'} ${nf(o.min, 2, lang)} ${kg} · ${dmg}`;
   }
+  // крупный заголовок по центру кадра (интерфейс): итог экспедиции у концовки и происшествие экрана.
+  // Только то, что знает экспедиция: состояние партии и записи протокола
+  const endHeadline = (s, id, lang) => {
+    const ru = lang === 'ru', kicker = ru ? 'Итог экспедиции' : 'Expedition outcome', yr = y => ru ? `год ${Math.floor(y)}` : `year ${Math.floor(y)}`;
+    const lost = [...(s.incidents || [])].reverse().find(x => x.lost);
+    if (id === 'x.lost' && lost) return { kicker, lines: [ru ? `На борту было ${ppl(lost.aboard)}` : `${lost.aboard} were aboard`, yr(lost.year)] };
+    if (/^x\.sos\./.test(id) && s.incident) return { kicker, lines: [ru ? `В капсулах — ${ppl(s.incident.sleepers)}, на вахте — ${s.incident.watch}` : `${s.incident.sleepers} in the capsules, ${s.incident.watch} on watch`,
+      ru ? `сигнал бедствия — ${yr(s.incident.sent)}` : `distress signal — ${yr(s.incident.sent)}`] };
+    if (id === 'e.end' && s.arrive) {
+      const road = lossesOf(s, s.arrive).total + s.dead, lines = [ru ? `Позади ${yrs(Yepi(s))}` : `${yrsEn(Yepi(s))} behind`];
+      if (s.mission === 'rescue' && s.rescued) lines.push(ru ? `спасены ${ppl(s.rescued)} из Оттепели` : `${s.rescued} saved from Thaw`);
+      lines.push(ru ? `погибли в пути — ${road}, у цели — ${s.deadHere}` : `died on the road — ${road}, at the target — ${s.deadHere}`);
+      return { kicker, lines };
+    }
+    return { kicker, lines: [] };
+  };
+  const HEADLINE_NAME = { cloud: ['Пробой щита у облака', 'Shield breach at the cloud'], stream: ['Удар потока у Тёмной звезды', 'The stream strikes at the Dark Star'],
+    loop: ['Авария общей магистрали', 'The common main fails'], supplyCargo: ['Отказ охлаждения в дрейфе', 'Cooling fails in the drift'],
+    supplyExposure: ['Монтаж под вспышками', 'Installation under the flares'], supplyBus: ['Отказ общей платы', 'The common board fails'],
+    rescueLate: ['Сроки капсул Оттепели', "Thaw's capsule lives run out"], rescueSection: ['Протекающая секция склада', "The store's section leaks"],
+    rescueDock: ['Срыв крепления склада', "The store's mount gives way"], rescueWake: ['Массовое пробуждение', 'Mass waking'], rescueWater: ['Вода старой площадки', "The old site's water"] };
+  const incidentHeadline = (inc, lang) => {
+    const ru = lang === 'ru', name = HEADLINE_NAME[inc.kind] ? HEADLINE_NAME[inc.kind][ru ? 0 : 1] : INCIDENT_NAME[inc.kind] ? INCIDENT_NAME[inc.kind][ru ? 'ru' : 'en'] : inc.kind;
+    const who = inc.pop === 'thaw' ? (ru ? ' Оттепели' : ' of Thaw') : /^rescue/.test(inc.kind) ? (ru ? ' экипажа' : ' of the crew') : '';
+    return { kicker: ru ? `Происшествие · год ${incYear(inc)}` : `Incident · year ${incYear(inc)}`, title: name[0].toUpperCase() + name.slice(1),
+      lines: [inc.lost ? (ru ? 'Корабль потерян' : 'The ship is lost') : inc.dead ? (ru ? `Погибших${who} — ${inc.dead}` : `Dead${who}: ${inc.dead}`) : (ru ? 'Погибших нет' : 'No one died')] };
+  };
   // осмотр щита (шаг 6): карточка панели — состояние, остаток, прогноз при нынешнем потоке, история работ.
   // Прогноз — по среде, в которой корабль уже идёт (её видит вахта), без скрытых опасностей впереди
   const PANEL_STATE = { ok: ['цела', 'intact'], scarred: ['выбоина', 'scar'], patched: ['заплата', 'patch'], breached: ['сквозной пробой', 'through-breach'], new: ['заменена', 'replaced'] };
@@ -6474,7 +6501,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;
