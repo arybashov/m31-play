@@ -751,7 +751,7 @@
           ? { key: st.riskSeed || 'v0', deliver: st.deliver || null, relay: !!st.relayOK, caps: !!st.capsOK, capsLost: !!st.capsLost } : null });
     }
     const cam = view.cam || beat;
-    setScene(cam.scene || 'council');
+    setScene((cam.sceneOf ? cam.sceneOf(view.result.state) : cam.scene) || 'council');   // сцена может зависеть от партии (цель заявки)
     hudBeat = cam;                                                      // место в приборах — то же, что показывает камера
     setHtml('hud', hudHtml(view.result, cam, y)); setTimeline(view.result, y);
     if (!applyPassportPanel()) { delete $('overlay').dataset.pp; setHtml('overlay', overlayHtml(view.result, beat)); }

@@ -1698,6 +1698,8 @@
     ship: { focus: 'ship', dist: 5200, yaw: 2.2, pitch: 0.3, pivot: -1400 },
     cargo: { focus: 'ship', dist: 900, yaw: 1.85, pitch: 0.42, pivot: -200 },
     route: { focus: 'route', dist: 15 * LY, yaw: 1.4, pitch: 1.05, pivot: -1400 },
+    // карта цели заявки: тот же маршрут с другой стороны — цель слева, у её длинной подписи есть место до карточек
+    targetRoute: { focus: 'route', dist: 15 * LY, yaw: 1.4 - Math.PI, pitch: 1.05, pivot: -1400 },
     target: { focus: 'target', dist: 0.8 * LY, yaw: 2.6, pitch: 0.35, pivot: -1400 },
     sun: { focus: 'sun', dist: 0.004 * LY, yaw: 0, pitch: 0, pivot: -1400, frame: 'galactic' },   // углы — от полюса эклиптики, ниже
     map: { focus: 'sun', dist: 95 * LY, yaw: 1.2, pitch: 1.0, pivot: -1400 },
@@ -1998,7 +2000,7 @@
     const from = { F: cam.F.clone(), dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch, pivot: cam.pivot, focus: cam.focus };
     cam.focus = p.focus;
     // маршрут целиком: масштаб по расстоянию до цели
-    const dist = name === 'route' ? T.length() * 1.3 * LY : p.fit === 'bubble' ? 4.2 * bubbleR()
+    const dist = name === 'route' || name === 'targetRoute' ? T.length() * 1.55 * LY : p.fit === 'bubble' ? 4.2 * bubbleR()
       : name === 'target' && targetInfo.star === EIND.name ? 40 * AU_LY * LY : name === 'distress' ? distressFrame().d * LY : p.dist;
     const to = { F: focusPoint(p.focus), dist, yaw: p.yaw, pitch: p.pitch, pivot: p.pivot };
     if (p.fit === 'arrival' || p.fit === 'home') Object.assign(to, arrivalLook(p.fit));
@@ -2007,7 +2009,7 @@
     if (p.aim === 'shield') { Object.assign(to, shieldAngles()); to.aim = 'shield'; }
     if (name === 'target' && tsysAx && targetInfo.star === EIND.name) Object.assign(to, frameAngles(tsysAx.n.clone().multiplyScalar(0.8).addScaledVector(tsysAx.p1, 0.6).normalize()));
     cam.fit = p.fit === 'arrival' || p.fit === 'home' ? p.fit : null;
-    if (instant) { Object.assign(cam, to, { F: to.F }); tween = null; return; }
+    if (instant) { Object.assign(cam, to, { F: to.F }); tween = null; viewUpInit = false; return; }   // мгновенно — и верх кадра заново
     let dy = to.yaw - from.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
     to.yaw = from.yaw + dy;
     if (!dur) dur = p.move || Math.min(7000, Math.max(1600, 1200 + 380 * pathLength(from, to)));
@@ -2054,6 +2056,32 @@
   const ZUP = new THREE.Vector3(0, 0, 1);
   const camUp = E3.clone();
   function upVec() { return camUp; }
+  // Верх кадра без закрутки у полюсов. Камера задана рысканием и наклоном и смотрит через lookAt; когда взгляд почти
+  // совпадает с верхом осей (полюс), малое изменение рыскания поворачивало картинку вокруг оси взгляда — кадр крутило.
+  // Теперь верх прошлого кадра переносится на новое направление взгляда и поворачивается к верху осей (camUp) тем
+  // слабее, чем ближе взгляд к полюсу: вдали от полюса — ровно верх осей, как прежде; у полюса кадр не крутится,
+  // при отходе от него плавно выравнивается. Смешивание — поворотом вокруг оси взгляда (устойчиво и при 180°).
+  const viewUp = new THREE.Vector3(), vuPrev = new THREE.Vector3(), vuWant = new THREE.Vector3(), vuX = new THREE.Vector3();
+  let viewUpInit = false;
+  function stableUp(fwd, dt) {
+    const up = upVec(), pole = Math.abs(up.dot(fwd));
+    vuWant.copy(up).addScaledVector(fwd, -up.dot(fwd));                  // верх осей в плоскости кадра
+    const hasWant = vuWant.lengthSq() > 1e-12; if (hasWant) vuWant.normalize();
+    const x = Math.max(0, Math.min(1, (pole - 0.9) / 0.095)), w = 1 - x * x * (3 - 2 * x);   // 1 — далеко от полюса, 0 — у полюса
+    vuPrev.copy(viewUp).addScaledVector(fwd, -viewUp.dot(fwd));          // прошлый верх, перенесённый на новый взгляд
+    if (!viewUpInit || vuPrev.lengthSq() < 1e-12) {
+      if (!hasWant) {                                                    // взгляд строго вдоль верха: наименее параллельная ось
+        const a = Math.abs(fwd.x) <= Math.abs(fwd.y) && Math.abs(fwd.x) <= Math.abs(fwd.z) ? vuWant.set(1, 0, 0) : Math.abs(fwd.y) <= Math.abs(fwd.z) ? vuWant.set(0, 1, 0) : vuWant.set(0, 0, 1);
+        a.addScaledVector(fwd, -a.dot(fwd)).normalize();
+      }
+      viewUp.copy(vuWant); viewUpInit = true; return viewUp;
+    }
+    vuPrev.normalize();
+    if (!hasWant || w <= 0) return viewUp.copy(vuPrev);
+    if (w >= 0.999) return viewUp.copy(vuWant);
+    const ang = Math.atan2(vuX.crossVectors(vuPrev, vuWant).dot(fwd), vuPrev.dot(vuWant));
+    return viewUp.copy(vuPrev).applyAxisAngle(fwd, ang * (1 - Math.exp(-dt * 10 * w * w)));   // по времени: у полюса медленно, дальше быстрее
+  }
   // верх камеры идёт к верху текущих осей плавно: смена осей не даёт крена скачком
   function stepUp(dt) {
     if (tween && tween.upFrom) return;
@@ -2245,7 +2273,7 @@
     if (!visible) { last = now; return; }
     // затянувшийся кадр (компиляция, загрузка) не должен давать скачка: часы перелёта на это время стоят
     if (now - last > 80 && tween) tween.t0 += now - last - 16;
-    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;   // не отрицательный: часы отладочной прокрутки могут уйти вперёд
     if (shiftTween) { const k = Math.min(1, (now - shiftTween.t0) / 900), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(2 - 2 * k, 2) / 2;
       viewShift = shiftTween.from + (shiftTween.to - shiftTween.from) * e; if (k >= 1) shiftTween = null; applyShift(); }
     const turnK = 1 - Math.exp(-dt * 1.2);
@@ -2296,6 +2324,7 @@
     radMat.emissiveIntensity += ((world.separated ? 0.08 : 0.35) - radMat.emissiveIntensity) * (1 - Math.exp(-dt * 0.8));
 
     const dir = offsetDir();
+    const vUp = stableUp(dir.clone().negate(), dt);                           // верх кадра (без закрутки у полюсов)
     // звёздная сцена: начало координат в точке фокуса
     const dly = cam.dist / LY, lg = Math.log10(Math.max(dly, 1e-12));
     const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -2337,7 +2366,7 @@
       routeAhead.computeLineDistances();
     }
     starCam.position.copy(dir).multiplyScalar(dly);
-    starCam.up.copy(upVec()); starCam.near = Math.max(dly * 1e-3, 1e-12); starCam.far = 1e6;
+    starCam.up.copy(vUp); starCam.near = Math.max(dly * 1e-3, 1e-12); starCam.far = 1e6;
     starCam.lookAt(0, 0, 0); starCam.updateProjectionMatrix();
     // свечение корабля вдали: вблизи его нет (виден сам корабль), с отъездом проявляется, дальше сжимается в точку
     const camLy = cam.F.clone().addScaledVector(dir, dly), shipM = camLy.distanceTo(shipPos()) * LY;
@@ -2357,7 +2386,7 @@
       const pivot = camPivot(dt);
       if (shieldUI.k > 0.001 && shieldUI.focus) {                 // осмотр щита: центр щита — в свободной части кадра (точку даёт интерфейс)
         const w = container.clientWidth || 1, h = container.clientHeight || 1, fwd = dir.clone().negate();
-        const R = new THREE.Vector3().crossVectors(fwd, upVec()).normalize(), Up = new THREE.Vector3().crossVectors(R, fwd);
+        const R = new THREE.Vector3().crossVectors(fwd, vUp).normalize(), Up = new THREE.Vector3().crossVectors(R, fwd);
         const m = 2 * dS * Math.tan(shipCam.fov * Math.PI / 360) / h;          // метров на пиксель у точки взгляда
         const dx = shieldUI.focus.x - (w / 2 - viewShift), dy = h / 2 - shieldUI.focus.y;
         pivot.addScaledVector(R, -dx * m * shieldUI.k).addScaledVector(Up, -dy * m * shieldUI.k);
@@ -2390,7 +2419,7 @@
       flare(glare, streak, sunC, lux.sun);
       tglare.material.color.set(starColor(targetInfo.sp)); tstreak.material.color.copy(tglare.material.color);
       flare(tglare, tstreak, tgtC, lux.tgt);
-      shipCam.up.copy(upVec()); shipCam.near = Math.max(1, dS * 1e-3); shipCam.far = Math.max(dS * 10 + 2e4, earthTilt.visible ? dS + earthD + 1e7 : 0, arrival.planetD ? dS + arrival.planetD + 1e7 : 0, 2e9);
+      shipCam.up.copy(vUp); shipCam.near = Math.max(1, dS * 1e-3); shipCam.far = Math.max(dS * 10 + 2e4, earthTilt.visible ? dS + earthD + 1e7 : 0, arrival.planetD ? dS + arrival.planetD + 1e7 : 0, 2e9);
       shipCam.lookAt(camOff.copy(shipCam.position).sub(dir)); shipCam.updateProjectionMatrix();   // взгляд — по направлению камеры
       stepStreaks(dt, pivot, shipCam.position, dS);
       renderer.clearDepth();
@@ -2511,11 +2540,11 @@
     const ang = frameAngles(d); cam.yaw = ang.yaw; cam.pitch = ang.pitch;   // смена осей без скачка
     const from = { F: cam.F.clone(), dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch, pivot: cam.pivot };
     const F = p.F === 'target' ? T.clone() : p.F === 'sun' ? new THREE.Vector3() : new THREE.Vector3(...p.F);
-    cam.focus = 'free';
+    cam.focus = 'free'; cam.fit = null; shieldUI.on = false;               // кадр заставки — свой ракурс: слежение «у цели» и осмотр щита выключены
     const to = { F, dist: p.dist * LY, yaw: p.yaw, pitch: p.pitch, pivot: cam.pivot };
     let dy = to.yaw - from.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
     to.yaw = from.yaw + dy;                                                 // поворот кратчайшим путём
-    if (p.cut && (!shown || freshCut)) { Object.assign(cam, to); tween = null; freshCut = false; }   // начало круга — кадр, как при загрузке
+    if (p.cut && (!shown || freshCut)) { Object.assign(cam, to); tween = null; freshCut = false; camUp.copy(frameUp(cam.frame)); viewUpInit = false; }   // начало круга — кадр, как при загрузке (и верх кадра сразу)
     else if (p.cut) tween = { from, to, t0: performance.now(), dur: 4500, upFrom: camUp.clone(), upTo: frameUp(cam.frame) };
     else tween = { from, to, t0: performance.now(), dur: p.move || 4000, upFrom: camUp.clone(), upTo: frameUp(cam.frame) };
     shotRing = p.ring || 0;
@@ -2526,7 +2555,8 @@
   // без перелёта от корабля прошлой партии; состояние корабля — начальное, без доворотов и переездов взгляда
   let freshCut = false;
   api.resetVoyage = function () {
-    freshCut = true; tween = null; pivInit = false; world.sepT = 0; streaks.a = 0; pm.a = 0;
+    freshCut = true; tween = null; cam.fit = null; shieldUI.on = false; viewUpInit = false; pivInit = false; world.sepT = 0; streaks.a = 0; pm.a = 0;
+    viewShift = 0; shiftTween = null; applyShift();                       // сдвиг под карточки — сразу (заставка во весь экран), без скольжения
     engines.forEach(e => { e.a = 0; });
   };
   api.endShots = function () { shotRing = 0; signal.visible = false; hiLine.visible = false; };
@@ -2539,7 +2569,7 @@
   };
   api.debugState = function () {
     const d = offsetDir();
-    return { dist: cam.dist, dir: [d.x, d.y, d.z], up: [camUp.x, camUp.y, camUp.z], F: [cam.F.x, cam.F.y, cam.F.z], frame: cam.frame, focus: cam.focus, shift: viewShift, tween: !!tween,
+    return { dist: cam.dist, dir: [d.x, d.y, d.z], up: [camUp.x, camUp.y, camUp.z], viewUp: [viewUp.x, viewUp.y, viewUp.z], F: [cam.F.x, cam.F.y, cam.F.z], frame: cam.frame, focus: cam.focus, shift: viewShift, tween: !!tween,
       starNdc: (() => { const v = shipCam.position.clone().addScaledVector(lux.dirT, 1e9).project(shipCam); return [v.x, v.y, v.z]; })(),
       glare: tglare ? [tglare.visible, tglare.material.opacity, tglare.scale.x] : null,
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,

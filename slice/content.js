@@ -2407,6 +2407,7 @@ Irina Kassel lays the documents side by side.
     },
     {
       id: 'd.target', scene: 'chart', kind: 'decision', year: 0, ui: 'map',
+      sceneOf: s => s.mission && s.mission !== 'contact' ? 'chartTarget' : 'chart',   // ракурс экрана: цель заявки — в кадре
       title: { ru: 'Куда лететь', en: 'Where to fly' },
       context: {
         ru: s => s.mission === 'supply' ? 'Цель задана заявкой: форпост Ксилона Ир у звезды Барнарда.' : s.mission === 'rescue' ? 'Цель задана заявкой: орбитальный склад Оттепели у Росс 128.' : 'Совет дал сектор сигнала, но систему выбирает экспедиция. Карта открыта вся: Совет утвердит любую цель, до которой люди доживут. Сектор подсвечен; ε Индейца — заявленная цель тридцать второй.',
@@ -5993,6 +5994,8 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     register: { view: 'route', img: 'assets/council.jpg', fallback: 'assets/depart.jpg', label: { ru: 'Земля · Совет Звездоплавания · курс', en: 'Earth · Council of Star Navigation · course' } },
     fitting: { view: 'cargo', fallback: 'assets/depart.jpg', label: { ru: 'Орбита Земли · комплектация', en: 'Earth orbit · fitting out' } },
     chart: { view: 'sector', fallback: 'assets/depart.jpg', label: { ru: 'Штурманская · звёздная карта', en: 'Navigation room · star chart' } },
+    // цель задана заявкой (снабженец, спасатель) и лежит вне сектора сигнала — в кадре Солнце и цель, ракурс «Маршрут»
+    chartTarget: { view: 'targetRoute', fallback: 'assets/depart.jpg', label: { ru: 'Штурманская · звёздная карта', en: 'Navigation room · star chart' } },
     scout: { view: 'ship', fallback: 'assets/depart.jpg', label: { ru: 'Корма · запуск зонда', en: 'Stern · probe launch' } },
     stage: { view: 'stage', fallback: 'assets/stage.jpg', label: { ru: 'Отделение ступени разгона', en: 'Acceleration stage separation' } },
     drift: { view: 'drift', fallback: 'assets/drift.jpg', label: { ru: 'Дрейф', en: 'Drift' }, side: 'right' },
