@@ -2475,7 +2475,7 @@ The operator leaves the sound on. The human voice breaks off mid-word; the alien
       id: 'p.council', scene: 'council', kind: 'transcript', year: 0,
       title: { ru: 'Совет Звездоплавания', en: 'Council of Star Navigation' },
       text: {
-        ru: `— Тридцать вторая не отвечает, — говорит Ирина Кассель. — Это — отвечает.
+        ru: `— Тридцать вторая молчит, — говорит Ирина Кассель и выводит на общую панель вторую запись. — А этот сигнал из того же сектора не замолкает шесть лет.
 
 Нил Дассер опускает раскрытую ладонь на карту другого сектора.
 
@@ -2488,7 +2488,7 @@ The operator leaves the sound on. The human voice breaks off mid-word; the alien
 — И Оттепель, — говорит Ива Лорн. — Последняя передача с Росс 128: база погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет. Двадцать пять уже прошло.
 
 — Нужны три экспедиции, — говорит Кассель. — Снаряжаем одну.`,
-        en: `"The Thirty-Second doesn't answer," says Irina Kassel. "This does."
+        en: `"The Thirty-Second is silent," says Irina Kassel, bringing the second recording up on the shared display. "This signal, from the same sector, hasn't stopped in six years."
 
 Nil Dasser sets his open palm on the chart of another sector.
 

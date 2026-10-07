@@ -406,8 +406,9 @@
     const beta = Math.max(0, MI && world.arrive ? MI.speedAt(world.year, world.beta || 0.1, world.arrive, world.tMag)
       : MI ? MI.speedAt(world.year, world.beta || 0.1, 0, world.tMag) : 0);
     // видимость: стоит — 0; появляется с первых сотен км/с, плавно (без скачка при смене скорости промоткой)
-    // с удалением камеры (50–500 км) пыль гаснет: дальние ракурсы (пузырь магнита, карта) — без неё, без обрыва на пороге
-    const fz = Math.min(1, Math.max(0, Math.log(dS / 5e4) / Math.log(10))), farK = 1 - fz * fz * (3 - 2 * fz);
+    // с удалением камеры пыль гаснет только в маршрутных видах (0,2–2 млн км): на виде сбоку на пузырь магнита
+    // (десятки тысяч км) штрихи видны — по ним понятно, что корабль летит; без обрыва на пороге
+    const fz = Math.min(1, Math.max(0, Math.log(dS / 2e8) / Math.log(10))), farK = 1 - fz * fz * (3 - 2 * fz);
     const want = world.wreck ? 0 : Math.min(1, Math.sqrt(beta / 0.003)) * (1 - 0.6 * shieldUI.k) * farK;
     streaks.a += (want - streaks.a) * (1 - Math.exp(-dt * 1.5));
     streaks.mesh.visible = streaks.a > 0.004;
@@ -893,7 +894,7 @@
     const v = Math.max(0.005, MI && world.arrive ? MI.speedAt(world.year, world.beta || 0.1, world.arrive, world.tMag) : world.beta || 0.1);
     return 2.584e6 * 0.1 / v;
   }
-  function stepPlasmaMagnet(dt) {
+  function stepPlasmaMagnet(dt, dS) {
     const A = world.arrive, y = world.year, on = !world.wreck && A > 0 && y >= A - brakeYears() - 1e-6 && y < A - 4 && ship.quaternion.angleTo(shipQBase) < 0.05;
     pm.a += ((on ? 1 : 0) - pm.a) * (1 - Math.exp(-dt * 0.6));                 // разгорается и гаснет за секунды
     const vis = pm.a > 0.003;
@@ -902,7 +903,9 @@
     if (!vis) return;
     const r = bubbleR();
     pm.shell.scale.set(1.5 * r, r, r); pm.shell.position.x = -365 - 0.5 * r;
-    pm.near.material.uniforms.a.value = pm.a; pm.shell.material.uniforms.a.value = pm.a;
+    // камера дальше радиуса пузыря — оболочка тусклее (до трети): на виде сбоку свечение не перекрывает блики звезды
+    const far = Math.min(1, Math.max(0, (Math.log((dS || 0) / r) - Math.log(0.5)) / Math.log(8))), dim = 1 - 0.65 * far * far * (3 - 2 * far);
+    pm.near.material.uniforms.a.value = pm.a; pm.shell.material.uniforms.a.value = pm.a * dim;
     pm.halo.material.opacity = 0.28 * pm.a;
   }
 
@@ -2284,7 +2287,7 @@
     plume.visible = world.burning && !world.separated;
     if (engines.length > 1) { engines[0].on = !!world.finalBurn; engines[1].on = world.burning && !world.separated; }
     stepEngines(dt, now);
-    stepPlasmaMagnet(dt);
+    stepPlasmaMagnet(dt, Number.isFinite(shipFarM) ? shipFarM : cam.dist);   // фактическая дальность камеры до корабля (прошлый кадр): тускнеет плавно при любом перелёте
     stepArrival();
     stepThaw(dt); stepOutpost(dt);
     // Облако на пути к ε Индейца: с Земли его не видно — маленькое и ничем не освещено. Появляется, когда его находят
@@ -2545,6 +2548,7 @@
     return { dist: cam.dist, dir: [d.x, d.y, d.z], up: [camUp.x, camUp.y, camUp.z], viewUp: [viewUp.x, viewUp.y, viewUp.z], F: [cam.F.x, cam.F.y, cam.F.z], frame: cam.frame, focus: cam.focus, shift: viewShift, tween: !!tween,
       starNdc: (() => { const v = shipCam.position.clone().addScaledVector(lux.dirT, 1e9).project(shipCam); return [v.x, v.y, v.z]; })(),
       glare: tglare ? [tglare.visible, tglare.material.opacity, tglare.scale.x] : null,
+      streaks: +streaks.a.toFixed(3), pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3),
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,
       tw: tween ? { fromF: tween.from.F.toArray(), fromDist: tween.from.dist, fromFocus: tween.from.focus, toF: tween.to.F.toArray(), toDist: tween.to.dist, dur: tween.dur, age: performance.now() - tween.t0 } : null,
       planetNdc: arrival.eind && arrival.eind.tilt.visible ? (() => { const v = arrival.eind.tilt.position.clone().project(shipCam); return [v.x, v.y]; })() : null,
