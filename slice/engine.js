@@ -43,7 +43,10 @@
     // Сухие сводки (fold) копятся до ближайшего отчёта вахты и входят в его ведомость
     let base = null, mark = 0, folded = [];
     function notes() {
-      for (const b of sim.notes ? sim.notes(state) : []) if (record) (b.fold && sim.report ? folded : log).push({ beat: b, state: clone(state) });
+      for (const b of sim.notes ? sim.notes(state) : []) {
+        const st = b.state0 || clone(state); delete b.state0;              // снимок момента записи (события v1), если он есть
+        if (record) (b.fold && sim.report ? folded : log).push({ beat: b, state: st });
+      }
     }
     // отчёт вахты (только журнал run): период — от прошлой точки отчёта; точки — конец перемотки и остановка модели на
     // событии (ev). Отчёт строится из состояния и записей периода и ничего в состоянии не меняет
@@ -96,12 +99,17 @@
         if (record) log.push({ beat, state: clone(state) });
         continue;
       }
-      if (beat.effect) beat.effect(state);
-      if (beat.year !== undefined) {                                   // годы дрейфа зависят от пути
+      if (sim && beat.year !== undefined) {
+        // с моделью дата сцены — ход модели (годы между перемоткой и сценой не выпадают из износа); эффект сцены — после
+        // хода: событие модели между перемоткой и сценой не должно видеть её последствий (ревью Codex, события v1).
+        // Записи приборов встают перед сценой, по времени; после хода условие сцены проверяется заново
         const target = typeof beat.year === 'function' ? beat.year(state) : beat.year;
-        // с моделью дата сцены — тоже ход модели (иначе годы между перемоткой и сценой выпали бы из износа — ревью Codex);
-        // записи приборов встают перед сценой, по времени
-        if (sim) { stop = advanceTo(target, beat); if (stop) break; } else state.year = target;
+        stop = advanceTo(target, beat); if (stop) break;
+        if (beat.when && !beat.when(state)) continue;
+        if (beat.effect) beat.effect(state);
+      } else {
+        if (beat.effect) beat.effect(state);
+        if (beat.year !== undefined) state.year = typeof beat.year === 'function' ? beat.year(state) : beat.year;   // годы дрейфа зависят от пути
       }
       if (sim && beat.kind === 'end' && folded.length) report();       // сводки после последнего отчёта — не теряются
       if (record) log.push({ beat, state: clone(state) });

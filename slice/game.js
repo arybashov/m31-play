@@ -132,7 +132,7 @@
     else if (b.kind === 'transcript') head = `${u.transcript} · ${t(b.title, s)} · ${fmtYear(s.year)}`;
     else if (b.kind === 'note') head = `${u.note} · ${t(b.author, s)} · ${fmtYear(s.year)}`;
     else if (b.kind === 'bulletin') head = `${u.bulletin} · ${t(b.title, s)}`;
-    else if (b.kind === 'instrument') head = `${t(b.title, s)} · ${fmtYear(s.year)}`;
+    else if (b.kind === 'instrument') head = `${t(b.title, s)} · ${fmtYear(b.at != null ? b.at : s.year)}`;   // события v1 — дата события
     else if (b.kind === 'watch') head = t(b.title, s);                // отчёт вахты: годы периода — в заголовке
     else if (b.kind === 'document') head = `${u.document} · ${t(b.title, s)}`;
     else if (b.kind === 'end') head = t(b.title, s);
@@ -711,6 +711,7 @@
       for (const inc of (s.incidents || []).slice((ps.incidents || []).length)) evs.push({ at: Math.min(at, Math.max(y0, inc.year)), w: 3, k: 'inc', inc });
       if (s.shield && ps.shield) for (const h of s.shield.hits.slice(ps.shield.hits.length)) evs.push({ at: Math.min(at, Math.max(y0, h.at)), w: 2, k: h.first === 'breached' ? 'breach' : 'hit', panel: h.panel });
       if (it.beat.kind === 'bulletin') evs.push({ at, w: 1, k: 'bul' });
+      if (it.beat.ev) evs.push({ at: Math.max(y0, Math.min(at, it.beat.at)), w: 2, k: 'note', title: it.beat.title });
       if (it.beat.kind === 'watch' && it.beat.data && it.beat.data.interrupted) evs.push({ at, w: 4, k: 'cut' });
       snaps.push({ at, n: n0 + k + 1, state: s });
       ps = s;
@@ -735,7 +736,7 @@
   // текст сообщения — на языке вывода (смена языка посреди показа переводит и текущую строку)
   function ffText(e) {
     const F = FF[lang], one = x => x.k === 'inc' ? C.incidentHeadline(x.inc, lang).title : x.k === 'hit' ? F.hit(x.panel) : x.k === 'breach' ? F.breach(x.panel)
-      : x.k === 'bul' ? F.bul : x.k === 'cut' ? F.cut : `${F.phase}: ${C.ui[lang].tlPhase[x.phase]}`;
+      : x.k === 'bul' ? F.bul : x.k === 'cut' ? F.cut : x.k === 'note' ? t(x.title) : `${F.phase}: ${C.ui[lang].tlPhase[x.phase]}`;
     return `<b>${esc(fmtYear(e.at))}</b> · ${esc(one(e) + (e.with ? ` — ${one(e.with)}` : ''))}`;
   }
   // базовое время хода курсора (без пауз) по реальному времени показа

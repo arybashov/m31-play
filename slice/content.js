@@ -8,11 +8,15 @@
   'use strict';
 
   const pct = (x, lang) => (lang === 'ru' ? x.toFixed(1).replace('.', ',') : x.toFixed(1));
+  // материалы: целые — без десятых, дробные (ремонты и вторсырьё событий) — с десятыми
+  const pctM = (x, lang) => Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : pct(x, lang);
 
   // Миссия: цель, паспорт, поворот курса — расчёты в mission.js (браузер: M31Mission).
   const M = root.M31Mission || require('./mission.js');
   // Щит как прибор (правила v5, симулятор): shield.js (браузер: M31Shield).
   const SH = root.M31Shield || require('./shield.js');
+  // События v1 (DOC «События v1»): генератор эпизодов дрейфа — events.js (браузер: M31Events)
+  const EVM = root.M31Events || require('./events.js');
   const nm = (s, lang) => M.nameOf(s.target || M.DECLARED, lang);
   // «звезда Барнарда» склоняется: у звезды, к звезде; остальные названия каталога — нет
   const nmG = s => nm(s, 'ru').replace(/^звезда /, 'звезды '), nmD = s => nm(s, 'ru').replace(/^звезда /, 'звезде ');
@@ -626,7 +630,7 @@ There are no longer years of waiting between question and answer.`;
     if (!s || !s.eq || s.relief) return [];
     const ru = lang === 'ru', out = [];
     const g = (id, label, value, n) => out.push({ id, label, value, n });
-    g('materials', ru ? 'материалы' : 'materials', `${Math.round(s.materials)}%`, s.materials);
+    g('materials', ru ? 'материалы' : 'materials', `${pctM(s.materials, lang)}%`, s.materials);
     g('reserve', ru ? 'резерв манёвров' : 'manoeuvre reserve', `${pct(s.reserve, lang)}% · ${kms0(s)} ${ru ? 'км/с' : 'km/s'}`, s.reserve);
     g('alive', ru ? 'живы' : 'alive', `${aliveOf(s)}`, aliveOf(s));
     const aw = ids ? awakeOf(s, ids) : s.watch;
@@ -745,6 +749,13 @@ There are no longer years of waiting between question and answer.`;
       const stops = marks.concat([hitT, grainT, outT].filter(t => t != null)).filter(t => t > from && t <= target).sort((x, y) => x - y);
       let t0 = from;
       for (const t1 of stops.concat([target])) {
+        // события v1 внутри отрезка постоянной среды: каждое — своя граница; решение — вставка посреди перемотки
+        for (let b = EV.next(s, t0, t1); b; b = EV.next(s, t0, t1)) {
+          if (b.at > t0) { erodeSpan(s, t0, b.at, rhoAt(s, (t0 + t1) / 2)); t0 = b.at; s.simYear = b.at; }
+          s.year = b.at;
+          const ev = EV.fire(s, b);
+          if (ev) return ev;
+        }
         if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); t0 = t1; s.simYear = t1; }
         if (t1 === hitT && !SH.hitOf(s.shield, 'cloud.hit.0')) {
           const ev = cloudHit(s, hitT);
@@ -804,7 +815,7 @@ There are no longer years of waiting between question and answer.`;
           en: x => [`Spare belt ${beltOf(panel)} panels in the hold: ${x.shield.spares[beltOf(panel)]}.`, `Robots from the rear side, 16 hours; fasteners from the landing materials −${SHIELD_WORK.replace}%.`, fullLine(x, panel, 'en')]
         },
         cost: x => { x.materials -= SHIELD_WORK.replace; },
-        effect: x => { SH.replace(x.shield, panel, x.year); x.materials -= SHIELD_WORK.replace; x.shieldFixed = !SH.observe(x.shield).damaged.some(d => d.residual <= 0); rec5(x).repair = 'replace'; },
+        effect: x => { SH.replace(x.shield, panel, x.year); x.materials -= SHIELD_WORK.replace; EV.scrap(x, SHIELD_WORK.replace); x.shieldFixed = !SH.observe(x.shield).damaged.some(d => d.residual <= 0); rec5(x).repair = 'replace'; },
         record: { ru: x => `Панель ${panel} снята целиком, на её место встала запасная. ${fullLine(x, panel, 'ru')}`, en: x => `Panel ${panel} removed whole, a spare fitted in its place. ${fullLine(x, panel, 'en')}` }
       }, {
         id: 'patch',
@@ -814,7 +825,7 @@ There are no longer years of waiting between question and answer.`;
           en: [`48 hours of work; landing materials −${SHIELD_WORK.patch}%.`, `The hole is closed: ${SH.RULES.patch} kg/m² at the impact point instead of the full rating.`, cause === 'stream' ? 'A weak spot remains until arrival.' : 'A weak spot remains — it matters at the stream.']
         },
         cost: x => { x.materials -= SHIELD_WORK.patch; },
-        effect: x => { SH.patch(x.shield, hitId, x.year); x.materials -= SHIELD_WORK.patch; rec5(x).repair = 'patch'; },
+        effect: x => { SH.patch(x.shield, hitId, x.year); x.materials -= SHIELD_WORK.patch; EV.scrap(x, 1); rec5(x).repair = 'patch'; },
         record: { ru: `Пробоина в панели ${panel} закрыта заплатой: ${SH.RULES.patch} кг/м² в месте удара.`, en: `The hole in panel ${panel} is closed with a patch: ${SH.RULES.patch} kg/m² at the impact point.` }
       }, {
         id: 'defer',
@@ -892,9 +903,10 @@ There are no longer years of waiting between question and answer.`;
   }
   // сводки износа (summary) — не в ленту, а в ведомость ближайшего отчёта вахты (fold); приёмка — отдельной записью
   function simNotes(s) {
-    if (!s.shield) return [];
+    const evNotes = EV.take(s);
+    if (!s.shield) return evNotes;
     return SH.take(s.shield).map(n => ({ id: `sim.shield.${n.kind}.${nf(n.y1 != null ? n.y1 : s.year, 3, 'en')}`, kind: 'instrument', title: SIM_TITLE,
-      text: { ru: noteText(s, n, 'ru'), en: noteText(s, n, 'en') }, fold: n.kind === 'summary', env: n.env || [] }));
+      text: { ru: noteText(s, n, 'ru'), en: noteText(s, n, 'en') }, fold: n.kind === 'summary', env: n.env || [] })).concat(evNotes);
   }
 
   // ---- отчёт вахты (DOC «Симулятор v2 — видимость», шаг 1): что случилось на корабле за период — от прошлого отчёта
@@ -926,16 +938,18 @@ There are no longer years of waiting between question and answer.`;
   // изменения внутри хода модели (удар, выход из ядра) записи не имеют — остаток относим к происшествиям периода
   function resourceMoves(base, items, key, lang, s, incs) {
     const ru = lang === 'ru', out = [];
-    let prev = base[key];
+    let prev = base[key], py = base.year;
+    const evIn = (a, b) => EV.movesIn(s, key, a, b).reduce((x, m) => x + m.d, 0);
+    for (const m of EV.movesIn(s, key, base.year, s.year)) out.push({ d: m.d, why: m.name[lang] });
     for (const it of items) {
-      const v = it.state[key], d = v - prev; prev = v;
+      const v = it.state[key], d = v - prev - evIn(py, it.state.year); prev = v; py = Math.max(py, it.state.year);
       if (Math.abs(d) < 0.05) continue;
       const b = it.beat, title = txt(b.title, lang, it.state);
       const why = b.kind === 'decision' && it.option ? (ru ? `решение «${title}» — ${txt(it.option.label, lang, it.state).toLowerCase()}` : `decision “${title}” — ${txt(it.option.label, lang, it.state).toLowerCase()}`)
         : title ? (ru ? `«${title}»` : `“${title}”`) : '';
       out.push({ d, why });
     }
-    const d = s[key] - prev;
+    const d = s[key] - prev - evIn(py, s.year);
     if (Math.abs(d) >= 0.05) out.push({ d, why: incs.map(x => lc1(HEADLINE_NAME[x.kind] ? HEADLINE_NAME[x.kind][ru ? 0 : 1] : x.kind)).join(', ') });
     return out;
   }
@@ -965,9 +979,11 @@ There are no longer years of waiting between question and answer.`;
       const who = POP_WHO[x.pop] ? POP_WHO[x.pop][ru ? 0 : 1] : '';
       return `${lc1(nm)} (${ru ? 'год' : 'year'} ${incYear(x)})${x.dead ? (ru ? ` — погибли ${ppl(x.dead)}${who}` : ` — ${x.dead}${who} dead`) : ''}`; })
       .concat(hits.filter(h => !(ev && ev.id === h.id)).map(hitLine))
-      .concat(burnt.map(h => ru ? `пыль прожгла место удара на ${h.panel} (${yr(h.burntAt)})` : `the dust burned through the impact point on ${h.panel} (${yr(h.burntAt)})`));
+      .concat(burnt.map(h => ru ? `пыль прожгла место удара на ${h.panel} (${yr(h.burntAt)})` : `the dust burned through the impact point on ${h.panel} (${yr(h.burntAt)})`))
+      .concat(EV.since(s, y0, y1).filter(e => !(ev && ev.id === e.id)).map(e => `${EV.TYPES[e.type].name[lang]} (${yr(e.at)})`));
     const head = [];
     if (ev) head.push(ev.kind === 'shieldService' ? (ru ? `Перемотка прервана: пробита панель щита ${ev.panel}. Нужно решение совета.` : `The skip is interrupted: shield panel ${ev.panel} is breached. The council must decide.`)
+      : ev.kind === 'event' ? (ru ? `Перемотка прервана: ${EV.TYPES[ev.type].name.ru}. Нужно решение совета.` : `The skip is interrupted: ${EV.TYPES[ev.type].name.en}. The council must decide.`)
       : (ru ? 'Перемотка прервана: нужно решение совета.' : 'The skip is interrupted: the council must decide.'));
     if (events.length) head.push((ru ? 'За период: ' : 'Over the period: ') + events.join('; ') + '.');
     // среда, пройденная за период (уже пройденное — не прогноз), если не обычная межзвёздная
@@ -985,8 +1001,9 @@ There are no longer years of waiting between question and answer.`;
     // запасы: изменения — с причиной; без изменений — одной строкой
     const res = resourceMoves(base, items, 'reserve', lang, s, incs), mat = resourceMoves(base, items, 'materials', lang, s, incs);
     const why = (ms, f) => ms.slice(0, 2).map(m => `${f(m.d)}${m.why ? ` — ${m.why}` : ''}`).join('; ') + (ms.length > 2 ? (ru ? `; и ещё ${ms.length - 2}` : `; and ${ms.length - 2} more`) : '');
-    const resNow = `${pct(s.reserve, lang)}% (${kms0(s)} ${ru ? 'км/с' : 'km/s'})`, matNow = `${Math.round(s.materials)}%`;
+    const resNow = `${pct(s.reserve, lang)}% (${kms0(s)} ${ru ? 'км/с' : 'km/s'})`, matNow = `${pctM(s.materials, lang)}%`;
     const sgn = (d, k) => `${d > 0 ? '+' : '−'}${nf(Math.abs(d), k, lang)}`;
+    const sgnM = d => sgn(d, Math.abs(Math.abs(d) - Math.round(Math.abs(d))) < 0.05 ? 0 : 1);   // материалы: дробные — с десятыми
     const g = s.shield && base.shield ? (now.shield.eroded - base.shield.eroded) * 1000 : 0;
     const shieldNow = s.shield ? shieldGaugeV5(s, lang).replace(' · ', ', ') : '';
     const shieldSame = !s.shield || (g < 0.005 && !hits.length && !burnt.length);
@@ -1005,7 +1022,7 @@ There are no longer years of waiting between question and answer.`;
     const Lall = now.L, det = [ru ? `С отлёта, по расчёту модели: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][0]} — ${Lall[k]}`).join(', ')}; в происшествиях — ${now.dead + now.deadHere - now.out}. Отложенный риск — рак после пробуждения у цели: около ${ppl(Lall.later)}.`
       : `Since departure, by the model: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][1]} — ${Lall[k]}`).join(', ')}; in incidents — ${now.dead + now.deadHere - now.out}. Deferred risk — cancers after waking at the target: about ${Lall.later}.`];
     if (res.length > 2) det.push((ru ? 'Резерв манёвров: ' : 'Manoeuvre reserve: ') + res.map(m => `${sgn(m.d, 1)} ${ru ? 'п.п.' : 'pp'} — ${m.why}`).join('; ') + '.');
-    if (mat.length > 2) det.push((ru ? 'Материалы: ' : 'Materials: ') + mat.map(m => `${sgn(m.d, 0)}% — ${m.why}`).join('; ') + '.');
+    if (mat.length > 2) det.push((ru ? 'Материалы: ' : 'Materials: ') + mat.map(m => `${sgnM(m.d)}% — ${m.why}`).join('; ') + '.');
     for (const f of folded) det.push(txt(f.text, lang));
     const title = ev ? (ru ? `Донесение вахты · ${spanText(y0, y1, 'ru')}` : `Watch report · ${spanText(y0, y1, 'en')} · interrupted`)
       : (ru ? `Отчёт вахты · ${spanText(y0, y1, 'ru')}` : `Watch report · ${spanText(y0, y1, 'en')}`);
@@ -1026,7 +1043,7 @@ There are no longer years of waiting between question and answer.`;
       ? (ru ? `Резерв манёвров — ${resNow}, материалы — ${matNow}: без изменений.` : `Manoeuvre reserve — ${resNow}, materials — ${matNow}: unchanged.`)
       : [res.length ? (ru ? `Резерв манёвров — ${resNow}: ${why(res, d => `${sgn(d, 1)} п.п.`)}.` : `Manoeuvre reserve — ${resNow}: ${why(res, d => `${sgn(d, 1)} pp`)}.`)
           : (ru ? `Резерв манёвров — ${resNow}.` : `Manoeuvre reserve — ${resNow}.`),
-        mat.length ? (ru ? `Материалы — ${matNow}: ${why(mat, d => `${sgn(d, 0)}%`)}.` : `Materials — ${matNow}: ${why(mat, d => `${sgn(d, 0)}%`)}.`)
+        mat.length ? (ru ? `Материалы — ${matNow}: ${why(mat, d => `${sgnM(d)}%`)}.` : `Materials — ${matNow}: ${why(mat, d => `${sgnM(d)}%`)}.`)
           : (ru ? `Материалы — ${matNow}.` : `Materials — ${matNow}.`)].join(' ')];
     if (now.highPower !== base.highPower) sys.push(now.highPower ? (ru ? 'Контуру вернули резерв мощности.' : 'The loop has its high-power reserve back.')
       : (ru ? 'Контур остался без резерва мощности.' : 'The loop is left without its high-power reserve.'));
@@ -1041,7 +1058,29 @@ There are no longer years of waiting between question and answer.`;
     return { id: `sim.watch.${nf(s.year, 4, 'en')}`, kind: 'watch', title: { ru: ru.title, en: en.title }, text: { ru: ru.text, en: en.text },
       details: { ru: ru.details, en: en.details }, parts: folded, data: ru.data };
   }
-  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => serviceDecision(s, ev), observe: observeShip, report: simReport };
+  // события v1: разрешено ли событие семьи family в год t — только дрейф, не у сюжетных узлов (±1 год от дат решений и
+  // перемоток сюжета), жизнеобеспечение и охлаждение — не во время истории контура Ирсона
+  function storyMarks(s) {
+    const out = [];
+    for (const b of beats) {
+      const v = b.kind === 'skip' ? b.toYear : b.kind === 'decision' ? b.year : undefined;
+      if (v === undefined) continue;
+      try { if (b.when && !b.when(s)) continue; const y = typeof v === 'function' ? v(s) : v; if (isFinite(y)) out.push(y); } catch (e) { /* дата из будущего состояния */ }
+    }
+    return out;
+  }
+  function evWindow(s, t, family) {
+    if (!s.arrive || s.lostShip || s.relief || s.outcome) return false;
+    if (t < M.ACC + 1 || t > M.brakeStart(arriveView(s), s.tMag) - 1) return false;
+    if ((family === 'lifeSupport' || family === 'cooling') && !ownStory(s) && t > Y(s, 0.6) - 1 && t < Y(s, 0.75) + 1) return false;
+    return !storyMarks(s).some(y => Math.abs(t - y) < 1);
+  }
+  // свои живые по реестру: без погибших в происшествиях (номера — как у victims)
+  const aliveIds = s => { const dead = new Set((s.incidents || []).filter(x => (x.pop || 'crew') === 'crew').flatMap(x => x.ids || []));
+    return [...Array(crewOf(s)).keys()].filter(i => !dead.has(i)); };
+  const EV = EVM.create({ hidden: (s, k) => hidden(s, k), name: (s, i) => ({ ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }), alive: aliveIds, window: evWindow,
+    dvPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40 });
+  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev), observe: observeShip, report: simReport };
   // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
     const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
@@ -1923,7 +1962,7 @@ All this time, "nominal" described the equipment's operating mode.`;
   const setWorld = w => { WORLD = Object.assign({ passTug: true }, w || {}); };
   // cargo: год сигнала — целый (сутки работ — в журнале)
   // год сигнала — целый (у склада — после консервации зала: прибытие округляется вверх)
-  const SOS_AT = { cargo: s => Y(s, 0.5), drift: s => loopV1(s) ? loopAt(s) : Y(s, 0.75) + 2, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
+  const SOS_AT = { cargo: SOS_AT_cargo, drift: s => loopV1(s) ? loopAt(s) : Y(s, 0.75) + 2, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
   function incidentOf(s, cause) {
     const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, s.arrive)).total + s.dead + (s.rescueCrewDead || 0));
     return { id: `${s.target}|${sent}|${cause}`, cause, target: s.target, beta: s.beta, arrive: s.arrive, tMag: s.tMag, capRate: capsSafe(s) ? 1e-4 : 2e-4, sent, mission: s.mission,
@@ -2242,13 +2281,14 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   const RISK = 5;                                                       // версия правил новых экспедиций: 1 — цена ошибки контакта, 2 — сюжет снабженца, 3 — сюжет спасателя, 4 — оснащение (Совет снабженцу без сети колонии; станки и печать удешевляют разделение платы); 5 — симулятор: время, щит, облако и поток на модели
   // публичное состояние — то, что знает экипаж: без сида скрытое недоступно (hidden → null). По нему строятся
   // тексты карточки, «Что известно», рекомендация Совета и «После»; исход — только эффектом на полном состоянии.
-  const publicOf = s => { const p = JSON.parse(JSON.stringify(s)); p.riskSeed = null; return p; };
+  const publicOf = s => { const p = JSON.parse(JSON.stringify(s)); p.riskSeed = null; return EV.strip(p); };
   const hidden = (s, key) => s.riskVersion >= 1 && s.riskSeed ? hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296 : null;
 
   function initialState(ctx) {
     return {
       riskVersion: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? ctx.riskVersion : 0,   // правила цены ошибки
       riskSeed: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? String(ctx.riskSeed) : null,
+      evOff: !!(ctx && ctx.events === false),   // события v1 выключены (проверки и калибровка: те же сиды без событий)
       year: 0,
       reserve: 100,        // резерв манёвров, % паспортного
       shieldWear: 0,       // износ фронтального щита сверх нормы, лет из ~150 расчётных
