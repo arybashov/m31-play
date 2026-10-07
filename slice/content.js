@@ -17,6 +17,7 @@
   const SH = root.M31Shield || require('./shield.js');
   // События v1 (DOC «События v1»): генератор эпизодов дрейфа — events.js (браузер: M31Events)
   const EVM = root.M31Events || require('./events.js');
+  const R = root.M31Requests || require('./requests.js');
   const nm = (s, lang) => M.nameOf(s.target || M.DECLARED, lang);
   // «звезда Барнарда» склоняется: у звезды, к звезде; остальные названия каталога — нет
   const nmG = s => nm(s, 'ru').replace(/^звезда /, 'звезды '), nmD = s => nm(s, 'ru').replace(/^звезда /, 'звезде ');
@@ -88,61 +89,6 @@
       : (ru ? `В системе известна колония «${c.ru}» (${STATUS[c.status].ru}). Задача — контакт; приём пятисот человек и помощь колонии не согласованы.` : `A colony is known in the system: ${c.en} (${STATUS[c.status].en}). The task is contact; taking in five hundred and helping the colony are not agreed.`);
     if (tr) return ru ? `Здесь — ${tr.ru.toLowerCase()}: ${tr.note.ru}.` : `Here: ${tr.en} — ${tr.note.en}.`;
     return null;
-  }
-
-  // ---------------------------------------------------------------- карта: вариант на каждую досягаемую систему
-  function targetOption(n, mission) {
-    const tieC = lang => mission === 'contact' ? colonyTie(n, lang) : null;
-    const st = M.star(n), T = Math.round(M.trip(st.d, 0.1, M.stdMag(0.1))), pl = M.planets(n), sector = M.inSector(n), off = Math.round(M.offAngle(n));
-    const planetsRu = pl.all ? `известно планет: ${pl.all}` + (pl.rocky ? `, крупнее Земли — ${pl.rocky}` : '') + (pl.giant ? ', есть газовый гигант' : '') : 'планеты не найдены';
-    const planetsEn = pl.all ? `known planets: ${pl.all}` + (pl.rocky ? `, super-Earths — ${pl.rocky}` : '') + (pl.giant ? ', a gas giant' : '') : 'no planets found';
-    const tie = {
-      ru: n === M.DECLARED ? 'Заявленная цель тридцать второй; сигнал — отсюда или из-за неё.' : sector ? `В секторе сигнала, ${off}° от заявки тридцать второй.` : `Вне сектора сигнала: ${off}° от него.`,
-      en: n === M.DECLARED ? "The Thirty-Second's declared target; the signal comes from here or beyond." : sector ? `Inside the signal sector, ${off}° off the Thirty-Second's filing.` : `Outside the signal sector: ${off}° from it.`
-    };
-    return {
-      id: n,
-      label: { ru: `${M.nameOf(n, 'ru')} · ${f1(st.d, 'ru')} св. года`, en: `${M.nameOf(n, 'en')} · ${f1(st.d, 'en')} ly` },
-      known: {
-        ru: [`${f1(st.d, 'ru')} св. года; на 0,1c — около ${yrsG(T)} пути.`, `Класс ${st.sp}; ${planetsRu}.`, tie.ru].concat(tieC('ru') || []),
-        en: [`${f1(st.d, 'en')} ly; at 0.1c about ${yrsEn(T)} on the road.`, `Class ${st.sp}; ${planetsEn}.`, tie.en].concat(tieC('en') || [])
-      },
-      effect: s => { s.target = n; s.arrive = Math.round(M.trip(st.d, s.beta, M.stdMag(s.beta))); },
-      // у снабженца и спасателя цель задана заявкой — запись о ней, а не о свободном выборе
-      record: mission === 'supply' || mission === 'rescue' ? {
-        ru: mission === 'rescue' ? s => `Орин прокладывает курс на ${nm({ target: n }, 'ru').replace(/^звезда /, 'звезду ')} — к складу Оттепели.
-
-${rescueS(s) ? '— Сорок капсул заняты двадцать пять лет. Сколько в них живых, скажет только склад. Нам туда.' : '— Сорок человек ждут на орбите двадцать пять лет. Нам туда.'}` : `Орин прокладывает курс на ${nm({ target: n }, 'ru').replace(/^звезда /, 'звезду ')} — к форпосту Ксилона Ир.
-
-— Они ждут детали передатчика и запас для капсул. Нам туда.`,
-        en: mission === 'rescue' ? s => `Orin lays in the course for ${M.nameOf(n, 'en')}, for Thaw's store.
-
-${rescueS(s) ? '"Forty capsules have been occupied for twenty-five years. How many living are in them, only the store can tell. That\'s where we go."' : '"Forty people have been waiting in orbit for twenty-five years. That\'s where we go."'}` : `Orin lays in the course for ${M.nameOf(n, 'en')}, for the Xylona Ir outpost.
-
-"They are waiting for transmitter parts and capsule spares. That's where we go."`
-      } : n === M.DECLARED ? {
-        ru: `Орин прокладывает курс по заявке тридцать второй.
-
-— Пойдём их дорогой. Если они оставили след, он на ней.`,
-        en: `Orin lays in the course from the Thirty-Second's filing.
-
-"We take their road. If they left a trace, it's on it."`
-      } : sector ? {
-        ru: `— Если они свернули, то сюда, — говорит Орин.
-
-Курс на ${M.nameOf(n, 'ru')} ложится на ${off}° в сторону от заявки тридцать второй.`,
-        en: `"If they turned aside, it was here," says Orin.
-
-The course for ${M.nameOf(n, 'en')} settles ${off}° off the Thirty-Second's filing.`
-      } : {
-        ru: `Орин долго смотрит на карту.
-
-— Это не сектор сигнала. — Он всё-таки прокладывает курс на ${M.nameOf(n, 'ru')}. — Экспедиция свободна в выборе. Но Кольцо будет присылать всё, что узнает о сигнале, и нам придётся это читать.`,
-        en: `Orin studies the chart for a long time.
-
-"That's not the signal sector." He lays in the course for ${M.nameOf(n, 'en')} anyway. "The expedition is free to choose. But the Ring will send everything it learns about the signal, and we'll have to read it."`
-      }
-    };
   }
 
   // ---------------------------------------------------------------- паспорт: скорость × резерв × комплекты × оснащение
@@ -236,6 +182,11 @@ Kassel signs for the Council last.`
   const contactRun = s => !s.mission || s.mission === 'contact';
   const nmA = s => nm(s, 'ru').replace(/^звезда /, 'звезду ');            // курс на звезду Барнарда
   // что торопит паспорт: у каждой миссии своё
+  // исследовательские заявки — по виду работы (requests.js): у каждой своя срочность и своя задача словами
+  const URGENT_WORK = { contactColony: { ru: 'лоции Перевала стареют сейчас', en: "the Pass's charts are ageing now" },
+    trace: { ru: 'след двадцать четвёртой стареет сейчас', en: "No. 24's trace is ageing now" },
+    survey: { ru: 'Кольцо ждёт измерений', en: 'the Ring is waiting for the measurements' } };
+  const urgentOf = (s, lang) => { const q = s.requestId && R.get(s.requestId), w = q && URGENT_WORK[q.work]; return (w || URGENT[s.mission || 'contact'])[lang]; };
   const URGENT = { contact: { ru: 'тридцать вторая молчит сейчас', en: 'the Thirty-Second is silent now' },
     supply: { ru: 'передатчик форпоста слабеет сейчас', en: "the outpost's transmitter is fading now" },
     rescue: { ru: 'капсулы Оттепели стареют сейчас', en: "Thaw's capsules are ageing now" } };
@@ -244,8 +195,14 @@ Kassel signs for the Council last.`
     if (s.mission === 'supply') return ru ? 'о форпосте Ксилона Ир и о мире у звезды Барнарда' : "on the Xylona Ir outpost and the world at Barnard's Star";
     if (s.mission === 'rescue') return ru ? `об Оттепели и о мире у ${nmG(s)}` : `on Thaw and the world at ${nm(s, 'en')}`;
     return ru ? `о мире у ${nmG(s)}` : `on the world at ${nm(s, 'en')}`; };
-  // задача экспедиции словами — по миссии
-  const goalOf = (s, lang) => ({
+  // задача экспедиции словами — по миссии; у исследования — по виду работы заявки
+  const GOAL_WORK = {
+    contactColony: { ru: 'установить прямую связь с Перевалом, сверить лоции и, если у цели можно жить, построить там дом', en: 'establish a direct link with the Pass, reconcile the navigation records and, if the target can be lived on, build a home there' },
+    trace: { ru: 'найти след двадцать четвёртой, передать протокол и, если у цели можно жить, построить там дом', en: "find No. 24's trace, transmit the report and, if the target can be lived on, build a home there" },
+    survey: { ru: 'обследовать систему и её планету, передать измерения и, если у цели можно жить, построить там дом', en: 'survey the system and its planet, transmit the measurements and, if the target can be lived on, build a home there' }
+  };
+  const goalOf = (s, lang) => { const q = s.requestId && R.get(s.requestId); return q && GOAL_WORK[q.work] ? GOAL_WORK[q.work][lang] : goalBase(s, lang); };
+  const goalBase = (s, lang) => ({
     contact: { ru: 'найти тридцать вторую, понять сигнал и, если у цели можно жить, построить там дом', en: 'find the Thirty-Second, understand the signal and, if the target can be lived on, build a home there' },
     supply: { ru: 'вернуть форпосту Ксилона Ир связь и капсулы и остаться с ним', en: 'give the Xylona Ir outpost back its link and its capsules, and stay with it' },
     rescue: { ru: 'успеть к сорока спящим Оттепели и, если у цели можно жить, построить там дом', en: "reach Thaw's forty sleepers in time and, if the target can be lived on, build a home there" }
@@ -1450,7 +1407,6 @@ The log's last entry is a woman's voice: to those who come after — do not open
   // что из решений Акта I уходящая вахта разбирает последним
   function lastCall(s, lang) {
     const c = s.choices, ru = lang === 'ru';
-    if (s.turned) return ru ? `поворот к ε Индейца на году ${s.turned}` : `the turn toward ε Indi in year ${s.turned}`;
     if (c['d.cloud'] === 'trust') return ru ? 'доверие модели у края облака и полтора года щита' : 'trusting the model at the cloud edge, and a year and a half of shield';
     if (c['d.cloud'] === 'manoeuvre') return ru ? 'манёвр у облака и то, чем за него заплатили' : 'the manoeuvre at the cloud and what it cost';
     if (c['d.scout'] === 'launch') return ru ? 'зонд, отправленный вперёд' : 'the probe sent ahead';
@@ -2001,7 +1957,7 @@ All this time, "nominal" described the equipment's operating mode.`;
     let cost = null;
     const pp = String(s.choices['d.passport'] || '').split('|');
     if (pp.length === 4 && s.eq) {
-      const sp = Object.assign({}, s, { target: s.choices['d.target'] || s.target }), d0 = { b: Number(pp[0]), r: Number(pp[1]), kits: pp[2] ? pp[2].split('+') : [], eq: s.eq };
+      const sp = Object.assign({}, s, { target: reqOf(s) ? reqOf(s).star : s.target }), d0 = { b: Number(pp[0]), r: Number(pp[1]), kits: pp[2] ? pp[2].split('+') : [], eq: s.eq };
       const cur = passportNumbers(sp, d0), base = passportNumbers(sp, Object.assign({}, d0, { eq: M.EQ_BASE })),
         rec = passportNumbers(sp, Object.assign({}, d0, { eq: M.eqDefault(s.mission, s.riskVersion) })), mo = x => `${sgn(x * 12, lang, 1)} ${ru ? 'мес.' : 'months'}`;
       const same = Math.abs(cur.used - rec.used) < 1e-9;
@@ -2391,7 +2347,6 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       kits: [],            // комплекты груза
       arrive: 133,         // год прибытия
       turned: 0,           // год поворота к источнику сигнала (0 — не поворачивали)
-      dissent: false,      // экипаж просил повернуть, совет отказал
       materials: 100,      // материалы для высадки, % запаса
       scout: 0,            // год запуска зонда вперёд (0 — не запущен)
       scoutTuned: false,   // программа спектрометра зонда — Коры
@@ -2470,6 +2425,153 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     return st;
   }
 
+  // ---------------------------------------------------------------- голосование Совета по заявкам
+  // DOC «Повороты по обстановке Кольца» (заявки из мира) и «Ревью Codex — заявки из мира». Вариант голосования — заявка
+  // повестки (requests.js): она задаёт ветку сюжета, звезду и работу. Отдельного выбора звезды нет; карта — обзор.
+  // MISSION_BASE — тексты веток (контакт, снабжение, спасение); у исследовательских заявок — своё «за что» и курс Орина
+  const MISSION_BASE = [
+          {
+            id: 'contact',
+            label: { ru: 'Исследование и контакт', en: 'Research and contact' },
+            known: {
+              ru: ['Звезду выбирает экспедиция — любую достижимую; задание уточнят по сведениям о системе: поиск тридцать второй и источника сигнала, обследование системы или прямая связь с поселением.', 'Форпосту Ксилона Ир обещают специалиста через четыре года — передатчик к тому времени может замолчать.'],
+              en: ['The expedition chooses the star — any it can reach; the task is set from what is known of the system: searching for the Thirty-Second and the signal source, surveying the system, or a direct link with a settlement.', 'Xylona Ir is promised a specialist in four years — its transmitter may be silent by then.']
+            },
+            effect: st => { st.mission = 'contact'; },
+            record: {
+              ru: `Совет утверждает исследовательскую экспедицию. Форпосту обещают специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилона Ир он пока не убирает.
+  
+  — Я поведу эту экспедицию.
+  
+  Кассель не спешит записывать его имя.
+  
+  — Вы голосовали за форпост.
+  
+  — Голосовал.
+  
+  — Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.`,
+              en: `The Council approves a research expedition. The outpost is promised a specialist next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
+  
+  "I'll lead this expedition."
+  
+  Kassel doesn't hurry to note his name.
+  
+  "You voted for the outpost."
+  
+  "I did."
+  
+  "Then I'm navigator," says Orin. "Now we choose where to go, and what for."`
+            }
+          },
+          {
+            id: 'supply',
+            label: { ru: 'Форпост Ксилона Ир: связь и запчасти', en: 'Xylona Ir outpost: the link and spares' },
+            known: {
+              ru: ['Звезда Барнарда, 6 св. лет — ближе всех. Специалист дальней связи, передатчик, запас для капсул.', 'Исследование сектора сигнала ждёт следующей экспедиции.'],
+              en: ["Barnard's Star, 6 ly — the nearest. A deep-relay specialist, a transmitter, capsule spares.", 'Research in the signal sector waits for the next expedition.']
+            },
+            effect: st => { st.mission = 'supply'; },
+            record: {
+              ru: `Совет голосует за форпост. Исследование Орина обещают следующей экспедиции.
+  
+  — Я поведу, — говорит Дассер.
+  
+  Орин молча переносит координаты сигнала в свой журнал.
+  
+  — Тогда я — штурман. Сигнал подождёт; передатчик — нет.`,
+              en: `The Council votes for the outpost. Orin's research is promised to the next expedition.
+  
+  "I'll lead," says Dasser.
+  
+  Orin silently copies the signal's coordinates into his log.
+  
+  "Then I'm navigator. The signal can wait; the transmitter can't."`
+            }
+          },
+          {
+            id: 'rescue',
+            label: { ru: 'Оттепель: сорок спящих', en: 'Thaw: forty sleepers' },
+            known: {
+              ru: [`Росс 128, 11 св. лет. Капсулы держат до года ${thawDeadline()}: успеть можно только на 0,1c — с запасом в месяцы.`, 'На 0,1c почти нет места для груза. Сорок мест для спасённых — это сорок своих, оставшихся на Земле.'],
+              en: [`Ross 128, 11 ly. The capsules hold until year ${thawDeadline()}: only 0.1c gets there in time — with a margin of months.`, 'At 0.1c there is almost no room for cargo. Forty berths for the rescued mean forty of our own staying on Earth.']
+            },
+            effect: st => { st.mission = 'rescue'; },
+            record: {
+              ru: `Совет голосует за Оттепель. Кассель записывает срок: год ${thawDeadline()}.
+  
+  — Я поведу, — говорит Дассер.
+  
+  — Тогда я — штурман, — говорит Орин. — И считать будем каждый день.`,
+              en: `The Council votes for Thaw. Kassel writes down the deadline: year ${thawDeadline()}.
+  
+  "I'll lead," says Dasser.
+  
+  "Then I'm navigator," says Orin. "And we'll count every day."`
+            }
+          }
+        ];
+  const agendaOf = s => R.agenda(null);                                // повестка первой экспедиции (память мира — позже)
+  const reqOf = s => s.requestId ? R.get(s.requestId) : null;
+  const RESEARCH = {
+    'req:search32:e32': {
+      label: { ru: 'ε Индейца: след тридцать второй и источник сигнала', en: "ε Indi: the Thirty-Second's trace and the signal source" },
+      task: { ru: 'Совет: найти след тридцать второй и источник сигнала, передать записи Кольцу. Путь — по заявленному маршруту тридцать второй.', en: "The Council: find the Thirty-Second's trace and the signal source, and transmit the records to the Ring. The road follows the Thirty-Second's filed route." },
+      vote: { ru: 'Совет голосует за поиск тридцать второй у ε Индейца.', en: 'The Council votes for the search for the Thirty-Second at ε Indi.' },
+      course: { ru: '— Тогда я — штурман, — говорит Орин. — Пойдём дорогой тридцать второй. Если они оставили след, он на ней.', en: '"Then I\'m navigator," says Orin. "We take the Thirty-Second\'s road. If they left a trace, it\'s on it."' }
+    },
+    'req:contact:pass': {
+      vote: { ru: 'Совет голосует за заявку службы навигации — Перевал.', en: "The Council votes for the navigation service's request — the Pass." },
+      course: { ru: '— Тогда я — штурман, — говорит Орин. — Курс на Лакайль 9352. Их лоции пригодятся нам раньше, чем им — наши.', en: '"Then I\'m navigator," says Orin. "Course for Lacaille 9352. We\'ll need their charts sooner than they need ours."' }
+    },
+    'req:trace:e24': {
+      vote: { ru: 'Совет голосует за заявку архивной комиссии — след двадцать четвёртой.', en: "The Council votes for the archive commission's request — No. 24's trace." },
+      course: { ru: '— Тогда я — штурман, — говорит Орин. — Курс на 61 Лебедя. Их автоматика довела корабль без людей — посмотрим, что она видела.', en: '"Then I\'m navigator," says Orin. "Course for 61 Cygni. Their automation brought the ship in with nobody aboard — let\'s see what it saw."' }
+    },
+    'req:survey:gl338': {
+      vote: { ru: 'Совет голосует за заявку научной программы — Gl 338.', en: "The Council votes for the science programme's request — Gl 338." },
+      course: { ru: '— Тогда я — штурман, — говорит Орин. — Курс на Gl 338. Дальше всех — значит, считать точнее всех.', en: '"Then I\'m navigator," says Orin. "Course for Gl 338. Farthest of all — so we count more carefully than anyone."' }
+    }
+  };
+  const COURSE = {
+    supply: { ru: 'Орин прокладывает курс на звезду Барнарда — к форпосту Ксилона Ир.', en: "Orin lays in the course for Barnard's Star, for the Xylona Ir outpost." },
+    rescue: { ru: 'Орин прокладывает курс на Росс 128 — к складу Оттепели.', en: "Orin lays in the course for Ross 128, for Thaw's store." }
+  };
+  const swap = (text, a, b) => { if (!text.includes(a)) throw new Error(`Нет текста для замены: ${a}`); return text.replace(a, b); };
+  function requestOption(id) {
+    const q = R.get(id), base = MISSION_BASE.find(o => o.id === q.branch), T = R.TEXT[id], X = RESEARCH[id];
+    const effect = st => { st.requestId = q.id; st.mission = q.branch; st.target = q.star; st.arrive = Math.round(M.trip(M.star(q.star).d, st.beta, M.stdMag(st.beta))); };
+    if (q.branch !== 'contact') return Object.assign({}, base, { id, effect,
+      record: { ru: `${base.record.ru}\n\n${COURSE[q.branch].ru}`, en: `${base.record.en}\n\n${COURSE[q.branch].en}` } });
+    const lines = lang => (T ? T.known(q, lang) : [R.roadLine(q, lang), X.task[lang]]).concat(base.known[lang].slice(-1));   // последняя строка — цена для Ксилоны
+    return { id, effect, label: T ? T.label : X.label, known: { ru: () => lines('ru'), en: () => lines('en') },
+      record: {
+        ru: swap(swap(base.record.ru, 'Совет утверждает исследовательскую экспедицию.', X.vote.ru), '— Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.', X.course.ru),
+        en: swap(swap(base.record.en, 'The Council approves a research expedition.', X.vote.en), '"Then I\'m navigator," says Orin. "Now we choose where to go, and what for."', X.course.en)
+      } };
+  }
+  // стенограмма Совета — по повестке: кто какую заявку докладывает
+  const NUMW = { ru: ['', '', 'две', 'три', 'четыре', 'пять', 'шесть'], en: ['', '', 'two', 'three', 'four', 'five', 'six'] };
+  function councilText(lang) {
+    const A = agendaOf(null), n = A.length, ru = lang === 'ru', has = id => A.includes(id), W = id => R.TEXT[id].council[lang];
+    const N = ru ? NUMW.ru[n] : NUMW.en[n].replace(/^./, c => c.toUpperCase());
+    const out = [ru ? `— Заявок ${N}, экспедиция одна, — говорит Ирина Кассель. — Решаем, какую берёт сорок первая: заявка задаёт и звезду, и работу. Паспорт утвердим потом.`
+        : `"${N} requests, one expedition," says Irina Kassel. "We decide which one the Forty-First takes on: a request sets both the star and the work. The passport comes after."`,
+      ru ? `На общей карте ${N} ${plural(n, ['отметка', 'отметки', 'отметок'])}. Ни одна ещё не соединена с Землёй линией курса.` : `${N} markers stand on the shared chart. None is yet joined to Earth by a course line.`];
+    if (has('req:supply:xylona')) out.push(ru ? 'Нил Дассер касается первой.' : 'Nil Dasser touches the first.',
+      ru ? '— Ксилона Ир, звезда Барнарда. Передатчик слабеет: ещё десять лет без специалиста дальней связи — и форпост перестанет слышать Кольцо. Им нужны специалист, детали передатчика и запас для капсул.'
+        : '"Xylona Ir, Barnard\'s Star. Its transmitter is failing: ten more years without a deep-relay specialist and the outpost stops hearing the Ring. They need a specialist, transmitter parts and capsule spares."');
+    if (has('req:rescue:thaw')) out.push(ru ? 'Ива Лорн касается второй.' : 'Iva Lorn touches the second.',
+      ru ? '— Оттепель, Росс 128. База погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет; двадцать пять уже прошло. Сколько из сорока живы, мы не знаем.'
+        : '"Thaw, Ross 128. The base is dead; forty people went into capsules at the orbital store. The capsules hold a hundred and fifty years; twenty-five have passed. How many of the forty are alive, we don\'t know."');
+    const extra = ['req:trace:e24', 'req:survey:gl338'].filter(has).map(W).join(' ');
+    out.push(ru ? 'Орин Дал увеличивает участок карты с сектором сигнала.' : 'Orin Dal enlarges the region of the chart with the signal sector.',
+      ru ? `— Исследование. Тридцать вторая шла к ε Индейца; её последняя передача оборвана, а из того же сектора идёт сигнал, которого нет в каталогах Кольца. Это моя первая кандидатура.${extra ? ' ' + extra : ''}`
+        : `"Research. The Thirty-Second was bound for ε Indi; its last transmission broke off, and from the same sector comes a signal that is in none of the Ring's catalogues. That is my first candidate.${extra ? ' ' + extra : ''}"`);
+    if (has('req:contact:pass')) out.push(W('req:contact:pass'));
+    out.push(ru ? '— Остальные заявки останутся в очереди, — говорит Кассель. — Голосуем.' : '"The other requests stay in the queue," says Kassel. "We vote."');
+    return out.join('\n\n');
+  }
+
   const beats = [
     // ------------------------------------------------------------ ЗАЯВОЧНЫЙ ПЛАН
     {
@@ -2493,134 +2595,20 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     {
       id: 'p.council', scene: 'council', kind: 'transcript', year: 0,
       title: { ru: 'Совет Звездоплавания', en: 'Council of Star Navigation' },
-      text: {
-        ru: `— Заявок три, экспедиция одна, — говорит Ирина Кассель. — Решаем, какую работу берёт сорок первая. Звезду, задание и паспорт утвердим потом.
-
-На общей карте три отметки. Ни одна ещё не соединена с Землёй линией курса.
-
-Нил Дассер касается первой.
-
-— Ксилона Ир, звезда Барнарда. Передатчик слабеет: ещё десять лет без специалиста дальней связи — и форпост перестанет слышать Кольцо. Им нужны специалист, детали передатчика и запас для капсул.
-
-Ива Лорн касается второй.
-
-— Оттепель, Росс 128. База погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет; двадцать пять уже прошло. Сколько из сорока живы, мы не знаем.
-
-Орин Дал увеличивает третий участок карты.
-
-— Исследование. Тридцать вторая шла к ε Индейца; её последняя передача оборвана, а из того же сектора идёт сигнал, которого нет в каталогах Кольца. Это моя первая кандидатура. Но есть и другие системы: подтверждённые планеты, старые наблюдения, поселения, с которыми нужна прямая связь. Выберем звезду — запишем, что именно там выяснить.
-
-— Две заявки останутся в очереди, — говорит Кассель. — Голосуем.`,
-        en: `"Three requests, one expedition," says Irina Kassel. "We decide what work the Forty-First takes on. The star, the task and the passport come after."
-
-Three markers stand on the shared chart. None is yet joined to Earth by a course line.
-
-Nil Dasser touches the first.
-
-"Xylona Ir, Barnard's Star. Its transmitter is failing: ten more years without a deep-relay specialist and the outpost stops hearing the Ring. They need a specialist, transmitter parts and capsule spares."
-
-Iva Lorn touches the second.
-
-"Thaw, Ross 128. The base is dead; forty people went into capsules at the orbital store. The capsules hold a hundred and fifty years; twenty-five have passed. How many of the forty are alive, we don't know."
-
-Orin Dal enlarges the third region of the chart.
-
-"Research. The Thirty-Second was bound for ε Indi; its last transmission broke off, and from the same sector comes a signal that is in none of the Ring's catalogues. That is my first candidate. But there are other systems: confirmed planets, old observations, settlements that need a direct link. Once we choose a star, we write down exactly what to establish there."
-
-"Two requests stay in the queue," says Kassel. "We vote."`
-      }
+      text: { ru: () => councilText('ru'), en: () => councilText('en') }
     },
     {
-      id: 'd.mission', scene: 'council', kind: 'decision', year: 0,
-      title: { ru: 'Какую работу берёт сорок первая', en: 'Which work the Forty-First takes on' },
+      // голосование — по заявкам повестки; рядом карта-обзор (ui: 'agenda'): звёзды можно смотреть, курс задаёт заявка
+      id: 'd.mission', scene: 'chart', kind: 'decision', year: 0, ui: 'agenda',
+      title: { ru: 'Какую заявку берёт сорок первая', en: 'Which request the Forty-First takes on' },
       context: {
-        ru: 'Совет голосует. Две другие заявки остаются в очереди — их возьмут следующие экспедиции, через годы.',
-        en: 'The Council votes. The other two requests stay in the queue for later expeditions — years from now.'
+        ru: 'Совет голосует. Заявка задаёт и звезду, и работу; остальные остаются в очереди — их возьмут следующие экспедиции, через годы.',
+        en: 'The Council votes. A request sets both the star and the work; the rest stay in the queue for later expeditions — years from now.'
       },
-      options: [
-        {
-          id: 'contact',
-          label: { ru: 'Исследование и контакт', en: 'Research and contact' },
-          known: {
-            ru: ['Звезду выбирает экспедиция — любую достижимую; задание уточнят по сведениям о системе: поиск тридцать второй и источника сигнала, обследование системы или прямая связь с поселением.', 'Форпосту Ксилона Ир обещают специалиста через четыре года — передатчик к тому времени может замолчать.'],
-            en: ['The expedition chooses the star — any it can reach; the task is set from what is known of the system: searching for the Thirty-Second and the signal source, surveying the system, or a direct link with a settlement.', 'Xylona Ir is promised a specialist in four years — its transmitter may be silent by then.']
-          },
-          effect: st => { st.mission = 'contact'; },
-          record: {
-            ru: `Совет утверждает исследовательскую экспедицию. Форпосту обещают специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилона Ир он пока не убирает.
-
-— Я поведу эту экспедицию.
-
-Кассель не спешит записывать его имя.
-
-— Вы голосовали за форпост.
-
-— Голосовал.
-
-— Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.`,
-            en: `The Council approves a research expedition. The outpost is promised a specialist next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
-
-"I'll lead this expedition."
-
-Kassel doesn't hurry to note his name.
-
-"You voted for the outpost."
-
-"I did."
-
-"Then I'm navigator," says Orin. "Now we choose where to go, and what for."`
-          }
-        },
-        {
-          id: 'supply',
-          label: { ru: 'Форпост Ксилона Ир: связь и запчасти', en: 'Xylona Ir outpost: the link and spares' },
-          known: {
-            ru: ['Звезда Барнарда, 6 св. лет — ближе всех. Специалист дальней связи, передатчик, запас для капсул.', 'Исследование сектора сигнала ждёт следующей экспедиции.'],
-            en: ["Barnard's Star, 6 ly — the nearest. A deep-relay specialist, a transmitter, capsule spares.", 'Research in the signal sector waits for the next expedition.']
-          },
-          effect: st => { st.mission = 'supply'; },
-          record: {
-            ru: `Совет голосует за форпост. Исследование Орина обещают следующей экспедиции.
-
-— Я поведу, — говорит Дассер.
-
-Орин молча переносит координаты сигнала в свой журнал.
-
-— Тогда я — штурман. Сигнал подождёт; передатчик — нет.`,
-            en: `The Council votes for the outpost. Orin's research is promised to the next expedition.
-
-"I'll lead," says Dasser.
-
-Orin silently copies the signal's coordinates into his log.
-
-"Then I'm navigator. The signal can wait; the transmitter can't."`
-          }
-        },
-        {
-          id: 'rescue',
-          label: { ru: 'Оттепель: сорок спящих', en: 'Thaw: forty sleepers' },
-          known: {
-            ru: [`Росс 128, 11 св. лет. Капсулы держат до года ${thawDeadline()}: успеть можно только на 0,1c — с запасом в месяцы.`, 'На 0,1c почти нет места для груза. Сорок мест для спасённых — это сорок своих, оставшихся на Земле.'],
-            en: [`Ross 128, 11 ly. The capsules hold until year ${thawDeadline()}: only 0.1c gets there in time — with a margin of months.`, 'At 0.1c there is almost no room for cargo. Forty berths for the rescued mean forty of our own staying on Earth.']
-          },
-          effect: st => { st.mission = 'rescue'; },
-          record: {
-            ru: `Совет голосует за Оттепель. Кассель записывает срок: год ${thawDeadline()}.
-
-— Я поведу, — говорит Дассер.
-
-— Тогда я — штурман, — говорит Орин. — И считать будем каждый день.`,
-            en: `The Council votes for Thaw. Kassel writes down the deadline: year ${thawDeadline()}.
-
-"I'll lead," says Dasser.
-
-"Then I'm navigator," says Orin. "And we'll count every day."`
-          }
-        }
-      ]
+      options: s => agendaOf(s).map(requestOption)
     },
     {
-      id: 'p.station', scene: 'council', kind: 'archive', year: 0, inline: 'probe', when: s => s.mission === 'contact',
+      id: 'p.station', scene: 'council', kind: 'archive', year: 0, inline: 'probe', when: s => s.requestId === 'req:search32:e32',
       place: { ru: 'Земля, Совет Звездоплавания · приложение к исследовательской заявке', en: 'Earth, Council of Star Navigation · research request annex' },
       text: {
         ru: `В приложении — две записи станции связи Кольца из одного сектора неба.
@@ -2650,6 +2638,11 @@ Orin attaches the Thirty-Second's declared route — to ε Indi.
 
 "That is where to search for its trace and the signal source," he says. "Another star will get another task."`
       }
+    },
+    {
+      id: 'p.requestEvidence', scene: 'council', kind: 'archive', year: 0, when: s => !!(s.requestId && R.TEXT[s.requestId]),
+      place: { ru: 'Земля, Совет Звездоплавания · приложение к заявке', en: 'Earth, Council of Star Navigation · request annex' },
+      text: { ru: s => R.TEXT[s.requestId].annex.ru, en: s => R.TEXT[s.requestId].annex.en }
     },
     {
       id: 'p.supplyEvidence', scene: 'council', kind: 'archive', year: 0, when: supplyS,
@@ -2693,21 +2686,11 @@ Irina Kassel lays the documents side by side.
       }
     },
     {
-      id: 'd.target', scene: 'chart', kind: 'decision', year: 0, ui: 'map',
-      sceneOf: s => s.mission && s.mission !== 'contact' ? 'chartTarget' : 'chart',   // ракурс экрана: цель заявки — в кадре
-      title: { ru: 'Куда лететь', en: 'Where to fly' },
-      context: {
-        ru: s => s.mission === 'supply' ? 'Цель задана заявкой: форпост Ксилона Ир у звезды Барнарда.' : s.mission === 'rescue' ? 'Цель задана заявкой: орбитальный склад Оттепели у Росс 128.' : 'Совет дал сектор сигнала, но систему выбирает экспедиция. Карта открыта вся: Совет утвердит любую цель, до которой люди доживут. Сектор подсвечен; ε Индейца — заявленная цель тридцать второй.',
-        en: s => s.mission === 'supply' ? "The target is set by the request: the Xylona Ir outpost at Barnard's Star." : s.mission === 'rescue' ? "The target is set by the request: Thaw's orbital store at Ross 128." : "The Council has given the signal sector, but the expedition chooses the system. The whole chart is open: the Council will approve any target people can live to reach. The sector is highlighted; ε Indi is the Thirty-Second's declared target."
-      },
-      options: s => s.mission && s.mission !== 'contact' ? [targetOption(M.MISSIONS[s.mission].target, s.mission)] : M.reachable().map(st => targetOption(st.name, 'contact'))
-    },
-    {
       id: 'd.passport', scene: 'fitting', kind: 'decision', year: 0, ui: 'passport',
       title: { ru: 'Паспорт экспедиции', en: 'Expedition passport' },
       context: {
-        ru: s => `Кольцо выделило 1,24 млн т D+³He. Больше не будет: гелий-3 добывают годами, а ${URGENT[s.mission || 'contact'].ru}. Ядро корабля неизменно; решаем, сколько топлива уйдёт на скорость, сколько — на резерв и груз.`,
-        en: s => `The Ring has allotted 1.24 million tonnes of D+³He. There will be no more: helium-3 takes years to mine, and ${URGENT[s.mission || 'contact'].en}. The ship's core is fixed; we decide how much fuel goes to speed and how much to reserve and cargo.`
+        ru: s => `Кольцо выделило 1,24 млн т D+³He. Больше не будет: гелий-3 добывают годами, а ${urgentOf(s, 'ru')}. Ядро корабля неизменно; решаем, сколько топлива уйдёт на скорость, сколько — на резерв и груз.`,
+        en: s => `The Ring has allotted 1.24 million tonnes of D+³He. There will be no more: helium-3 takes years to mine, and ${urgentOf(s, 'en')}. The ship's core is fixed; we decide how much fuel goes to speed and how much to reserve and cargo.`
       },
       options: s => passportOptions(s),
       option: (s, id) => passportParse(s, id)
@@ -2918,73 +2901,6 @@ Dan gets his first qualification for outside work. Irson checks him twice.`
 For the first time the ship is empty. In the rings you can hear the ventilation running.`
       }
     },
-    {
-      id: 'a1.triang', scene: 'ring', kind: 'bulletin', year: 2,
-      title: { ru: 'Сводка Кольца · триангуляция сигнала', en: 'Ring bulletin · signal triangulation' },
-      text: {
-        ru: s => `Станции Кольца у двух соседних звёзд приняли тот же сигнал. Их записи шли до Земли больше года; база триангуляции — световые годы.
-
-Ошибка направления сузилась с двадцати пяти градусов до двух. Источник — в системе ε Индейца или за ней, на том же луче.` +
-          (s.target === M.SOURCE ? '\n\nЭто наш курс.' : contactRun(s) ? `\n\nНаш курс на ${nmA(s)} отходит от луча на ${Math.round(M.offAngle(s.target))}°.`
-            : `\n\nСигнал ведёт Кольцо: его сектор Совет обещал следующей экспедиции. Наша работа — ${s.mission === 'supply' ? 'форпост Ксилона Ир' : 'Оттепель'}.`),
-        en: s => `Ring stations at two neighbouring stars picked up the same signal. Their records took more than a year to reach Earth; the triangulation baseline is light-years long.
-
-The direction error has narrowed from twenty-five degrees to two. The source lies in the ε Indi system or beyond it, on the same line.` +
-          (s.target === M.SOURCE ? '\n\nThat is our course.' : contactRun(s) ? `\n\nOur course for ${nm(s, 'en')} diverges from that line by ${Math.round(M.offAngle(s.target))}°.`
-            : `\n\nThe Ring follows the signal: the Council promised its sector to the next expedition. Our work is ${s.mission === 'supply' ? 'the Xylona Ir outpost' : 'Thaw'}.`)
-      }
-    },
-    {
-      id: 'd.turn', scene: 'ring', kind: 'decision', year: 2,
-      when: s => (!s.mission || s.mission === 'contact') && s.target !== M.SOURCE && !!turnTo(s, 2),
-      title: { ru: 'Повернуть к источнику?', en: 'Turn toward the source?' },
-      context: {
-        ru: 'Пока работает тяга, курс можно довернуть. Чем позже, тем дороже: скорость, набранную по старому курсу, приходится гасить.',
-        en: 'While the engine burns, the course can still be changed. The later, the dearer: the speed gained on the old course has to be cancelled.'
-      },
-      options: [
-        {
-          id: 'turn',
-          label: { ru: 'Повернуть к ε Индейца', en: 'Turn toward ε Indi' },
-          known: {
-            ru: s => { const t = turnTo(s, 2), T = Math.round(2 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Скорость после поворота: ${fb(t.beta, 'ru')} вместо ${fb(s.beta, 'ru')}.`,
-              `Прибытие к ε Индейца — около года ${T}.`,
-              t.reserveUsed > 0 ? `Резерв манёвров: −${Math.round(t.reserveUsed / s.reserveDv * 100)}%.` : 'Резерв манёвров не тронут.']; },
-            en: s => { const t = turnTo(s, 2), T = Math.round(2 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Speed after the turn: ${fb(t.beta, 'en')} instead of ${fb(s.beta, 'en')}.`,
-              `Arrival at ε Indi around year ${T}.`,
-              t.reserveUsed > 0 ? `Manoeuvre reserve: −${Math.round(t.reserveUsed / s.reserveDv * 100)}%.` : 'Manoeuvre reserve untouched.']; }
-          },
-          effect: s => {
-            const t = turnTo(s, 2);
-            s.reserve -= t.reserveUsed / s.reserveDv * 100;
-            s.turned = 2; s.target = M.SOURCE; s.beta = t.beta;
-            s.tMag = tm(s, t.beta); s.arriveExact = 2 + tripOf(s, M.star(M.SOURCE).d, t.beta); s.arrive = Math.round(s.arriveExact);
-          },
-          record: {
-            ru: `Орин прокладывает новый курс. Двигатель не гаснет ни на минуту: поворот идёт самой тягой, и звёзды на обзорной поверхности неделю медленно плывут в сторону.`,
-            en: `Orin lays in the new course. The engine never goes quiet: the turn is made by the thrust itself, and for a week the stars on the viewing surface drift slowly sideways.`
-          }
-        },
-        {
-          id: 'hold',
-          label: { ru: 'Держать курс', en: 'Hold the course' },
-          known: {
-            ru: s => { const t4 = turnTo(s, 4); return [
-              t4 ? `Через два года поворот обойдётся дороже: скорость упадёт до ${fb(t4.beta, 'ru')}.` : 'Через два года повернуть будет уже нельзя.',
-              'Сводки о сигнале будут приходить и дальше.']; },
-            en: s => { const t4 = turnTo(s, 4); return [
-              t4 ? `In two years a turn will cost more: speed will drop to ${fb(t4.beta, 'en')}.` : 'In two years it will be too late to turn.',
-              'Bulletins about the signal will keep arriving.']; }
-          },
-          record: {
-            ru: s => `Совет оставляет курс на ${nm(s, 'ru')}. Лорн прикалывает сводку Кольца к доске у столовой — пусть читают все.`,
-            en: s => `The council keeps the course for ${nm(s, 'en')}. Lorn pins the Ring bulletin to the board by the mess — let everyone read it.`
-          }
-        }
-      ]
-    },
     { id: 's.y3', kind: 'skip', toYear: 3, label: { ru: 'Промотать до года 3', en: 'Skip ahead to year 3' } },
     {
       id: 'a1.seedlings', illus: 'agro-watch', scene: 'ring', kind: 'transcript', year: 3,
@@ -3001,79 +2917,6 @@ The direction error has narrowed from twenty-five degrees to two. The source lie
 
 The trays have names on them.`
       }
-    },
-    {
-      id: 'a1.lens', scene: 'ring', overlay: 'lens', kind: 'bulletin', year: 3,
-      when: s => (!s.mission || s.mission === 'contact') && M.badWorld(s.target),
-      effect: s => { s.worldSeen = M.worldOf(s.target); s.lensSeen = true; },
-      title: { ru: 'Сводка Кольца · снимок цели', en: 'Ring bulletin · image of the target' },
-      text: {
-        ru: s => `Станция Кольца за шестьдесят световых лет отсюда навела на ${nm(s, 'ru')} свою гравитационную линзу — телескоп, для которого объективом служит собственная звезда. Снимок — реконструкция в сорок восемь на сорок восемь точек; шёл до Земли десятилетия.
-
-` + ({
-          ruined: 'Ближняя к поясу жизни планета разрушена: кора расколота, по разломам светится расплав, вокруг — дуга обломков. Похоже на столкновение с другим телом несколько тысяч лет назад — недавно по меркам планет.',
-          hostile: 'Ближняя к поясу жизни планета закрыта сплошной облачной крышей. Под ней — парник: поверхность горячее четырёхсот градусов.',
-          none: 'На расчётной орбите ближней к поясу жизни планеты пусто. В земных данных это был шум активности звезды.'
-        })[M.worldOf(s.target)] + (s.target === M.SOURCE
-          ? '\n\nСигнал идёт оттуда же. Лететь стоит — за сигналом, не за домом.'
-          : '\n\nСовет Звездоплавания приписывает к сводке одну строку: «Туда лететь не стоит».'),
-        en: s => `A Ring station sixty light-years from here has turned its gravitational lens on ${nm(s, 'en')} — a telescope that uses its own star as the objective. The image is a reconstruction forty-eight points across; it took decades to reach Earth.
-
-` + ({
-          ruined: 'The planet nearest the habitable zone is shattered: the crust is split, melt glows along the faults, and an arc of debris surrounds it. It looks like a collision with another body a few thousand years ago — recent, as planets go.',
-          hostile: 'The planet nearest the habitable zone is sealed under a solid cloud deck. Beneath it, a greenhouse: the surface is hotter than four hundred degrees.',
-          none: "The predicted orbit of the planet nearest the habitable zone is empty. In Earth's data it was noise from the star's activity."
-        })[M.worldOf(s.target)] + (s.target === M.SOURCE
-          ? '\n\nThe signal comes from the same place. It is worth flying — for the signal, not for a home.'
-          : '\n\nThe Council of Star Navigation adds a single line to the bulletin: "It is not worth flying there."')
-      }
-    },
-    {
-      id: 'd.lens', scene: 'ring', overlay: 'lens', kind: 'decision', year: 3,
-      when: s => (!s.mission || s.mission === 'contact') && M.badWorld(s.target) && s.target !== M.SOURCE && !!turnTo(s, 3),
-      title: { ru: 'Снимок Кольца', en: 'The Ring\'s image' },
-      context: {
-        ru: 'Разгон ещё идёт — курс можно довернуть. С каждым годом поворот дороже.',
-        en: 'Acceleration is still under way — the course can be changed. Every year the turn costs more.'
-      },
-      options: [
-        {
-          id: 'turn',
-          label: { ru: 'Повернуть к ε Индейца, к сигналу', en: 'Turn toward ε Indi and the signal' },
-          known: {
-            ru: s => { const t = turnTo(s, 3), T = Math.round(3 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Скорость после поворота: ${fb(t.beta, 'ru')} вместо ${fb(s.beta, 'ru')}.`, `Прибытие к ε Индейца — около года ${T}.`,
-              'Какой мир у ε Индейца, Кольцо не снимало.']; },
-            en: s => { const t = turnTo(s, 3), T = Math.round(3 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Speed after the turn: ${fb(t.beta, 'en')} instead of ${fb(s.beta, 'en')}.`, `Arrival at ε Indi around year ${T}.`,
-              'The Ring has not imaged the world at ε Indi.']; }
-          },
-          effect: s => {
-            const t = turnTo(s, 3);
-            s.reserve -= t.reserveUsed / s.reserveDv * 100;
-            s.turned = 3; s.target = M.SOURCE; s.beta = t.beta; s.worldSeen = null;
-            s.tMag = tm(s, t.beta); s.arriveExact = 3 + tripOf(s, M.star(M.SOURCE).d, t.beta); s.arrive = Math.round(s.arriveExact);
-          },
-          record: {
-            ru: `Совет поворачивает. Снимок остаётся в столовой на стене — никто не предлагает его снять.`,
-            en: `The council turns. The image stays on the mess wall — no one suggests taking it down.`
-          }
-        },
-        {
-          id: 'hold',
-          label: { ru: 'Держать курс: дом будет на орбите', en: 'Hold course: home will be in orbit' },
-          known: {
-            ru: s => ['Корабль станет домом: жилые кольца на орбите, материалы — на расширение.', 'В системе остаются другие тела — спутники, пояс, обломки.',
-              s.kits.includes('landing') ? 'Расширенная посадка пригодится для баз на спутниках.' : 'Для баз на спутниках посадочных модулей немного.'],
-            en: s => ['The ship becomes home: habitat rings in orbit, materials for expansion.', 'Other bodies remain in the system — moons, a belt, debris.',
-              s.kits.includes('landing') ? 'The extended landing kit will serve bases on moons.' : 'There are few landers for bases on moons.']
-          },
-          record: {
-            ru: s => `Совет держит курс на ${nm(s, 'ru')}. Тея Марр в тот же вечер переписывает план: не поле, а оранжереи в кольцах — надолго.`,
-            en: s => `The council holds course for ${nm(s, 'en')}. That same evening Teya Marr rewrites her plan: not fields but greenhouses in the rings — for a long time.`
-          }
-        }
-      ]
     },
     { id: 's.y4', kind: 'skip', toYear: 4, label: { ru: 'Промотать до года 4 · середина разгона', en: 'Skip ahead to year 4 · mid-acceleration' } },
     {
@@ -3484,73 +3327,6 @@ Lorn enters herself first.`
     },
 
     // вне сектора: петиция о повороте — последний шанс, дорого
-    {
-      id: 'a1.petition', scene: 'ring', kind: 'transcript', year: 4,
-      when: s => M.episode(s) === 'petition',
-      title: { ru: 'Просьба о повороте', en: 'A petition to turn' },
-      text: {
-        ru: s => { const t = turnTo(s, 4); return `Ива Лорн кладёт на стол лист с подписями. Сорок один человек из шестидесяти.
-
-— Они просят повернуть к сигналу. Сводки Кольца приходят каждые полгода, и в каждой — ε Индейца.
-
-` + (t ? `— Сейчас поворот оставит нам ${fb(t.beta, 'ru')}, — говорит Ирсон. — Через два года не останется ничего: вся скорость уйдёт на то, чтобы погасить старую.` : `— Поздно, — говорит Ирсон. — Чтобы повернуть, пришлось бы погасить всю набранную скорость, а резерва на это нет.`) + `
-
-Орин молчит. Он прокладывал этот курс.`; },
-        en: s => { const t = turnTo(s, 4); return `Iva Lorn lays a sheet of signatures on the table. Forty-one people out of sixty.
-
-"They're asking us to turn toward the signal. Ring bulletins come every six months, and every one says ε Indi."
-
-` + (t ? `"A turn now would leave us ${fb(t.beta, 'en')}," says Irson. "In two years there'll be nothing left: all our speed would go into cancelling the old."` : `"Too late," says Irson. "To turn we'd have to cancel all the speed we've built, and there is no reserve for that."`) + `
-
-Orin says nothing. He laid this course.`; }
-      }
-    },
-    {
-      id: 'd.petition', scene: 'ring', kind: 'decision', year: 4,
-      when: s => M.episode(s) === 'petition' && !!turnTo(s, 4),
-      title: { ru: 'Просьба о повороте', en: 'A petition to turn' },
-      context: {
-        ru: 'Последнее окно: к концу разгона повернуть будет нельзя.',
-        en: 'The last window: by the end of acceleration a turn will be impossible.'
-      },
-      options: [
-        {
-          id: 'turn',
-          label: { ru: 'Повернуть к ε Индейца', en: 'Turn toward ε Indi' },
-          known: {
-            ru: s => { const t = turnTo(s, 4), T = Math.round(4 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Скорость после поворота: ${fb(t.beta, 'ru')}.`, `Прибытие к ε Индейца — около года ${T}.`,
-              t.reserveUsed > 0 ? `Резерв манёвров: −${Math.round(t.reserveUsed / s.reserveDv * 100)}%.` : 'Резерв манёвров не тронут.']; },
-            en: s => { const t = turnTo(s, 4), T = Math.round(4 + tripOf(s, M.star(M.SOURCE).d, t.beta)); return [
-              `Speed after the turn: ${fb(t.beta, 'en')}.`, `Arrival at ε Indi around year ${T}.`,
-              t.reserveUsed > 0 ? `Manoeuvre reserve: −${Math.round(t.reserveUsed / s.reserveDv * 100)}%.` : 'Manoeuvre reserve untouched.']; }
-          },
-          effect: s => {
-            const t = turnTo(s, 4);
-            s.reserve -= t.reserveUsed / s.reserveDv * 100;
-            s.turned = 4; s.target = M.SOURCE; s.beta = t.beta;
-            s.tMag = tm(s, t.beta); s.arriveExact = 4 + tripOf(s, M.star(M.SOURCE).d, t.beta); s.arrive = Math.round(s.arriveExact);
-          },
-          record: {
-            ru: `Совет поворачивает. Лорн подписывает лист последней, под сорока одной фамилией.`,
-            en: `The council turns. Lorn signs the sheet last, under forty-one names.`
-          }
-        },
-        {
-          id: 'hold',
-          label: { ru: 'Держать курс', en: 'Hold the course' },
-          known: {
-            ru: ['Скорость и срок прибытия сохраняются.', 'Сорок один человек остаётся при своём мнении; очередь пробуждений это почувствует.'],
-            en: ['Speed and arrival date are kept.', 'Forty-one people keep their view; the wake queue will feel it.']
-          },
-          effect: s => { s.dissent = true; },
-          record: {
-            ru: `Совет держит курс. Лист с подписями уходит в архив целиком — вместе с решением.`,
-            en: `The council holds the course. The sheet of signatures goes into the archive whole — together with the decision.`
-          }
-        }
-      ]
-    },
 
     // общее последствие: монтаж агромодуля (облако или тонкая вахта)
     {
@@ -3717,7 +3493,7 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
 Плазменный магнит: включение на году ${Math.round(brake(s))}.
 Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.
 Цель: ${nm(s, 'ru')} · прибытие около года ${s.arrive}.` +
-          (s.materials !== 100 ? `\nМатериалы для высадки: ${s.materials}% запаса.` : '') + (s.turned ? `\nКурс изменён на году ${s.turned}: к ε Индейца.` : '') +
+          (s.materials !== 100 ? `\nМатериалы для высадки: ${s.materials}% запаса.` : '') +
           (s.riskVersion >= 5 && s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : s.shieldWear > 0 ? `\nФронтальный щит: износ сверх нормы — ${pct(s.shieldWear, 'ru')} года из ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : ''),
         en: s => `Acceleration-stage thrust cut. Velocity ${fb(s.beta, 'en')}.
 Acceleration stage separated. For the last ${stageOff(s).days} days thrust was angled 10°: the stage drifts off sideways at ${kms(stageOff(s).dv)} km/s. The core cancelled its own sideways velocity — manoeuvre reserve −${pct(stageOff(s).reservePct, 'en')}%.
@@ -3725,7 +3501,7 @@ The stage will pass ${nm(s, 'en')} a thousand AU aside around year ${Math.round(
 Plasma magnet: switch-on in year ${Math.round(brake(s))}.
 Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.
 Target: ${nm(s, 'en')} · arrival around year ${s.arrive}.` +
-          (s.materials !== 100 ? `\nLanding materials: ${s.materials}% of stock.` : '') + (s.turned ? `\nCourse changed in year ${s.turned}: for ε Indi.` : '') +
+          (s.materials !== 100 ? `\nLanding materials: ${s.materials}% of stock.` : '') +
           (s.riskVersion >= 5 && s.shield ? `\nForward shield: ${shieldGaugeV5(s, 'en')}.` : s.shieldWear > 0 ? `\nForward shield: wear beyond norm — ${pct(s.shieldWear, 'en')} years of ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : '')
       }
     },
@@ -3800,8 +3576,8 @@ Osger, Dan — ${s.repairQual ? 'repair watch, qualified for work under thrust' 
       id: 'a1.end', scene: 'drift', kind: 'archive', year: 8,
       place: { ru: 'Корабль переходит в дрейф', en: 'The ship enters the drift' },
       text: {
-        ru: s => `Впереди ${yrs(brake(s) - M.ACC)} дрейфа и ${yrs(s.arrive - brake(s))} торможения. На вахте — ${ppl(s.watch)}.` + (s.dissent ? ' Сорок один подписавший просьбу о повороте несут вахту наравне со всеми.' : ''),
-        en: s => `Ahead: ${yrsEn(brake(s) - M.ACC)} of drift and ${yrsEn(s.arrive - brake(s))} of braking. ${s.watch} people on watch.` + (s.dissent ? ' The forty-one who signed the petition keep watch like everyone else.' : '')
+        ru: s => `Впереди ${yrs(brake(s) - M.ACC)} дрейфа и ${yrs(s.arrive - brake(s))} торможения. На вахте — ${ppl(s.watch)}.`,
+        en: s => `Ahead: ${yrsEn(brake(s) - M.ACC)} of drift and ${yrsEn(s.arrive - brake(s))} of braking. ${s.watch} people on watch.`
       }
     },
     // ------------------------------------------------------------ АКТ II · ДРЕЙФ
@@ -3830,23 +3606,6 @@ Every few years it will send a short message.`
         en: s => `The Ring forwards Xylona Ir's last report, received before our departure: the outpost has taken its workshop apart for the capsule shift's pumps and switched the antenna to manual drive.
 
 The report is short; at the end, a request to send the Forty-First the repair log. It follows us in the general bulletin.`
-      }
-    },
-    {
-      id: 'a2.quiet', scene: 'vault', overlay: 'sleepers', kind: 'transcript', year: s => Y(s, 0.12),
-      when: s => s.dissent,
-      title: { ru: 'Очередь', en: 'The queue' },
-      text: {
-        ru: `Ива Лорн разбирает очередь. Двенадцать из сорока одного, подписавших просьбу о повороте, просят не будить их до прибытия.
-
-— Не в знак протеста, — говорит один из них. — Просто не хочу каждый раз просыпаться на курсе, с которым не согласен.
-
-Совет удовлетворяет просьбу. В очереди становится меньше опытных рук.`,
-        en: `Iva Lorn goes through the queue. Twelve of the forty-one who signed the petition ask not to be woken until arrival.
-
-"Not as a protest," one of them says. "I just don't want to keep waking up on a course I don't agree with."
-
-The council grants it. The queue has fewer experienced hands.`
       }
     },
 
@@ -6213,8 +5972,9 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     lensTitle: 'Снимок Кольца · гравитационная линза', lensSub: 'реконструкция 48 × 48 точек',
     lensClass: { ruined: 'кора расколота · расплав · обломки', hostile: 'облачная крыша · парник > 400 °C', none: 'на расчётной орбите пусто', dome: 'приливный захват · пар и лёд', open: 'вода · облака · суша' },
     // карта и паспорт экспедиции
-    mapHint: 'Щёлкните звезду на карте слева или выберите из сектора сигнала.',
-    sectorChips: 'Сектор сигнала', flyHere: 'Лететь сюда', unreachable: n => `Совет не утвердит: около ${n} лет пути — больше 25 лет бодрствования на человека.`,
+    mapHint: 'Карту можно вращать и приближать. Щёлкните звезду — справка о ней. Курс задаёт заявка, за которую проголосует Совет.',
+    agendaChips: 'Звёзды заявок', requestHere: 'Заявка у этой звезды', noRequest: 'Заявки у этой звезды нет — только справка.',
+    planetsKnown: 'Подтверждённые планеты', noPlanets: 'Подтверждённых планет нет.', mEarth: 'массы Земли',
     pSpeed: 'Скорость', pReserve: 'Резерв манёвров', pCargo: 'Груз сверх ядра', kt: 'тыс. т', free: 'свободно', over: 'перегруз',
     pTarget: 'Цель', pPath: 'Путь', pArrive: 'прибытие около года', pAwake: 'каждый проживёт в пути', pAwakeTail: 'при вахте 48',
     pChecks: 'Проверки Совета', cFit: 'Груз помещается в выделенное топливо', cAwake: 'Не больше 25 лет бодрствования на человека',
@@ -6224,7 +5984,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     wipe: 'Сбросить весь прогресс', wipeHint: 'Стереть сохранение, память мира и резервную копию. Язык останется.',
     wipeAsk: 'Сбросить весь прогресс? Сохранение, память мира и резервная копия будут стёрты без возврата.', thawBerths: 'мест для Оттепели', ownPeople: 'своих', thawIn: 'спят из Оттепели', newWorldAsk: 'Начать новый мир? Ходы этой партии и память мира будут стёрты.', ppTitle: 'Расчёт паспорта · что изменит выбор',
     colonies: n => `Колонии и следы · ${n}`, archiveNote: 'Архив Кольца на день старта: последние отчёты, дошедшие до Земли.', legacyNote: 'Наследие прошлых экспедиций; общий календарь мира пока не ведётся.',
-    road: (a, b) => `Ещё ${a} ${plural(a, ['экспедиция', 'экспедиции', 'экспедиций'])} в пути, ${b} ${plural(b, ['закончила', 'закончили', 'закончили'])} программы.`, fixedTarget: 'Цель задана заявкой — эта звезда только для справки.',
+    road: (a, b) => `Ещё ${a} ${plural(a, ['экспедиция', 'экспедиции', 'экспедиций'])} в пути, ${b} ${plural(b, ['закончила', 'закончили', 'закончили'])} программы.`,
     pEquip: 'Оснащение', swaps: (n, m) => `замены ${n} из ${m}`, eraII: 'эпоха II', fixedEq: 'пока без выбора',
     eqStd: 'Штатно: плазменный магнит; радиационная защита — тороиды 20 Т·м.', eqLimit: 'Совет подготовил комплект. Можно изменить две позиции. Варианты внутри позиции можно пересматривать сколько угодно; возврат к рекомендации освобождает место.',
     eqFull: list => `Уже изменены две позиции: ${list}. Чтобы изменить третью, верните одну из них к рекомендации Совета.`, eqKeep: 'Сохранено из паспорта; отдельного применения в этой миссии нет.',
@@ -6269,8 +6029,9 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     probeMatch: 'match within the error · code unknown',
     lensTitle: 'Ring image · gravitational lens', lensSub: 'reconstruction 48 × 48 points',
     lensClass: { ruined: 'crust split · melt · debris', hostile: 'cloud deck · greenhouse > 400 °C', none: 'predicted orbit empty', dome: 'tidally locked · vapour and ice', open: 'water · clouds · land' },
-    mapHint: 'Click a star on the chart to the left, or pick one from the signal sector.',
-    sectorChips: 'Signal sector', flyHere: 'Fly here', unreachable: n => `The Council will not approve: about ${n} years on the road — over 25 waking years per person.`,
+    mapHint: 'The chart can be turned and zoomed. Click a star for its details. The course is set by the request the Council votes for.',
+    agendaChips: 'Request stars', requestHere: 'Request at this star', noRequest: 'No request at this star — reference only.',
+    planetsKnown: 'Confirmed planets', noPlanets: 'No confirmed planets.', mEarth: 'Earth masses',
     pSpeed: 'Velocity', pReserve: 'Manoeuvre reserve', pCargo: 'Cargo beyond the core', kt: 'kt', free: 'free', over: 'overload',
     pTarget: 'Target', pPath: 'Road', pArrive: 'arrival around year', pAwake: 'each person lives awake on the road', pAwakeTail: 'with a watch of 48',
     pChecks: 'Council checks', cFit: 'Cargo fits the allotted fuel', cAwake: 'No more than 25 waking years per person',
@@ -6280,7 +6041,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     wipe: 'Reset all progress', wipeHint: 'Erase the save, the memory of the world and the backup copy. The language stays.',
     wipeAsk: 'Reset all progress? The save, the memory of the world and the backup copy will be erased for good.', thawBerths: 'berths for Thaw', ownPeople: 'of our own', thawIn: 'from Thaw asleep', newWorldAsk: 'Start a new world? The moves of this run and the memory of the world will be erased.', ppTitle: 'Passport calculation · what the choice changes',
     colonies: n => `Colonies and traces · ${n}`, archiveNote: 'The Ring archive on the day of departure: the latest reports that reached Earth.', legacyNote: 'Legacy of past expeditions; there is no common world calendar yet.',
-    road: (a, b) => `${a} more expeditions are on the road, ${b} have finished their programmes.`, fixedTarget: 'The target is set by the request — this star is for reference only.',
+    road: (a, b) => `${a} more expeditions are on the road, ${b} have finished their programmes.`,
     pEquip: 'Equipment', swaps: (n, m) => `swaps ${n} of ${m}`, eraII: 'epoch II', fixedEq: 'no choice yet',
     eqStd: 'Standard equipment: plasma magnet; radiation shielding — 20 T·m toroids.', eqLimit: 'The Council has prepared a loadout. You may change two positions. You can revise the option within a position as often as you like; returning to the recommendation frees a slot.',
     eqFull: list => `Two positions already differ: ${list}. To change a third, restore the Council's recommendation for one of them.`, eqKeep: 'Retained from the passport; no separate application in this mission.',
@@ -6693,7 +6454,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, navDeparture, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, navDeparture, requests: R, reqOf, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

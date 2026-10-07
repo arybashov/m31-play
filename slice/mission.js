@@ -205,10 +205,9 @@
   }
 
   // ---------------------------------------------------------------- эпизод года 4
-  // Пул по условиям, по приоритету. Вне сектора — петиция о повороте (воронка к сигналу).
+  // Пул по условиям, по приоритету: долгий путь, каменные планеты у цели, иначе облако.
   function episode(s) {
     if (s.mission && s.mission !== 'contact') return s.arrive >= 170 ? 'long' : planets(s.target).rocky > 0 ? 'probe' : 'cloud';
-    if (!inSector(s.target)) return 'petition';
     if (s.arrive >= 170) return 'long';
     if (planets(s.target).rocky > 0) return 'probe';
     return 'cloud';

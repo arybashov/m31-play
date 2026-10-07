@@ -167,7 +167,6 @@
     const b = stop.beat;
     if (b.kind === 'cinematic') return '';
     if (b.kind === 'skip') return `<button class="action skip" data-act="go">${esc(t(b.label, stop.state))} →</button>`;
-    if (b.ui === 'map') return mapHtml(stop);
     if (b.ui === 'passport') return passportHtml(stop);
     // карточка решения — по публичному состоянию: скрытое (сид) экипажу неизвестно и в текст не попадает
     const pub = C.publicOf ? C.publicOf(stop.state) : stop.state;
@@ -186,7 +185,8 @@
         <ul>${knownOf(o, pub).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${afterOf(o)}
         <button class="action" data-act="vote" data-option="${esc(o.id)}">${esc(u.vote)}</button></div>`).join('');
     return `<section class="card vote"><header>${esc(u.decision)} · ${esc(fmtYear(stop.state.year))}</header>
-      <h3>${esc(t(b.title, pub))}</h3><p class="muted">${esc(t(b.context, pub))}</p><div class="options">${opts}</div></section>`;
+      <h3>${esc(t(b.title, pub))}</h3><p class="muted">${esc(t(b.context, pub))}</p><div class="options">${opts}</div></section>`
+      + (b.ui === 'agenda' ? chartHtml(stop) : '');                   // голосование по заявкам — с картой-обзором
   }
 
   const knownOf = (o, st) => (typeof o.known[lang] === 'function' ? o.known[lang](st) : o.known[lang]);
@@ -199,29 +199,31 @@
     return a > 10 && a < 20 ? 'лет' : b === 1 ? 'год' : b >= 2 && b <= 4 ? 'года' : 'лет';
   }
 
-  // ---------------------------------------------------------------- карта: выбор цели
-  const fixedTarget = st => st && st.mission && st.mission !== 'contact' ? M.MISSIONS[st.mission].target : null;
-  const mapPickName = st => mapPick || fixedTarget(st) || M.DECLARED;
-  function mapHtml(stop) {
-    const u = C.ui[lang], b = stop.beat, st0 = stop.state, fixed = fixedTarget(st0);
-    const pickName = mapPickName(st0);
-    const chips = M.sectorList().map(n => `<button class="chip" data-pick="${esc(n)}" aria-pressed="${n === pickName}">${esc(M.nameOf(n, lang))} <i>${num(M.star(n).d, 1)}</i></button>`).join('');
+  // ---------------------------------------------------------------- карта-обзор при голосовании Совета
+  // Выбора звезды нет — курс задаёт заявка (DOC «Повороты по обстановке Кольца», «Заявки из мира»). Карту можно вращать
+  // и приближать; щелчок по звезде или кнопка заявки — справка: расстояние, класс, планеты каталога, архив Кольца
+  const mapPickName = st => mapPick || (st && st.target) || null;
+  function chartHtml(stop) {
+    const u = C.ui[lang], pickName = mapPickName(stop.state);
+    const reqs = stop.options.map(o => C.requests.get(o.id)).filter(Boolean);
+    const chips = reqs.map(q => `<button class="chip" data-pick="${esc(q.star)}" aria-pressed="${q.star === pickName}">${esc(M.nameOf(q.star, lang))} <i>${num(M.star(q.star).d, 1)}</i></button>`).join('');
     // колонии и следы: архив Кольца на старт; наследие прошлых экспедиций — отдельной строкой
-    const objs = M.knownAtStart(), here = M.objectsAtStar(pickName);
+    const objs = M.knownAtStart(), here = pickName ? M.objectsAtStar(pickName) : [];
     const rows = objs.map(o => `<button class="colrow st-${o.status}" data-pick="${esc(o.star)}" aria-pressed="${o.star === pickName}"><span class="dot"></span>${esc(C.archiveShort(o, lang, 0))}<i>${esc(M.nameOf(o.star, lang))} · ${num(M.star(o.star).d, 1)}</i></button>`).join('');
     const legacy = (world.settled || []).length || world.passTug === false;
     const colBlock = `<details class="colonies"${here.length ? ' open' : ''}><summary class="knownlabel">${esc(u.colonies(objs.length))}</summary>
       <p class="muted small">${esc(u.archiveNote)} ${esc(u.road(M.ROAD.flying, M.ROAD.done))}</p><div class="colrows">${rows}</div>${legacy ? `<p class="muted small">${esc(u.legacyNote)}</p>` : ''}</details>`;
-    const info = here.map(o => C.archiveLines(o, lang, 0, world)).concat([C.legacyLines(pickName, lang, world)]).flat();
-    const infoHtml = info.length ? `<ul class="colarch">${info.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
-    const o = stop.options.find(x => x.id === pickName), st = M.star(pickName);
-    const card = o
-      ? `<h4>${esc(t(o.label, stop.state))}</h4><ul>${knownOf(o, stop.state).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${infoHtml}
-         <button class="action" data-act="vote" data-option="${esc(o.id)}">${esc(u.flyHere)} →</button>`
-      : `<h4>${esc(M.nameOf(pickName, lang))} · ${num(st.d, 1)} ${lyWord()}</h4>${infoHtml}<p class="warn">${esc(fixed ? u.fixedTarget : u.unreachable(Math.round(M.trip(st.d, 0.1, M.stdMag(0.1)))))}</p>`;
-    return `<section class="card vote map">${voteHead(stop, b)}
-      <p class="knownlabel">${esc(u.sectorChips)}</p><div class="chips">${chips}</div>${colBlock}
-      <p class="muted small">${esc(u.mapHint)}</p><div class="starcard">${card}</div></section>`;
+    let card = `<p class="muted small">${esc(u.mapHint)}</p>`;
+    if (pickName) {
+      const st = M.star(pickName), pl = (st.planets || []).filter(p => p.status === 'confirmed');
+      const plText = pl.length ? `${u.planetsKnown}: ${pl.map(p => p.name + (p.massEarth != null ? ` (${num(p.massEarth, p.massEarth < 10 ? 1 : 0)} ${u.mEarth})` : '')).join(', ')}.` : u.noPlanets;
+      const info = here.map(o => C.archiveLines(o, lang, 0, world)).concat([C.legacyLines(pickName, lang, world)]).flat();
+      const q = reqs.find(x => x.star === pickName), o = q && stop.options.find(x => x.id === q.id);
+      card = `<h4>${esc(M.nameOf(pickName, lang))} · ${num(st.d, 1)} ${lyWord()} · ${esc(st.sp || '')}</h4><p class="small">${esc(plText)}</p>
+        ${info.length ? `<ul class="colarch">${info.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        <p class="${o ? 'knownlabel' : 'muted small'}">${esc(o ? `${u.requestHere}: ${t(o.label, stop.state)}` : u.noRequest)}</p>`;
+    }
+    return `<section class="card chart"><p class="knownlabel">${esc(u.agendaChips)}</p><div class="chips">${chips}</div>${colBlock}<div class="starcard">${card}</div></section>`;
   }
 
   // ---------------------------------------------------------------- паспорт экспедиции: три рычага
@@ -837,7 +839,7 @@
       beat = view.result.stop.beat;
     }
     if (!beat) beat = currentBeat(view.result);
-    if (atStop('map') || atStop('passport')) beat = view.result.stop.beat;   // выбор цели и паспорт — сцена решения
+    if (atStop('agenda') || atStop('passport')) beat = view.result.stop.beat;   // голосование с картой и паспорт — сцена решения
     const y2 = view.result.state.year;
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
@@ -855,7 +857,7 @@
         wreck: !!st.lostShip, dark: st.dutchman ? 'empty' : st.outcome === 'sos' ? 'sleep' : null, relief: null, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, legacy: { passTug: world.passTug !== false, settled: world.settled || [] }, year: y, separated: ids.has('a1.stage'), cloudSeen: ids.has('a1.cloud'),
         worldClass: st.target ? M.worldOf(st.target) : null,
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
-        target: st.target || (atStop('map') && mapPickName(st)) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
+        target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
         cargo: cargo3d(atStop('passport') && draft ? draft : st), cargoLabels: atStop('passport'), tMag: st.tMag,
         scout: st.scout, scoutV: st.scout === 6 ? st.beta * 0.75 + 0.085 : st.beta + 0.07,
         // склад Оттепели (спасатель v3): с ближней диагностики до перехода к дому
@@ -1062,7 +1064,7 @@
 
   if (window.M31Space && M31Space.mount) {
     try { M31Space.mount($('space')); } catch (err) { M31Space.ok = false; console.warn('3D недоступно:', err); }
-    M31Space.onPick = name => { if (atStop('map')) { mapPick = name; refreshStop(); } };
+    M31Space.onPick = name => { if (atStop('agenda')) { mapPick = name; refreshStop(); } };   // справка о звезде, курс не меняется
     M31Space.onPartPick = ({ part, panel }) => {
       if (part !== 'shield' || !view || !shieldOf(view.result.state) || yearAnim) return;
       const beat = view.result.stop && view.result.stop.beat;
