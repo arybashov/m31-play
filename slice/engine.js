@@ -7,7 +7,11 @@
 
    Модель времени (content.sim, правила v5): перемотка с целью toYear не ставит год, а продвигает модель корабля;
    модель может остановиться раньше на событии, требующем решения, — оно приходит как решение-вставка, его ответ —
-   обычный токен; после ответа та же перемотка продолжается к прежней цели. Токен 'go' тратится один раз. */
+   обычный токен; после ответа та же перемотка продолжается к цели. Токен 'go' тратится один раз.
+
+   Цель перемотки пересчитывается после каждого решения-вставки (DOC «Долгий рейс», шаг 1): решение может сменить курс,
+   и дата сюжетного узла уйдёт вместе с прибытием. Если после вставки узел больше не применим (условие when), он
+   отменяется — перемотка к нему обрывается, движок идёт к следующему. */
 (function (root) {
   'use strict';
 
@@ -34,7 +38,7 @@
       state.choices[beat.id] = option.id;
       if (beat.rec) { const rc = beat.rec(view()); if (rc) (state.recs = state.recs || {})[beat.id] = rc.id; }
       if (option.effect) option.effect(state);
-      if (sim && sim.decided) sim.decided(state, beat);                // модель знает дату последнего решения (плановый совет событий)
+      if (sim && sim.decided) sim.decided(state, beat);                // модель знает дату решения (плановый совет), ревизию маршрута и журнал
       if (record) log.push({ beat, option, state: clone(state) });
       if (option.ending) return { ending: option, beat, state: clone(state) };
       return null;
@@ -59,26 +63,37 @@
       base = sim.observe(state, log); mark = log.length; folded = [];
     }
 
-    // ход модели к году target: каждое событие с решением — вставка, после ответа — дальше к той же цели
-    function advanceTo(target, beat) {
+    // ход модели к году resolve(): каждое событие с решением — вставка; после ответа цель пересчитывается (смена курса
+    // переносит даты), а узел, ставший неприменимым, отменяется (CANCELLED). Иначе — остановка или null (цель достигнута)
+    const CANCELLED = { cancelled: true };
+    const dateOf = (v) => typeof v === 'function' ? v(state) : v;
+    function advanceTo(resolve, beat) {
       for (let guard = 0; ; guard++) {
         if (guard > 1000) throw new Error(`Модель не дошла до цели ${beat.id}`);
-        const ev = sim.advance(state, target, beat);
+        const ev = sim.advance(state, resolve(), beat);
         notes();
         if (!ev) return null;
         report(ev);                                                    // донесение — до решения-вставки
         const st = decide(sim.decision(state, ev, beat));
         if (st) return st;
+        if (beat.when && !beat.when(state)) return CANCELLED;
       }
+    }
+    // эффект сцены: модель ведёт ревизию маршрута и журнал запасов и людей
+    function apply(beat) {
+      if (beat.effect) beat.effect(state);
+      if (sim && sim.applied) sim.applied(state, beat);
     }
 
     let stop = null;
     for (const beat of content.beats) {
       if (beat.when && !beat.when(state)) continue;
       if (beat.kind === 'decision') {
-        if (sim && beat.year !== undefined) {                          // модель: решение принимается в свой срок
-          const target = typeof beat.year === 'function' ? beat.year(state) : beat.year;
-          if (target > state.year) { stop = advanceTo(target, beat); if (stop) break; }
+        if (sim && beat.year !== undefined && dateOf(beat.year) > state.year) {   // модель: решение принимается в свой срок
+          stop = advanceTo(() => dateOf(beat.year), beat);
+          if (stop === CANCELLED) { stop = null; continue; }
+          if (stop) break;
+          if (beat.when && !beat.when(state)) continue;                // условие — заново после хода модели
         }
         stop = decide(beat);
         if (stop) break;
@@ -87,15 +102,15 @@
       if (beat.kind === 'skip' || beat.kind === 'cinematic') {
         if (!src.skip(beat)) { stop = { beat, state: clone(state) }; break; }
         if (beat.toYear !== undefined) {
-          const target = typeof beat.toYear === 'function' ? beat.toYear(state) : beat.toYear;
           if (sim) {
             // черта перемотки — до хода модели: записи приборов и решения-вставки встают после неё, по времени
             if (record) log.push({ beat, state: clone(state) });
-            stop = advanceTo(target, beat);
+            stop = advanceTo(() => dateOf(beat.toYear), beat);
+            if (stop === CANCELLED) stop = null;
             if (stop) break;
-            report();                                                  // отчёт вахты — в конце перемотки
+            report();                                                  // отчёт вахты — в конце перемотки (и оборванной)
             continue;
-          } else state.year = target;
+          } else state.year = dateOf(beat.toYear);
         }
         if (record) log.push({ beat, state: clone(state) });
         continue;
@@ -104,12 +119,13 @@
         // с моделью дата сцены — ход модели (годы между перемоткой и сценой не выпадают из износа); эффект сцены — после
         // хода: событие модели между перемоткой и сценой не должно видеть её последствий (ревью Codex, события v1).
         // Записи приборов встают перед сценой, по времени; после хода условие сцены проверяется заново
-        const target = typeof beat.year === 'function' ? beat.year(state) : beat.year;
-        stop = advanceTo(target, beat); if (stop) break;
+        stop = advanceTo(() => dateOf(beat.year), beat);
+        if (stop === CANCELLED) { stop = null; continue; }
+        if (stop) break;
         if (beat.when && !beat.when(state)) continue;
-        if (beat.effect) beat.effect(state);
+        apply(beat);
       } else {
-        if (beat.effect) beat.effect(state);
+        apply(beat);
         if (beat.year !== undefined) state.year = typeof beat.year === 'function' ? beat.year(state) : beat.year;   // годы дрейфа зависят от пути
       }
       if (sim && beat.kind === 'end' && folded.length) report();       // сводки после последнего отчёта — не теряются

@@ -731,46 +731,64 @@ There are no longer years of waiting between question and answer.`;
     // решение — если в месте удара не осталось сервисного допуска (удвоенный щит держит с запасом — без решения)
     return h.residual < SH.RULES.service ? { id: 'cloud.hit.0', kind: 'shieldService', panel } : null;
   }
+  // ---- общий календарь модели (DOC «Долгий рейс — износ и смена курса», шаг 1): ход идёт от границы к границе.
+  // Следующая граница — ближайшая из источников на [t0, t1]; при равенстве дат — порядок источников в CAL (постоянный,
+  // проверяется тестом). Между границами — непрерывная часть (эрозия щита при постоянной среде), на границе — дискретная:
+  // событие, удар, выход из ядра. Источник одноразов на своей дате: после go() он её больше не предлагает. Каждая
+  // граница — запись в журнал запасов и людей с причиной. Модель износа добавит отказы узлов, исчерпание буферов и
+  // завершение ремонтов
+  function envMarks(s) {                                               // где меняется множитель пыли: волокно, облако, поток
+    const m = EV.marks(s);
+    if (cloudThrough(s)) { const c = cloudSpan(s); m.push(c.a, c.b, c.band[0], c.band[1]); }
+    if (streamOn(s)) { const P = streamPlan(s); m.push(P.warn, P.core, P.preEnd); if (P.coreEnd != null) m.push(P.coreEnd); }
+    return m;
+  }
+  const inSpan = (t, t0, t1) => t != null && t >= t0 && t <= t1;
+  const CAL = [
+    // события v1, работы, плановый совет; решение — вставка посреди перемотки
+    { id: 'events', next: (s, t0, t1) => { const b = EV.next(s, t0, t1);
+      return b && { at: b.at, cause: b.type ? `ev.${b.type}` : b.job ? `job.${b.job.id}` : 'ev.council', go: () => { s.year = b.at; return EV.fire(s, b); } }; } },
+    // удар крупного зерна полосы облака
+    { id: 'cloudHit', next: (s, t0, t1) => {
+      if (!cloudThrough(s) || !cloudBand(s) || SH.hitOf(s.shield, 'cloud.hit.0')) return null;
+      const c = cloudSpan(s), t = c.band[0] + (hidden(s, 'shield.cloud.hit.0.time') ?? 0.5) * (c.band[1] - c.band[0]);
+      return inSpan(t, t0, t1) && { at: t, cause: 'cloud.hit', go: () => { const ev = cloudHit(s, t); if (ev) s.year = t; return ev; } }; } },
+    // зерно ядра потока: только повреждение
+    { id: 'streamGrain', next: (s, t0, t1) => {
+      if (!streamOn(s)) return null;
+      const P = streamPlan(s);
+      return P.hit && !SH.hitOf(s.shield, 'stream.hit.0') && inSpan(P.g, t0, t1) && { at: P.g, cause: 'stream.grain', go: () => { streamGrain(s, P.g); return null; } }; } },
+    // выход из ядра: последствия удара (перемотка могла встать между ударом и выходом)
+    { id: 'streamOut', next: (s, t0, t1) => {
+      if (!streamOn(s) || !(s.streamImpact && s.streamImpact.level == null)) return null;
+      const P = streamPlan(s);
+      return P.hit && inSpan(P.coreEnd, t0, t1) && { at: P.coreEnd, cause: 'stream.out', go: () => { const ev = streamOutcome(s, streamPlan(s)); if (ev || s.lostShip) s.year = P.coreEnd; return ev; } }; } },
+    // границы среды: только смена множителя пыли (строго после t0 — граница, на которой стоим, пройдена)
+    { id: 'env', next: (s, t0, t1) => { let m = null; for (const t of envMarks(s)) if (t > t0 && t <= t1 && (m == null || t < m)) m = t;
+      return m != null && { at: m, cause: null, go: () => null }; } }
+  ];
+  function calNext(s, t0, t1) {
+    let nx = null;
+    for (const src of CAL) { const c = src.next(s, t0, t1); if (c && (!nx || c.at < nx.at)) nx = c; }   // при равенстве — раньше по порядку
+    return nx;
+  }
   function simAdvance(s, target) {
     if (!s.shield && s.eq) { s.shield = SH.create(s.eq.shield); s.simYear = s.year; SH.note(s.shield, { kind: 'accept' }); }
     const from = s.simYear != null ? s.simYear : s.year;
-    if (s.shield && target > from) {
-      // границы среды и удар на отрезке: модель останавливается на ударе, если он требует решения
-      const marks = EV.marks(s);                                          // границы участков среды событий (волокно)
-      let hitT = null, grainT = null, outT = null;
-      if (cloudThrough(s)) {
-        const c = cloudSpan(s); marks.push(c.a, c.b, c.band[0], c.band[1]);
-        if (cloudBand(s) && !SH.hitOf(s.shield, 'cloud.hit.0')) hitT = c.band[0] + (hidden(s, 'shield.cloud.hit.0.time') ?? 0.5) * (c.band[1] - c.band[0]);
-      }
-      if (streamOn(s)) {
-        const P = streamPlan(s); marks.push(P.warn, P.core, P.preEnd);
-        if (P.coreEnd != null) marks.push(P.coreEnd);
-        if (P.hit && !SH.hitOf(s.shield, 'stream.hit.0')) grainT = P.g;
-        if (P.hit && !(s.streamImpact && s.streamImpact.level != null)) outT = P.coreEnd;   // выход — пока исход не записан (перемотка могла встать между ударом и выходом)
-      }
-      const stops = marks.concat([hitT, grainT, outT].filter(t => t != null)).filter(t => t > from && t <= target).sort((x, y) => x - y);
+    // и при target === from: решение-вставка могло встать на дате, где осталась необработанная граница (удар на той же дате)
+    if (s.shield && target >= from) {
       let t0 = from;
-      for (const t1 of stops.concat([target])) {
-        // события v1 внутри отрезка постоянной среды: каждое — своя граница; решение — вставка посреди перемотки
-        for (let b = EV.next(s, t0, t1); b; b = EV.next(s, t0, t1)) {
-          if (b.at > t0) { erodeSpan(s, t0, b.at, rhoAt(s, (t0 + t1) / 2)); t0 = b.at; s.simYear = b.at; }
-          s.year = b.at;
-          const ev = EV.fire(s, b);
-          if (ev) return ev;
-        }
+      for (let guard = 0; ; guard++) {
+        if (guard > 100000) throw new Error(`Календарь модели не продвигается: год ${t0}`);
+        const nx = calNext(s, t0, target), t1 = nx ? nx.at : target;
         if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); t0 = t1; s.simYear = t1; }
-        if (t1 === hitT && !SH.hitOf(s.shield, 'cloud.hit.0')) {
-          const ev = cloudHit(s, hitT);
-          if (ev) { s.year = hitT; return ev; }
-        }
-        if (t1 === grainT && !SH.hitOf(s.shield, 'stream.hit.0')) streamGrain(s, grainT);
-        if (t1 === outT && s.streamImpact && s.streamImpact.level == null) {
-          const ev = streamOutcome(s, streamPlan(s));
-          if (ev || s.lostShip) { s.year = outT; if (ev) return ev; }
-        }
+        if (!nx) break;
+        const ev = nx.go();
+        if (nx.cause) book(s, nx.cause, t1);
+        if (ev) return ev;
       }
     }
-    s.year = target;                                                     // как прежде: перемотка ставит год цели
+    s.year = Math.max(s.year, target);                                   // перемотка ставит год цели; пройденная цель — уже достигнута
     return null;
   }
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -1090,8 +1108,39 @@ There are no longer years of waiting between question and answer.`;
     beta: (s, y) => M.speedAt(y, s.beta, s.arrive, s.tMag),
     erosion: (s, a, b, k) => SH.erode(SH.create('dust20'), a, b, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k).dSigma,   // прогноз на свежей копии
     shieldMin: s => s.shield ? SH.observe(s.shield).min : 0, service: () => SH.RULES.service, eroded: s => s.shield ? s.shield.erodedKg / SH.AREA : 0,
-    lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n) });
-  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev), decided: s => EV.decided(s), observe: observeShip, report: simReport };
+    lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n),
+    book: (s, cause) => book(s, cause) });                             // журнал — до снимка записи события
+  // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
+  // Журнал: каждое изменение запасов и числа погибших — записью с причиной: решение (id/вариант), сцена (id), граница
+  // модели (событие, удар, выход из ядра). Сумма записей сходится с состоянием — одно происшествие не считается дважды
+  // и не теряется (проверка test-engine). Расчётные потери в капсулах (lossesOf) — пока вне журнала: их заменят отказы
+  // капсульных групп модели износа.
+  // Ревизия маршрута: цель, скорость, магнит, прибытие. Номер растёт при каждой смене; по ревизиям видно исходный курс
+  // (последняя ревизия до отлёта) и каждый поворот с причиной
+  const BOOK_KEYS = ['materials', 'reserve', 'dead', 'deadHere', 'outpostDead', 'thawDead'];
+  function startBooks(s) {
+    s.book = { v: Object.fromEntries(BOOK_KEYS.map(k => [k, s[k] || 0])), log: [] };
+    s.nav = { rev: 0, revs: [] };
+  }
+  function book(s, cause, at) {
+    const b = s.book; if (!b) return;
+    const d = {};
+    for (const k of BOOK_KEYS) { const v = s[k] || 0; if (Math.abs(v - b.v[k]) > 1e-9) { d[k] = v - b.v[k]; b.v[k] = v; } }
+    if (Object.keys(d).length) b.log.push({ at: at != null ? at : s.year, cause, d });
+  }
+  function routeCheck(s, cause) {
+    const n = s.nav; if (!n || !s.target || !s.arrive) return;
+    const r = { target: s.target, beta: s.beta, tMag: s.tMag ?? null, arrive: s.arriveExact ?? s.arrive };
+    const l = n.revs[n.revs.length - 1];
+    if (l && l.target === r.target && l.beta === r.beta && l.tMag === r.tMag && Math.abs(l.arrive - r.arrive) < 1e-9) return;
+    n.rev++; n.revs.push(Object.assign({ rev: n.rev, at: s.year, cause }, r));
+  }
+  const track = (s, cause) => { routeCheck(s, cause); book(s, cause); };
+  // исходный курс — последняя ревизия до отлёта (выбор цели и паспорт — в год 0); дальше — повороты
+  const navDeparture = s => s.nav ? s.nav.revs.filter(r => r.at <= 0).pop() || null : null;
+  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev),
+    decided: (s, beat) => { EV.decided(s); track(s, beat ? `${beat.id}/${s.choices[beat.id]}` : 'model'); },   // плановый совет, ревизия маршрута, журнал
+    applied: (s, beat) => track(s, beat.id), observe: observeShip, report: simReport, calendar: CAL.map(c => c.id) };
   // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
     const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
@@ -2296,7 +2345,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   const hidden = (s, key) => s.riskVersion >= 1 && s.riskSeed ? hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296 : null;
 
   function initialState(ctx) {
-    return {
+    const st = {
       riskVersion: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? ctx.riskVersion : 0,   // правила цены ошибки
       riskSeed: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? String(ctx.riskSeed) : null,
       evOff: !!(ctx && ctx.events === false),   // события v1 выключены (проверки и калибровка: те же сиды без событий)
@@ -2417,6 +2466,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       incident: null,      // авария с живыми — для партии спасателей
       choices: {}
     };
+    if (v5(st)) startBooks(st);                                         // журнал запасов и людей, ревизии маршрута (v5)
+    return st;
   }
 
   const beats = [
@@ -6634,7 +6685,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, navDeparture, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

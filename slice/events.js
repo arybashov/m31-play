@@ -517,6 +517,7 @@
     const marks = s => s.ev && s.ev.media ? s.ev.media.flatMap(x => [x.a, x.b]) : [];
     function move(s, e, key, d) { s.ev.moves.push({ at: s.year, key, d, id: e.id, name: TYPES[e.type].name }); }
     function note(s, e, title, text, stage) {
+      if (H.book) H.book(s, `ev.${e.type}`);                              // журнал запасов и людей — до снимка: снимок с ним сходится
       const q = s.ev.notes; s.ev.notes = [];                               // снимок — без очереди записей (не вкладывать их друг в друга)
       const state0 = JSON.parse(JSON.stringify(s)); s.ev.notes = q;
       q.push({ id: `ev.${e.id}.${stage}`, kind: 'instrument', at: s.year, title, text, ev: e.type, state0 });
