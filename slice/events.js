@@ -10,7 +10,6 @@
   'use strict';
 
   const START = 8;                 // генератор — с конца разгона
-  const GAP = 2;                   // лет между корневыми эпизодами любых типов
   const DAY = 1 / 365.25;
 
   // H — помощники content.js: hidden(s, key), name(s, i) → { ru, en } (с сидом партии), alive(s) → номера живых своих,
@@ -59,7 +58,7 @@
 
       // 09 «Эфемериды разошлись» — навигация; только пока до торможения достаточно времени
       navResidual: {
-        kind: 'D', family: 'navigation', lam: 0.006, lamMax: 0.006, cooldown: 25, cap: 2,
+        kind: 'D', family: 'navigation', lam: 0.006, lamMax: 0.006, cooldown: 25, cap: 2, council: true,
         rate: () => 1,
         name: L('эфемериды разошлись', 'the ephemerides disagree'),
         prepare: (s, e, u) => { e.mas = 2 + Math.round(u('mas') * 20) / 10; },
@@ -263,7 +262,7 @@
 
       // 13 «Две смены без передачи» — усталость тонкой вахты; без шкалы морали
       fatigue: {
-        kind: 'D', family: 'watch', lam: 0.008, lamMax: 0.012, cooldown: 25, cap: 2,
+        kind: 'D', family: 'watch', lam: 0.008, lamMax: 0.012, cooldown: 25, cap: 2, council: true,
         rate: s => H.thin(s) ? 1.5 : 1,
         name: L('две смены без передачи', 'two watches without a handover'),
         prepare: (s, e, u) => { e.two = H.pickName(s, u('two'), e.whoI); },
@@ -297,7 +296,7 @@
 
       // 14 «Одна общая вахта» — просьба совместить вахты; обмен годами запрещён очередью (тритмент)
       overlap: {
-        kind: 'D', family: 'watch', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2,
+        kind: 'D', family: 'watch', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2, council: true,
         rate: () => 1,
         name: L('просьба об общей вахте', 'a request for a shared watch'),
         prepare: (s, e, u) => { e.two = H.pickName(s, u('two'), e.whoI); },
@@ -331,7 +330,7 @@
 
       // 16 «Навык остался в инструкции» — локальный допуск, не глобальные repairQual/taught
       skill: {
-        kind: 'D', family: 'watch', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2,
+        kind: 'D', family: 'watch', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2, council: true,
         rate: s => H.taught(s) || H.repairQual(s) ? 0.6 : 1,
         name: L('навык в инструкции', 'a skill left in the manual'),
         prepare: (s, e, u) => { e.fam = Math.floor(u('fam') * 3); },
@@ -367,7 +366,7 @@
 
       // 20 «Класс пыли верен, вывод — нет» — ошибка области применимости научной модели
       dustClass: {
-        kind: 'D', family: 'ai', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2,
+        kind: 'D', family: 'ai', lam: 0.006, lamMax: 0.006, cooldown: 30, cap: 2, council: true,
         rate: s => H.taught(s) ? 0.6 : 1,
         name: L('класс пыли верен, вывод — нет', 'the dust class is right, the conclusion is not'),
         decision: (s, e) => ({
@@ -438,10 +437,28 @@
       }
     };
 
+    // ---------------------------------------------------------------- профиль рейса и разнообразие (шаг 4)
+    // источник напряжения (концепт §5): корабль, общество вахт, ИИ, внешнее
+    const SOURCE = { lifeSupport: 'ship', cooling: 'ship', capsules: 'ship', cargo: 'ship', workshop: 'ship', navigation: 'ship', watch: 'watch', ai: 'ai', external: 'external', ring: 'external' };
+    // G — предел паузы между любыми решениями (плановый совет), LD — потолок частоты решений событий в год;
+    // длинный рейс: тип — до трёх раз и не чаще раза в 60 лет
+    function profile(s) {
+      const T = (s.arrive || 0) - 20, long = T >= 220;
+      return { long, G: s.mission === 'supply' ? 12 : T >= 400 ? 30 : T >= 220 ? 22 : 16, LD: s.mission === 'supply' ? 0.09 : T >= 400 ? 0.045 : T >= 220 ? 0.06 : 0.08,
+        g: s.mission === 'supply' ? 2 : s.mission === 'rescue' ? 3 : T >= 400 ? 6 : T >= 220 ? 4 : 3 };
+    }
+    const capOf = (s, T) => T.cap + (profile(s).long ? 1 : 0);
+    const coolOf = (s, T) => profile(s).long ? Math.max(T.cooldown, 60) : T.cooldown;
+    // повторы: тип — не среди шести последних эпизодов; источник — не больше двух эпизодов подряд
+    function diverse(s, type) {
+      const r = s.ev.recent, src = SOURCE[TYPES[type].family];
+      return !r.slice(-6).includes(type) && !(r.length >= 2 && r.slice(-2).every(x => SOURCE[TYPES[x].family] === src));
+    }
+
     // ---------------------------------------------------------------- состояние
     function init(s) {
       if (s.ev) return s.ev;
-      s.ev = { clock: {}, n: {}, last: {}, root: -Infinity, log: [], jobs: [], notes: [], moves: [], media: [], qual: {}, scrap: 0, recovered: 0 };
+      s.ev = { clock: {}, n: {}, last: {}, root: -Infinity, recent: [], councilAt: null, log: [], jobs: [], notes: [], moves: [], media: [], qual: {}, scrap: 0, recovered: 0 };
       return s.ev;
     }
     // следующий кандидат типа: k-й шаг пуассоновского потока от START
@@ -463,9 +480,20 @@
       for (const j of s.ev.jobs) if (j.until > t0 && j.until <= t1 && (!best || j.until < best.at)) best = { at: j.until, job: j };
       for (const type of Object.keys(TYPES)) { const c = clockOf(s, type), at = Math.max(c.at, t0 + 1e-9);   // отставшие часы — на ближайшей границе
         if (at <= t1 && (!best || at < best.at)) best = { at, type, k: c.k }; }
+      if (s.ev.councilAt != null) { const at = Math.max(s.ev.councilAt, t0 + 1e-9);
+        if (at <= t1 && (!best || at < best.at)) best = { at, council: true }; }
       return best;
     }
     const scrap = (s, x) => { init(s); s.ev.scrap += x; };
+    function decided(s) {
+      if (!s.eq || !s.riskSeed || s.evOff) return;
+      init(s);
+      const t0 = s.year, P = profile(s);
+      let at = t0 + P.G;
+      // предел в защищённом окне (у сюжетной даты, у края дрейфа) — ближайшее разрешённое время раньше, шагом в четверть года
+      for (let x = at; x > t0 + P.g; x -= 0.25) if (H.window(s, x, 'council')) { at = x; break; }
+      s.ev.councilAt = at;
+    }
     function job(s, e, how, years, blocks) { init(s); s.ev.jobs.push({ id: e.id, type: e.type, how, until: s.year + years, dur: years, blocks: blocks || [] }); }
     // навык семьи работ (событие «навык в инструкции»): курс — вдвое быстрее, сверка по архиву — нестандартное с проверкой (+30 суток)
     const qual = (s, fam) => s.ev && s.ev.qual ? s.ev.qual[fam] : undefined;
@@ -493,20 +521,47 @@
         if (T && T.done) T.done(s, e, b.job);
         return null;
       }
-      const type = b.type, T = TYPES[type], k = b.k, t = s.year;
-      if (!H.window(s, t, T.family) || (ev.n[type] || 0) >= T.cap) { step(s, type); return null; }   // вне окна или лимит — кандидат пропадает
-      // занят (пауза между эпизодами, повтор типа, работа той же семьи) — кандидат ждёт освобождения, а не пропадает
-      const free = Math.max(ev.root + GAP, (ev.last[type] ?? -Infinity) + T.cooldown,
-        ...ev.jobs.filter(j => j.type === type || j.blocks.includes(T.family)).map(j => j.until));
+      const t = s.year;
+      if (b.council) {                                                  // плановый совет: пауза без решений дошла до предела
+        if (!H.window(s, t, 'council')) { ev.councilAt = t + 0.5; return null; }
+        // тип — из свободных и не исчерпанных; сначала с соблюдением разнообразия, затем без него; раньше — у кого ближе кандидат
+        // у совета — на два повтора темы больше, чем у естественного потока (до шага 6 каталога тем на длинный рейс мало)
+        const free = type => H.window(s, t, TYPES[type].family) && (ev.n[type] || 0) < capOf(s, TYPES[type]) + 2 && freeAt(s, type, true, t) <= t + 1e-9;
+        const D = Object.keys(TYPES).filter(type => TYPES[type].council && free(type)).sort((a, c) => clockOf(s, a).at - clockOf(s, c).at);
+        const type = D.find(x => diverse(s, x)) || D[0];
+        if (!type) { ev.councilAt = t + 1; return null; }
+        const k = clockOf(s, type).k; step(s, type);
+        return admit(s, type, k, t, true);
+      }
+      const type = b.type, T = TYPES[type], k = b.k;
+      if (!H.window(s, t, T.family) || (ev.n[type] || 0) >= capOf(s, T)) { step(s, type); return null; }   // вне окна или лимит — кандидат пропадает
+      // занят (пауза между эпизодами, повтор типа, работа той же семьи) — кандидат ждёт освобождения, а не пропадает;
       // свой сдвиг у каждого типа: отложенные на одно освобождение не совпадают (ревью Codex: проигравшие зависали)
-      if (free > t + 1e-9) { ev.clock[type] = { k, at: free + 1e-6 * (1 + Object.keys(TYPES).indexOf(type)) }; return null; }
+      const fr = freeAt(s, type, false, t);
+      if (fr > t + 1e-9) { ev.clock[type] = { k, at: fr + 1e-6 * (1 + Object.keys(TYPES).indexOf(type)) }; return null; }
       step(s, type);
+      if (!diverse(s, type)) return null;                               // разнообразие: такой эпизод был только что
       const u = key => H.hidden(s, `events.${type}.${k}.${key}`) ?? 0.5;
-      if (!(u('accept') < T.lam * T.rate(s) / T.lamMax)) return null;
+      const sumD = Object.values(TYPES).filter(X => X.kind === 'D').reduce((a, X) => a + X.lam * X.rate(s), 0);
+      const norm = T.kind === 'D' ? Math.min(1, profile(s).LD / sumD) : 1;   // потолок частоты решений по профилю рейса
+      if (!(u('accept') < T.lam * T.rate(s) * norm / T.lamMax)) return null;
+      return admit(s, type, k, t, false);
+    }
+    // когда тип свободен: пауза между эпизодами (у совета её нет), повтор типа, работы той же семьи
+    function freeAt(s, type, council, t) {
+      const ev = s.ev, T = TYPES[type], g = profile(s).g;
+      const beforeCouncil = !council && ev.councilAt != null && t != null && ev.councilAt >= t - 1e-9 && ev.councilAt - t < g ? ev.councilAt + g : -Infinity;
+      return Math.max(council ? -Infinity : ev.root + g, beforeCouncil, (ev.last[type] ?? -Infinity) + coolOf(s, T),
+        ...ev.jobs.filter(j => j.type === type || j.blocks.includes(T.family)).map(j => j.until));
+    }
+    // экземпляр события: участник, параметры, учёт; N — сразу запись, D — вставка-решение
+    function admit(s, type, k, t, council) {
+      const ev = s.ev, T = TYPES[type], u = key => H.hidden(s, `events.${type}.${k}.${key}`) ?? 0.5;
       const alive = H.alive(s), who = alive.length ? alive[Math.floor(u('who') * alive.length) % alive.length] : 0;
       const e = { id: `${type}.${k}`, type, k, at: t, whoI: who, who: H.name(s, who), h: {} };
+      if (council) e.council = true;
       if (T.prepare) T.prepare(s, e, u);
-      ev.n[type] = (ev.n[type] || 0) + 1; ev.last[type] = t; ev.root = t; ev.log.push(e);
+      ev.n[type] = (ev.n[type] || 0) + 1; ev.last[type] = t; ev.root = t; ev.log.push(e); ev.recent.push(type);
       if (T.kind === 'N') { T.apply(s, e); return null; }
       return { kind: 'event', id: e.id, type };
     }
@@ -515,7 +570,9 @@
       const e = s.ev.log.find(x => x.id === ev.id), T = TYPES[e.type], d = T.decision(s, e, T);
       const opts = d.options.map(o => Object.assign({}, o, { effect: x => { o.effect(x); const i = x.ev.log.find(y => y.id === e.id); if (i) i.choice = o.id; },
         known: { ru: () => pick('ru', o.known), en: () => pick('en', o.known) } }));
-      return { id: `d.ev.${e.id}`, kind: 'decision', eventType: e.type, scene: d.scene, title: d.title, context: d.context, rec: d.rec, options: opts };
+      // плановый совет — тот же вопрос, поднятый разбором смены, а не тревогой
+      const context = e.council ? { ru: 'Плановый разбор смены. ' + d.context.ru, en: 'A scheduled watch review. ' + d.context.en } : d.context;
+      return { id: `d.ev.${e.id}`, kind: 'decision', eventType: e.type, scene: d.scene, title: d.title, context, rec: d.rec, options: opts };
     }
     // записи журнала, накопленные моделью (забирает движок)
     function take(s) { if (!s.ev) return []; const out = s.ev.notes; s.ev.notes = []; return out; }
@@ -525,7 +582,7 @@
     // для интерфейса: будущие кандидаты — скрытое состояние
     const strip = p => { if (p && p.ev) { delete p.ev.clock; p.ev.log.forEach(x => { delete x.h; });
       p.ev.media = (p.ev.media || []).map(({ id, a, b }) => ({ id, a, b })); } return p; };
-    return { TYPES, next, fire, decision, take, since, movesIn, strip, scrap, rhoK, marks };
+    return { TYPES, next, fire, decision, decided, take, since, movesIn, strip, scrap, rhoK, marks, profile };
   }
 
   const api = { create };

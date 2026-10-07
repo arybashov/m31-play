@@ -34,6 +34,7 @@
       state.choices[beat.id] = option.id;
       if (beat.rec) { const rc = beat.rec(view()); if (rc) (state.recs = state.recs || {})[beat.id] = rc.id; }
       if (option.effect) option.effect(state);
+      if (sim && sim.decided) sim.decided(state, beat);                // модель знает дату последнего решения (плановый совет событий)
       if (record) log.push({ beat, option, state: clone(state) });
       if (option.ending) return { ending: option, beat, state: clone(state) };
       return null;

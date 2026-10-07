@@ -1091,7 +1091,7 @@ There are no longer years of waiting between question and answer.`;
     erosion: (s, a, b, k) => SH.erode(SH.create('dust20'), a, b, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k).dSigma,   // прогноз на свежей копии
     shieldMin: s => s.shield ? SH.observe(s.shield).min : 0, service: () => SH.RULES.service, eroded: s => s.shield ? s.shield.erodedKg / SH.AREA : 0,
     lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n) });
-  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev), observe: observeShip, report: simReport };
+  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev), decided: s => EV.decided(s), observe: observeShip, report: simReport };
   // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
     const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
@@ -6634,7 +6634,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;
