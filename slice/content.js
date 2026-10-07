@@ -662,6 +662,7 @@ There are no longer years of waiting between question and answer.`;
   }
   const streamOn = src;                                                // предвестник — с точки предупреждения; ядро — по решению о маршруте
   function rhoAt(s, y) {
+    const fk = EV.rhoK(s, y); if (fk) return fk;                         // пылевое волокно (события v1)
     if (streamOn(s)) {
       const P = streamPlan(s);
       if (P.coreEnd != null && y >= P.core && y <= P.coreEnd) return STREAM_RHO.core / SH.RULES.rhoDust;
@@ -674,6 +675,7 @@ There are no longer years of waiting between question and answer.`;
   }
   // имя среды для сводки журнала
   function envOf(s, y) {
+    if (EV.rhoK(s, y)) return 'filament';
     if (streamOn(s)) { const P = streamPlan(s);
       if (P.coreEnd != null && y >= P.core && y <= P.coreEnd) return 'core';
       if (y >= P.warn && y <= P.preEnd) return 'pre'; }
@@ -734,7 +736,7 @@ There are no longer years of waiting between question and answer.`;
     const from = s.simYear != null ? s.simYear : s.year;
     if (s.shield && target > from) {
       // границы среды и удар на отрезке: модель останавливается на ударе, если он требует решения
-      const marks = [];
+      const marks = EV.marks(s);                                          // границы участков среды событий (волокно)
       let hitT = null, grainT = null, outT = null;
       if (cloudThrough(s)) {
         const c = cloudSpan(s); marks.push(c.a, c.b, c.band[0], c.band[1]);
@@ -842,7 +844,8 @@ There are no longer years of waiting between question and answer.`;
   const nf = (x, d, lang) => { const v = x.toFixed(d); return lang === 'ru' ? v.replace('.', ',') : v; };
   // измеренная среда отрезка (сводки щита и отчёт вахты)
   const ENV_NAME = { ism: ['средняя межзвёздная среда', 'average interstellar medium'], cloud: ['край облака D2', "the D2 cloud's edge"],
-    pre: ['предвестник потока у Тёмной звезды', "the stream's precursor at the Dark Star"], core: ['ядро потока', "the stream's core"] };
+    pre: ['предвестник потока у Тёмной звезды', "the stream's precursor at the Dark Star"], core: ['ядро потока', "the stream's core"],
+    filament: ['пылевое волокно', 'a dust filament'] };
   function noteText(s, n, lang) {
     const ru = lang === 'ru', sh = s.shield, o = SH.observe(sh), rho = SH.RULES.rhoDust.toExponential(1).replace('e-', '·10⁻').replace('24', '²⁴');
     if (n.kind === 'accept') {
@@ -958,6 +961,7 @@ There are no longer years of waiting between question and answer.`;
   // границам, что и износ (rhoAt); после y1 ничего не смотрим
   function envsPassed(s, y0, y1) {
     const over = (a, b) => a != null && b != null && a < y1 && b > y0, out = [];
+    if (s.ev && s.ev.media && s.ev.media.some(m => over(m.a, m.b))) out.push('filament');
     if (cloudThrough(s)) { const c = cloudSpan(s); if (over(c.a, c.b)) out.push('cloud'); }
     if (streamOn(s)) { const P = streamPlan(s);
       if (over(P.warn, P.preEnd)) out.push('pre');
@@ -1079,7 +1083,14 @@ There are no longer years of waiting between question and answer.`;
   const aliveIds = s => { const dead = new Set((s.incidents || []).filter(x => (x.pop || 'crew') === 'crew').flatMap(x => x.ids || []));
     return [...Array(crewOf(s)).keys()].filter(i => !dead.has(i)); };
   const EV = EVM.create({ hidden: (s, k) => hidden(s, k), name: (s, i) => ({ ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }), alive: aliveIds, window: evWindow,
-    dvPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40 });
+    dvPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40,
+    caps: s => eqOf(s).caps, probes: s => eqOf(s).probes, highPower: s => !!s.highPower, taught: s => !!s.taught, repairQual: s => !!s.repairQual,
+    cargo: s => s.kits.includes('request') ? 'request' : s.kits.includes('berths') ? 'berths' : 'none',
+    pickName: (s, u, not) => { const a = aliveIds(s).filter(i => i !== not), i = a.length ? a[Math.floor(u * a.length) % a.length] : 0; return { ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }; },   // not — номер, который исключить
+    beta: (s, y) => M.speedAt(y, s.beta, s.arrive, s.tMag),
+    erosion: (s, a, b, k) => SH.erode(SH.create('dust20'), a, b, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k).dSigma,   // прогноз на свежей копии
+    shieldMin: s => s.shield ? SH.observe(s.shield).min : 0, service: () => SH.RULES.service, eroded: s => s.shield ? s.shield.erodedKg / SH.AREA : 0,
+    lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n) });
   const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : serviceDecision(s, ev), observe: observeShip, report: simReport };
   // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
