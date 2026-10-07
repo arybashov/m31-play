@@ -28,7 +28,7 @@
   const ppl = n => `${n} ${plural(n, ['человек', 'человека', 'человек'])}`;
   // трата резерва манёвров в км/с → % паспортного резерва (reserveDv — доля c)
   const dvPct = (s, kms) => kms / (s.reserveDv * 299792.458) * 100;
-  const DV = { probe: 120, stream: 250, streamWeak: 900, salvage: 300 };   // км/с
+  const DV = { probe: 120, stream: 250, streamWeak: 900 };   // км/с
   const pctDv = (r, lang) => (lang === 'ru' ? String(r * 100).replace('.', ',') : String(r * 100)) + '% c';
   const eachAwake = (T, w) => M.awake(T, w);
 
@@ -1137,7 +1137,7 @@ There are no longer years of waiting between question and answer.`;
   // предупреждение и вход в ядро — на 0,0328 и 0,0315 св. года до цели (на эталоне — «прибытие − 5» и 30 суток до
   // ядра), ядро толщиной 0,00012 св. года (около трёх суток на 0,015c). Предвестник — 10⁻¹⁸ кг/м³; ядро на курсе —
   // только при широкой полосе (скрытый факт streamWide): 10⁻¹⁶ кг/м³ и одно зерно 1,9–2,1 мм.
-  const STREAM_X = { warn: 0.032809771231847, core: 0.031545807335968, thick: 0.00012 };
+  const STREAM_X = { warn: 0.032809771231847, core: 0.031545807335968, thick: 0.00012, dark: 1900 / 63241.077 };   // dark — ближайший проход пары карликов, 1900 а.е. до цели вдоль пути
   const STREAM_RHO = { pre: 1e-18, core: 1e-16 }, STREAM_MAT5 = { 1: 5, 2: 10 };   // v5: отсеки; щит — отдельным решением
   const STREAM_MEMO = new Map();
   // года предупреждения, входа в ядро и выхода из него: остаток пути до цели — интеграл той же скорости, что у модели
@@ -1148,10 +1148,44 @@ There are no longer years of waiting between question and answer.`;
     const left = y => { const n = Math.max(2, 2 * Math.ceil((s.arrive - y) / h / 2)), dt = (s.arrive - y) / n; let a = 0;
       for (let i = 0; i <= n; i++) a += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) * v(y + i * dt); return a * dt / 3; };
     const at = x => { let lo = s.arrive - 30, hi = s.arrive; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (left(m) > x) lo = m; else hi = m; } return (lo + hi) / 2; };
-    const T = { warn: at(STREAM_X.warn), core: at(STREAM_X.core), exit: at(STREAM_X.core - STREAM_X.thick) };
+    const T = { warn: at(STREAM_X.warn), core: at(STREAM_X.core), exit: at(STREAM_X.core - STREAM_X.thick), dark: at(STREAM_X.dark) };
     STREAM_MEMO.set(key, T); return T;
   }
   const streamWin = s => (streamTimes(s).core - streamTimes(s).warn) * 365.25;      // окно до ядра, сутки
+  // мимо Тёмной звезды: пара карликов лежит в 1460 а.е. поперёк пути к A (проекция на небо) и — по выбору автора, данные
+  // это допускают — на 1900 а.е. впереди A вдоль луча, у потока. Ближе 1460 а.е. путь к ней не подходит; диск отсюда не виден.
+  // Встать рядом с парой — прежде всего погасить скорость прохода (тысячи км/с); сверх того — поперечный перенос и путь к A
+  const DARK = { side: 1460 };                                            // а.е.
+  const darkAt = s => streamTimes(s).dark;
+  function discText(s, lang) {
+    const ru = lang === 'ru', vk = vAt(s, darkAt(s)) * 299792.458, v = Math.round(vk / 10) * 10, res = kms0(s);
+    // остановиться у пары: одно только гашение скорости прохода больше малого резерва; при большом — съело бы его, а у цели он нужнее
+    const stop = res < vk ? (ru ? `Встать рядом с ней нечем: одно гашение скорости прохода — ${v} км/с, больше всего резерва манёвров (${res} км/с).`
+        : `There is nothing to stop beside it with: just killing the passing speed takes ${v} km/s, more than the whole manoeuvre reserve (${res} km/s).`)
+      : (ru ? `Встать рядом с ней — одно гашение скорости прохода съело бы ${Math.round(100 * vk / res)}% резерва манёвров (${v} из ${res} км/с), а ещё поперечный перенос и годы пути обратно к A. Совет решает идти мимо.`
+        : `Stopping beside it — just killing the passing speed would eat ${Math.round(100 * vk / res)}% of the manoeuvre reserve (${v} of ${res} km/s), plus the sideways transfer and years back to A. The council decides to go past.`);
+    const lead = v1(s) && s.streamRoute === 'pass' ? (ru ? 'Край потока проводит' : 'The edge of the stream takes') : (ru ? 'Изменённая траектория проводит' : 'The changed trajectory takes');
+    const log = ru ? `Они пытались вскрыть диск, прорезая один из спиральных выступов. Разрез выпустил пламя; чужой металл заварил пролом сам. Погибла часть экипажа, двигатель был повреждён. Маяк диска проснулся от вскрытия — это и был сигнал, который приняло Кольцо. Выжившие годами держались на орбите, пока питание капсул не иссякло.`
+      : `They tried to open the disc by cutting through one of the spiral ridges. The cut let out flame; the alien metal welded the breach shut by itself. Part of the crew died, the engine was damaged. The disc's beacon woke at the breach — that was the signal the Ring received. The survivors held on in orbit for years, until the capsules' power ran out.`;
+    return ru ? `${lead} корабль мимо пары карликов — источника сигнала. Ближе ${DARK.side} а.е. путь к ε Индейца A к ним не подходит: пара лежит в стороне. ${stop}
+
+В инфракрасные телескопы карлики видны двумя тусклыми точками. Диск отсюда не разглядеть ни в один прибор: четыреста метров с такого расстояния — миллионные доли угловой секунды. Зато слышны оба маяка — диска и корабля тридцать второй. Радио от пары идёт больше восьми суток.
+
+Маяк тридцать второй на изотопном питании передаёт их бортовой журнал по кругу; за несколько суток его принимают целиком. В журнале — их собственные снимки: дискообразный корпус около четырёхсот метров поперёк, миллионы лет как мёртвый, со спиральными выступами по поверхности, и заваренный разрез на одном из выступов. ${log}
+
+Когда пара остаётся позади, экипаж проводит обряд имён: каждого из тридцать второй называют вслух по реестру и показывают его запись в архиве.
+
+Последняя запись журнала — голос женщины: тем, кто придёт, — не вскрывать корпус.`
+      : `${lead} the ship past the pair of dwarfs — the source of the signal. The road to ε Indi A comes no closer to them than ${DARK.side} AU: the pair lies off to the side. ${stop}
+
+In the infrared telescopes the dwarfs are two faint points. The disc cannot be seen from here by any instrument: four hundred metres at this distance is millionths of an arcsecond. But both beacons are heard — the disc's and the Thirty-Second's ship's. Radio from the pair takes more than eight days.
+
+The Thirty-Second's beacon, on isotope power, sends their log round and round; within a few days it is received in full. The log holds their own pictures: a disc-shaped hull about four hundred metres across, dead for millions of years, with spiral ridges across its surface, and a welded cut on one of the ridges. ${log}
+
+When the pair is behind, the crew holds the rite of names: each of the Thirty-Second is named aloud from the register, and their archive entry is shown.
+
+The log's last entry is a woman's voice: to those who come after — do not open the hull.`;
+  }
   const warnAt = s => s.riskVersion >= 5 && src(s) ? streamTimes(s).warn : s.arrive - 5;   // v5: вход в систему — точка предупреждения
   const streamAt = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? s.streamImpact.out : s.arrive - 5;   // v5: выход из ядра после удара
   const sosAtStream = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? Math.max(s.streamImpact.out, s.streamImpact.done ?? s.streamImpact.out) : s.arrive - 5;   // сигнал — после манёвра ухода
@@ -1243,7 +1277,7 @@ There are no longer years of waiting between question and answer.`;
   // долг обслуживания: тонкая вахта без допуска ремонтников пережила аварию в контуре воды
   const maintDebt = s => s.watch < 48 && !s.repairQual;
   // энергия у цели: груз поддержки или работающий изомерный контур
-  const energyOK = s => s.support === 'found' || powerOK(s) || (s.isomer && s.choices['d.council'] !== 'both');
+  const energyOK = s => s.support === 'found' || powerOK(s);
   function strike(st, k) {                                            // удар потока, если не успели или доверились модели
     if (st.preview) return;                                           // прогноз «После» показывает известные затраты, не исход
     if (!late(st, k)) return;
@@ -2074,7 +2108,6 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       else {
         plan.push(ru ? 'обжить поселение внизу, будить людей по мере жилья' : 'settle the ground below, waking people as housing allows');
         plan.push(energyOK(s) ? (ru ? 'энергии на зимы хватает — расширять агрозалы' : 'there is energy for the winters — expand the agro halls')
-          : s.isomer ? (ru ? 'изомерный контур собран после первой зимы — запускать агроблоки' : 'the isomer circuit is built after the first winter — start the agro blocks')
           : (ru ? 'вторая зима без надёжной энергии: искать местный источник' : 'a second winter without reliable power: find a local source'));
       }
       if (s.mission === 'rescue' && s.rescued) plan.push(s.housed ? (ru ? `выходить спасённых Оттепели — ${ppl(s.rescued)}` : `nurse the ${s.rescued} rescued from Thaw back to health`)
@@ -2273,12 +2306,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       lost: 0,             // погибли в пути (медицинский журнал)
       dead: 0,             // из них — в авариях Акта III
       koraLast: false,     // Кору будили в последний раз
-      isomer: false,       // контейнер изомерных накопителей с корабля тридцать второй
       home: null,          // где будет дом: land | orbit | domes | moons | beacon | return
-      irsonHurt: false,    // Ирсон ранен в опыте с изомерным контейнером
-      tamirOut: false,     // Тамира отстранили от решений
-      dasserOut: false,    // Дассер ушёл с поста руководителя
-      precedent: false,    // совет простил обход совета — прецедент
       settle: null,        // окончательно: surface | keep | orbit
       deadHere: 0,         // погибли у цели
       support: null,       // корабль поддержки: found — нашли и он придёт; lost — потерян
@@ -2356,8 +2384,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
           ru: 'Земные экспедиции.', en: "Earth's expeditions." },
         { ship: 'depart', dur: 7500, move: 6500, ru: '', en: '' },
         { ship: 'passing', dur: 6500, ru: 'Путь в один конец.', en: 'A one-way road.' },
-        { F: 'target', dist: 5, yaw: 2.2, pitch: 0.35, frame: 'galactic', move: 5000, dur: 7500,
-          ru: '«…красивее всего, что мы видели…»', en: "'…more beautiful than anything we've seen…'" }
+        // фраза тридцать второй — на корабле в пути, без перелёта к цели: она была о Земле, а не о мире у цели
+        { ship: 'passing', dur: 7500, ru: '«…красивее всего, что мы видели…»', en: "'…more beautiful than anything we've seen…'" }
       ]
     },
 
@@ -4779,6 +4807,48 @@ ${s.scout ? "The probe's forward measurements sit in the archive, unprocessed." 
           effect: st => brakeApply(st, 'wait'), record });
         return out; }
     },
+    // ---- мимо Тёмной звезды (только у источника): пара в 1460 а.е. от пути — журнал тридцать второй принимают по радио
+    { id: 's.e4', kind: 'skip', toYear: darkAt, when: src,
+      label: { ru: s => `Промотать до года ${Math.floor(darkAt(s))} · мимо Тёмной звезды`, en: s => `Skip ahead to year ${Math.floor(darkAt(s))} · past the Dark Star` } },
+    {
+      id: 'a3.disc', scene: 'relic', kind: 'transcript', year: darkAt, when: src,
+      title: { ru: 'Мимо Тёмной звезды', en: 'Past the Dark Star' },
+      text: { ru: s => discText(s, 'ru'), en: s => discText(s, 'en') }
+    },
+    {
+      id: 'a3.phrase', scene: 'relic', kind: 'document', year: darkAt, when: src,
+      title: { ru: 'Журнал тридцать второй · запись без номера', en: "The Thirty-Second's log · unnumbered entry" },
+      text: {
+        ru: `«Вспоминали сегодня Землю. Она красивее всего, что мы видели за всю дорогу».
+
+Речь шла не о мире у Тёмной звезды — о доме, куда они не вернутся. Обрывок этой фразы дошёл до Земли и стал присказкой, с которой летел корабль.
+
+Архив записывает полный текст рядом с обрывком, без комментария.`,
+        en: `"We remembered Earth today. It is more beautiful than anything we have seen on the whole road."
+
+It was not about the world at the Dark Star — it was about the home they would not return to. A fragment of this sentence reached Earth and became the saying the ship flew with.
+
+The archive records the full text beside the fragment, without comment.`
+      }
+    },
+    {
+      id: 'a3.kora', illus: 'beacon-memory', scene: 'relic', kind: 'transcript', year: darkAt, when: src,
+      effect: s => { if (!s.koraLast) { s.koraLast = true; s.koraAwake += 1; } },
+      title: { ru: 'Память маяка', en: "The beacon's memory" },
+      text: {
+        ru: s => (s.koraLast ? 'Кора уже на вахте — со своего последнего пробуждения.' : 'Для чтения памяти диска и журнала совет будит Кору — её последний цикл.') + ` Ей около сорока. Дан Осгер, её ученик, за десятилетия ремонтных смен стал старше своей учительницы.
+
+Они работают вместе над фрагментами. Навигационные записи маяка читаются частично и указывают на другие точки. Один фрагмент — повторяющийся, почти музыкальный узор без видимого назначения — не может прочесть и Кора. Архив записывает его как есть.
+
+Ни одна станция Кольца не регистрировала сигналов того же типа кода.`,
+        en: s => (s.koraLast ? 'Kora is already on watch — since her last waking.' : 'To read the memory of the disc and the log, the council wakes Kora — her last cycle.') + ` She is about forty. Dan Osger, her student, has over decades of repair watches grown older than his teacher.
+
+They work on the fragments together. The beacon's navigation records read in part and point to other places. One fragment — a repeating, almost musical pattern with no visible purpose — not even Kora can read. The archive records it as it is.
+
+No station of the Ring has ever registered signals with that type of code.`
+      }
+    },
+
     { id: 's.e3', kind: 'skip', toYear: s => s.arrive - 4,
       label: { ru: s => `Промотать до года ${s.arrive - 4} · разворот`, en: s => `Skip ahead to year ${s.arrive - 4} · the turnaround` } },
     {
@@ -4806,76 +4876,6 @@ The acceleration stage passed the system ${yrsEn(s.arrive - 4 - stagePass(s))} a
         en: s => `The navigation check is complete. Arrival: year ${f2(arriveX(s), 'en')}; ${s.brakeDelay ? `${dd(s.brakeDelay, 'en')} later than the passport: the sparse stretch was extensive` : 'as in the passport'}.${s.brakeMethod === 'burn' || s.brakeFound ? (s.brakeLong ? ` The impulse paid off: without it we would be ${dd(RESCUE.delay, 'en')} late.` : ' The stretch was short: the impulse was not needed.') : ''}
 
 Selina sends the corrected sailing directions and keeps the original beside them. Thaw's entry lists the forecast living count at the end of assistance and the next loss threshold separately.`
-      }
-    },
-
-    // ---- находка у Тёмной звезды
-    { id: 's.e4', kind: 'skip', toYear: s => s.arrive - 2, when: src,
-      label: { ru: s => `Промотать до года ${s.arrive - 2} · Тёмная звезда`, en: s => `Skip ahead to year ${s.arrive - 2} · the Dark Star` } },
-    {
-      id: 'a3.disc', illus: 'dark-star-rite', scene: 'relic', kind: 'transcript', year: s => s.arrive - 2, when: src,
-      title: { ru: 'У Тёмной звезды', en: 'At the Dark Star' },
-      text: {
-        ru: s => `${v1(s) && s.streamRoute === 'pass' ? 'Край потока проводит' : 'Изменённая траектория проводит'} корабль мимо источника сигнала. На устойчивой орбите вокруг карлика — дискообразный корпус около четырёхсот метров поперёк, миллионы лет как мёртвый, со спиральными выступами по поверхности. Рядом — корабль тридцать второй экспедиции.
-
-Люк открыт, людей нет. Экипаж проводит обряд имён: каждого из тридцать второй называют вслух по реестру и показывают его запись в архиве.
-
-Бортовой журнал предшественников восстанавливает порядок событий. Они пытались вскрыть диск, прорезая один из спиральных выступов. Разрез выпустил пламя; чужой металл заварил пролом сам. Погибла часть экипажа, двигатель был повреждён. Маяк диска проснулся от вскрытия — это и был сигнал, который приняло Кольцо. Выжившие годами держались на орбите, пока питание капсул не иссякло.
-
-Последняя запись — голос женщины: тем, кто придёт, — не вскрывать корпус.`,
-        en: s => `${v1(s) && s.streamRoute === 'pass' ? 'The edge of the stream takes' : 'The changed trajectory takes'} the ship past the signal source. On a stable orbit around the dwarf is a disc-shaped hull about four hundred metres across, dead for millions of years, with spiral ridges across its surface. Beside it is the ship of the Thirty-Second expedition.
-
-The hatch is open; no one is there. The crew holds the rite of names: each of the Thirty-Second is named aloud from the register, and their archive entry is shown.
-
-The predecessors' log restores the order of events. They tried to open the disc by cutting through one of the spiral ridges. The cut let out flame; the alien metal welded the breach shut by itself. Part of the crew died, the engine was damaged. The disc's beacon woke at the breach — that was the signal the Ring received. The survivors held on in orbit for years, until the capsules' power ran out.
-
-The last entry is a woman's voice: to those who come after — do not open the hull.`
-      }
-    },
-    {
-      id: 'a3.phrase', scene: 'relic', kind: 'document', year: s => s.arrive - 2, when: src,
-      title: { ru: 'Журнал тридцать второй · запись без номера', en: "The Thirty-Second's log · unnumbered entry" },
-      text: {
-        ru: `«Вспоминали сегодня Землю. Она красивее всего, что мы видели за всю дорогу».
-
-Речь шла не о мире у Тёмной звезды — о доме, куда они не вернутся. Обрывок этой фразы дошёл до Земли и стал присказкой, с которой летел корабль.
-
-Архив записывает полный текст рядом с обрывком, без комментария.`,
-        en: `"We remembered Earth today. It is more beautiful than anything we have seen on the whole road."
-
-It was not about the world at the Dark Star — it was about the home they would not return to. A fragment of this sentence reached Earth and became the saying the ship flew with.
-
-The archive records the full text beside the fragment, without comment.`
-      }
-    },
-    {
-      id: 'a3.salvage', scene: 'relic', kind: 'instrument', year: s => s.arrive - 2, when: src,
-      effect: s => { s.reserve += dvPct(s, DV.salvage); s.isomer = true; },
-      title: { ru: 'Инженерный журнал · что оставили предшественники', en: 'Engineering log · what the predecessors left' },
-      text: {
-        ru: s => `Запас дейтерия тридцать второй хранился в тяжёлой воде и пережил больше века без питания; ³He выкипел. Без гелия двигатель работает только в режиме D–D: истечение ниже, нейтронов больше — на время манёвров вахта уходит в убежище. Этого хватает, чтобы вернуть часть резерва манёвров: +${f1(dvPct(s, DV.salvage), 'ru')}%.
-В грузовом отсеке — контейнер изомерных накопителей, извлечённый из пролома до того, как тот закрылся, и осколок голубого металла корпуса. Контейнер чужой, со своим механизмом высвобождения: чтобы принять эту энергию, нужен переходный контур.
-Предложение вскрыть диск ещё раз ради полного запаса совет отклоняет: журнал предшественников — достаточное основание.`,
-        en: s => `The Thirty-Second's deuterium was stored as heavy water and survived more than a century without power; the ³He boiled off. Without helium the engine can only run D–D: lower exhaust velocity, more neutrons — the watch retreats to the shelter during burns. It is enough to restore part of the manoeuvre reserve: +${f1(dvPct(s, DV.salvage), 'en')}%.
-In the cargo bay is a container of isomer storage cells, pulled out of the breach before it closed, and a shard of the hull's blue metal. The container is alien, with its own release mechanism: taking that energy into Earth systems needs an adapter circuit.
-The proposal to open the disc again for the full store is rejected by the council: the predecessors' log is reason enough.`
-      }
-    },
-    {
-      id: 'a3.kora', illus: 'beacon-memory', scene: 'relic', kind: 'transcript', year: s => s.arrive - 2, when: src,
-      effect: s => { if (!s.koraLast) { s.koraLast = true; s.koraAwake += 1; } },
-      title: { ru: 'Память маяка', en: "The beacon's memory" },
-      text: {
-        ru: s => (s.koraLast ? 'Кора уже на вахте — со своего последнего пробуждения.' : 'Для чтения памяти диска и журнала совет будит Кору — её последний цикл.') + ` Ей около сорока. Дан Осгер, её ученик, за десятилетия ремонтных смен стал старше своей учительницы.
-
-Они работают вместе над фрагментами. Навигационные записи маяка читаются частично и указывают на другие точки. Один фрагмент — повторяющийся, почти музыкальный узор без видимого назначения — не может прочесть и Кора. Архив записывает его как есть.
-
-Ни одна станция Кольца не регистрировала сигналов того же типа кода.`,
-        en: s => (s.koraLast ? 'Kora is already on watch — since her last waking.' : 'To read the memory of the disc and the log, the council wakes Kora — her last cycle.') + ` She is about forty. Dan Osger, her student, has over decades of repair watches grown older than his teacher.
-
-They work on the fragments together. The beacon's navigation records read in part and point to other places. One fragment — a repeating, almost musical pattern with no visible purpose — not even Kora can read. The archive records it as it is.
-
-No station of the Ring has ever registered signals with that type of code.`
       }
     },
 
@@ -5665,81 +5665,15 @@ Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}${s.dea
       act: { ru: 'Акт IV · Высадка и развязка', en: 'Act IV · Landing and resolution' },
       title: { ru: 'Энергетический журнал', en: 'Energy log' },
       text: {
-        ru: s => s.support !== 'found' && powerOK(s) ? (eqOf(s).energy === 'grid' ? 'Кабель от сети колонии подключён в первый месяц: энергии для высадки хватает.' : `${M.eqOpt('energy', eqOf(s).energy).ru} из оснащения работает с первого месяца: энергии для высадки хватает.`) + (s.isomer ? ' Изомерный контейнер тридцать второй откладывают до надёжного контура — спешить незачем.\n' : '\n') + 'Совет склоняется к богатому участку: там больше своей энергии и воды, хотя разведка ещё не закончена.'
-          : s.support === 'found' ? 'С ³He поддержки реакторы базы работают с первого дня: энергии для высадки хватает. ' + (s.isomer ? 'Изомерный контейнер тридцать второй откладывают до надёжного контура — без спешки.\n' : '\n') + 'Совет склоняется к богатому участку: там больше своей энергии и воды, хотя разведка ещё не закончена.' : `Без груза корабля поддержки энергии для высадки не хватает: реакторы корабля держат кольца и зал анабиоза, базе внизу остаётся треть нужного.
-` + (s.isomer ? 'Изомерный контейнер тридцать второй становится главным источником. Дассер назначает Тамира руководить сборкой переходного контура; инженеры обещают безопасный запуск через год.\n' : 'Других источников нет.\n') +
+        ru: s => s.support !== 'found' && powerOK(s) ? (eqOf(s).energy === 'grid' ? 'Кабель от сети колонии подключён в первый месяц: энергии для высадки хватает.' : `${M.eqOpt('energy', eqOf(s).energy).ru} из оснащения работает с первого месяца: энергии для высадки хватает.`) + '\n' + 'Совет склоняется к богатому участку: там больше своей энергии и воды, хотя разведка ещё не закончена.'
+          : s.support === 'found' ? 'С ³He поддержки реакторы базы работают с первого дня: энергии для высадки хватает. ' + '\n' + 'Совет склоняется к богатому участку: там больше своей энергии и воды, хотя разведка ещё не закончена.' : `Без груза корабля поддержки энергии для высадки не хватает: реакторы корабля держат кольца и зал анабиоза, базе внизу остаётся треть нужного.
+` + 'Других источников нет.\n' +
           'Совет склоняется к богатому участку: там больше своей энергии и воды, хотя разведка ещё не закончена.',
-        en: s => s.support !== 'found' && powerOK(s) ? (eqOf(s).energy === 'grid' ? 'The cable from the colony grid is connected in the first month: there is enough energy for the landing.' : `The ${M.eqOpt('energy', eqOf(s).energy).en.toLowerCase()} from the equipment runs from the first month: there is enough energy for the landing.`) + (s.isomer ? " The Thirty-Second's isomer container is set aside until a reliable circuit exists — no rush.\n" : '\n') + 'The council leans toward the rich site: more energy and water of its own, though the survey is not finished.'
-          : s.support === 'found' ? "With the support ship's ³He the base reactors run from day one: there is enough energy for the landing. " + (s.isomer ? "The Thirty-Second's isomer container is set aside until a reliable circuit exists — no rush.\n" : '\n') + 'The council leans toward the rich site: more energy and water of its own, though the survey is not finished.' : `Without the support ship's cargo there isn't enough energy for the landing: the ship's reactors carry the rings and the anabiosis hall, and the base below gets a third of what it needs.
-` + (s.isomer ? "The Thirty-Second's isomer container becomes the main source. Dasser puts Tamir in charge of building the adapter circuit; the engineers promise a safe start within a year.\n" : 'There are no other sources.\n') +
+        en: s => s.support !== 'found' && powerOK(s) ? (eqOf(s).energy === 'grid' ? 'The cable from the colony grid is connected in the first month: there is enough energy for the landing.' : `The ${M.eqOpt('energy', eqOf(s).energy).en.toLowerCase()} from the equipment runs from the first month: there is enough energy for the landing.`) + '\n' + 'The council leans toward the rich site: more energy and water of its own, though the survey is not finished.'
+          : s.support === 'found' ? "With the support ship's ³He the base reactors run from day one: there is enough energy for the landing. " + '\n' + 'The council leans toward the rich site: more energy and water of its own, though the survey is not finished.' : `Without the support ship's cargo there isn't enough energy for the landing: the ship's reactors carry the rings and the anabiosis hall, and the base below gets a third of what it needs.
+` + 'There are no other sources.\n' +
           'The council leans toward the rich site: more energy and water of its own, though the survey is not finished.'
       }
-    },
-    {
-      id: 'a4.experiment', scene: 'vault', kind: 'transcript', year: s => s.arrive + 2, when: s => livable(s) && !rescueS(s) && s.isomer && s.support !== 'found' && !powerOK(s),
-      effect: s => { s.irsonHurt = true; },
-      title: { ru: 'Преждевременный опыт', en: 'The premature experiment' },
-      text: {
-        ru: `Тамир не хочет терять год и не хочет, чтобы место для дома выбрала нехватка энергии. Он будит Ирсона — у того последний цикл, — и вдвоём, без совета, они пробуют запустить контейнер через временную схему.
-
-Минуты приборы пишут ровную выдачу энергии в земную сеть. Потом схема не выдерживает: выброс выжигает участок силовой шины, часть запаса накопителей потеряна. Ирсон тяжело ранен. Его кладут в капсулу до тех пор, пока медицина поселения не сможет его лечить: анабиоз как больница.
-
-Эффект доказан: управляемое высвобождение изомерной энергии в земных системах возможно. По записям опыта надёжный контур соберут за недели, а не за год.`,
-        en: `Tamir does not want to lose a year, and he does not want the lack of energy to choose where home will be. He wakes Irson — Irson's last cycle — and the two of them, without the council, try to start the container through a makeshift circuit.
-
-For minutes the instruments record a steady output into the Earth grid. Then the circuit fails: the surge burns out a stretch of the power bus, and part of the store is lost. Irson is badly injured. He is laid in a capsule until the settlement's medicine can treat him: anabiosis as a hospital.
-
-The effect is proven: controlled release of isomer energy in Earth systems is possible. With the experiment's records a reliable circuit can be built in weeks rather than a year.`
-      }
-    },
-    {
-      id: 'd.council', scene: 'ring', kind: 'decision', year: s => s.arrive + 2, when: s => livable(s) && !rescueS(s) && s.isomer && s.support !== 'found' && !powerOK(s),
-      title: { ru: 'Совет о случившемся', en: 'The council on what happened' },
-      context: {
-        ru: 'Разбор открытый. Все помнят сводку о земном опыте с нуль-пространством и то, как Земля судила своих.',
-        en: "The review is open. Everyone remembers the bulletin about Earth's null-space experiment and how Earth judged its own."
-      },
-      options: [
-        {
-          id: 'fair',
-          label: { ru: 'Отстранить Тамира, Ирсона оправдать', en: 'Remove Tamir, clear Irson' },
-          known: {
-            ru: ['Мотивы Тамира честны, но решал не он: от ответственных решений его отстраняют.', 'Опыт неудачен, но полезен: Ирсон свободен от ответственности.'],
-            en: ["Tamir's motives were honest, but the decision was not his: he is removed from responsible decisions.", 'The experiment failed but was useful: Irson is cleared.']
-          },
-          effect: st => { st.tamirOut = true; st.dasserOut = true; },
-          record: {
-            ru: 'Совет признаёт мотивы Тамира честными и отстраняет его от ответственных решений; Ирсона освобождают. Дассер сам уходит с поста руководителя экспедиции — за неверное назначение — и отправляется восстанавливать выжженную шину.',
-            en: "The council finds Tamir's motives honest and removes him from responsible decisions; Irson is cleared. Dasser steps down as expedition leader himself — for the wrong appointment — and goes off to rebuild the burnt-out bus."
-          }
-        },
-        {
-          id: 'pardon',
-          label: { ru: 'Простить обоих: эффект доказан', en: 'Pardon both: the effect is proven' },
-          known: {
-            ru: ['Контур соберут за недели: Тамир знает схему лучше всех.', 'Следующие смены запомнят: результат оправдывает обход совета.'],
-            en: ['The circuit will be built in weeks: Tamir knows it better than anyone.', 'Later watches will remember: a result justifies going around the council.']
-          },
-          effect: st => { st.precedent = true; },
-          record: {
-            ru: 'Совет прощает обоих. Контур собирают за три недели. В архиве остаётся запись, которую потом прочтут по-разному: совет простил обход совета, потому что опыт удался наполовину.',
-            en: 'The council pardons both. The circuit is built in three weeks. The archive keeps a record that will later be read in different ways: the council forgave going around the council because the experiment half-succeeded.'
-          }
-        },
-        {
-          id: 'both',
-          label: { ru: 'Отстранить обоих по правилу', en: 'Remove both, by the rule' },
-          known: {
-            ru: ['Правило одно для всех, и для раненого тоже.', 'Без Тамира контур соберут за полгода, а не за недели.'],
-            en: ['The rule is the same for everyone, the injured included.', 'Without Tamir the circuit takes half a year, not weeks.']
-          },
-          effect: st => { st.tamirOut = true; },
-          record: {
-            ru: 'Совет отстраняет обоих. Ирсон узнает об этом, когда его разбудят лечить. Контур собирают полгода; первая зима у цели проходит на половине энергии.',
-            en: 'The council removes both. Irson will learn of it when he is woken to be treated. The circuit takes half a year; the first winter at the target runs on half the energy.'
-          }
-        }
-      ]
     },
     {
       id: 'a4.fauna', illus: 'rich-site', scene: 'home', kind: 'transcript', year: s => s.arrive + 2, when: s => M.worldOf(s.target) === 'open',
@@ -5777,13 +5711,13 @@ The survey's conclusion: the rich site needs a defence the settlement cannot aff
           id: 'poor',
           label: { ru: 'Бедный, но безопасный', en: 'Poor but safe' },
           known: {
-            ru: ['Меньше воды и металла; угрозы не видели.', s.isomer ? 'Остатка накопителей хватает закрыть дефицит энергии в обрез: первые годы — скудные.' : 'Энергии мало: первые годы агроблоки на половине мощности, рацион урезан.'],
-            en: ['Less water and metal; no threat seen.', s.isomer ? "What's left of the storage cells just covers the energy deficit: the first years will be lean." : 'Energy is short: for the first years the agro blocks run at half power and rations are cut.']
+            ru: ['Меньше воды и металла; угрозы не видели.', 'Энергии мало: первые годы агроблоки на половине мощности, рацион урезан.'],
+            en: ['Less water and metal; no threat seen.', 'Energy is short: for the first years the agro blocks run at half power and rations are cut.']
           },
           effect: st => { st.site = 'poor'; },
           record: {
-            ru: 'Совет выбирает бедный участок. Находка не отменила опасность богатого — она сделала бедный жизнеспособным, а не только безопасным на бумаге.',
-            en: 'The council chooses the poor site. The find did not cancel the danger of the rich one — it made the poor one viable, not just safe on paper.'
+            ru: 'Совет выбирает бедный участок. Опасность богатого известна, а нехватку энергии бедного переживут: первые годы будут скудными.',
+            en: 'The council chooses the poor site. The danger of the rich one is known, and the poor one\'s energy shortfall can be lived through: the first years will be lean.'
           }
         },
         {
@@ -5822,14 +5756,14 @@ The message holds neither coordinates after the disappearance nor a way to save 
       text: {
         ru: s => `Здесь впервые прямо звучит то, что раньше было фоном. Цель выбрал Совет, чьи члены умерли больше века назад, по данным, которые на Земле давно устарели: дома прошли две эпохи.
 
-` + (s.dasserOut ? 'Дассер уже не руководитель; его спрашивают как старшего,' : 'Дассер ещё руководитель экспедиции, но и его спрашивают как старшего,') + ` и он отказывается решать за экипаж правом основателя. Дан Осгер, ставший архивариусом, говорит ему прямо:
+Дассер ещё руководитель экспедиции, но и его спрашивают как старшего, и он отказывается решать за экипаж правом основателя. Дан Осгер, ставший архивариусом, говорит ему прямо:
 
 — Вы выбрали путь. Дом выбираем мы.
 
 ` + (src(s) ? 'Полная фраза тридцать второй лежит в архиве рядом с обрывком. Готовых прекрасных миров никто не нашёл — ни предшественники, ни мы.' : 'Готовых прекрасных миров никто не нашёл.') + ' Миры не находят, а делают, шаг за шагом.',
         en: s => `Here, for the first time, what used to be background is said aloud. The target was chosen by a Council whose members died more than a century ago, on data long out of date on Earth: two epochs have passed at home.
 
-` + (s.dasserOut ? 'Dasser is no longer the leader; he is asked as the eldest,' : 'Dasser is still the expedition leader, but he too is asked as the eldest,') + ` and he refuses to decide for the crew by a founder's right. Dan Osger, now the archivist, tells him plainly:
+Dasser is still the expedition leader, but he too is asked as the eldest, and he refuses to decide for the crew by a founder's right. Dan Osger, now the archivist, tells him plainly:
 
 "You chose the road. We choose the home."
 
@@ -5886,8 +5820,8 @@ The message holds neither coordinates after the disappearance nor a way to save 
       effect: s => { s.winterDead = s.settle === 'keep' ? 5 : s.site === 'rich' ? 8 : 15; s.deadHere += s.winterDead; },
       title: { ru: 'Медицинский журнал · первая зима', en: 'Medical log · the first winter' },
       text: {
-        ru: s => `Первая зима на трети нужной энергии: ${s.isomer ? 'изомерный контур собирают полгода' : 'других источников, кроме реакторов корабля, нет'}. Агроблоки стоят, укрытие не прогревается. Погибли ${ppl(s.winterDead)}.` + (s.settle === 'keep' ? ' Модуль цел: часть людей отводят на орбиту до весны.' : ''),
-        en: s => `The first winter on a third of the energy needed: ${s.isomer ? 'the isomer circuit takes half a year to build' : 'there is no source but the ship\'s reactors'}. The agro blocks stand idle; the shelter does not warm. ${s.winterDead} people died.` + (s.settle === 'keep' ? ' The lander is intact: some are taken back to orbit until spring.' : '')
+        ru: s => `Первая зима на трети нужной энергии: других источников, кроме реакторов корабля, нет. Агроблоки стоят, укрытие не прогревается. Погибли ${ppl(s.winterDead)}.` + (s.settle === 'keep' ? ' Модуль цел: часть людей отводят на орбиту до весны.' : ''),
+        en: s => `The first winter on a third of the energy needed: there is no source but the ship's reactors. The agro blocks stand idle; the shelter does not warm. ${s.winterDead} people died.` + (s.settle === 'keep' ? ' The lander is intact: some are taken back to orbit until spring.' : '')
       }
     },
     {
@@ -6072,10 +6006,8 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
         ru: s => [
           livable(s) ? (s.settle === 'orbit' ? 'Поселение на орбите — собственная идущая жизнь; внизу — поля под куполами.' : 'Поселение — собственная идущая жизнь.') : 'Дом — собственная идущая жизнь.',
           s.support === 'found' ? 'Корабль поддержки стоит на орбите складом и мастерской; его семеро живут внизу.' : '',
-          s.isomer ? 'Агроблоки работают на изомерной энергии.' : '',
           s.site === 'poor' ? 'У периметра богатого участка стоит застава.' : s.site === 'rich' ? 'Богатый участок держат: периметр и свет по ночам.' : '',
           ['beacon', 'return'].includes(s.home) ? (s.home === 'return' ? 'Ступень обратного пути растёт у гиганта; дети, родившиеся здесь, увидят Землю взрослыми.' : 'Маяк работает без перерыва; вахта сменяется, не выходя из колец.') : 'Первые дети, родившиеся здесь, пошли в школу.',
-          s.irsonHurt ? 'Ирсона вылечили.' : '',
           s.koraLast ? 'Кора, чей сон закончился, учит детей: школа, которую не передали в полёте, передаётся на земле.' : 'Кору разбудили в последний раз — учить. Школа, которую не передали в полёте, передаётся здесь.',
           `Погибли в пути: ${lossesOf(s, s.arrive).total + s.dead}. У цели: ${s.deadHere}${s.winterDead ? `, из них ${s.winterDead} — в первую зиму` : ''}.`,
           'Известие о новой экспедиции приходит в архив рядовой записью среди прочих: приняли к сведению и вернулись к своим делам.',
@@ -6084,10 +6016,8 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
         en: s => [
           livable(s) ? (s.settle === 'orbit' ? 'The orbital settlement is a life going on of its own; below, fields under domes.' : 'The settlement is a life going on of its own.') : 'Home is a life going on of its own.',
           s.support === 'found' ? "The support ship stays in orbit as store and workshop; its seven live below." : '',
-          s.isomer ? 'The agro blocks run on isomer energy.' : '',
           s.site === 'poor' ? 'An outpost stands at the perimeter of the rich site.' : s.site === 'rich' ? 'The rich site is held: a perimeter and lights at night.' : '',
           ['beacon', 'return'].includes(s.home) ? (s.home === 'return' ? 'The return stage grows at the giant; the children born here will see Earth as adults.' : 'The beacon works without pause; the watch changes without leaving the rings.') : 'The first children born here have started school.',
-          s.irsonHurt ? 'Irson has been healed.' : '',
           s.koraLast ? 'Kora, whose sleep is over, teaches the children: the school that was not passed on in flight is passed on here.' : 'Kora was woken one last time — to teach. The school that was not passed on in flight is passed on here.',
           `Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. At the target: ${s.deadHere}${s.winterDead ? `, ${s.winterDead} of them in the first winter` : ''}.`,
           'News of the new expedition reaches the archive as a routine entry among others: noted, and back to their own work.',
@@ -6152,7 +6082,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     dark: { view: 'dark', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда', en: 'The Dark Star' }, side: 'right' },
     shield: { view: 'shield', fallback: 'assets/drift.jpg', label: { ru: 'Фронтальный щит · осмотр', en: 'Forward shield · inspection' }, side: 'right' },
     flip: { view: 'flip', fallback: 'assets/drift.jpg', label: { ru: 'Торможение', en: 'Braking' }, side: 'right' },
-    relic: { view: 'relic', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда · находка', en: 'The Dark Star · the find' }, side: 'right' },
+    relic: { view: 'relic', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда · дальний проход', en: 'The Dark Star · the distant pass' }, side: 'right' },
     arrival: { view: 'arrival', fallback: 'assets/drift.jpg', label: { ru: 'Прибытие', en: 'Arrival' }, side: 'right' },
     home: { view: 'home', fallback: 'assets/drift.jpg', label: { ru: 'Орбита · где будет дом', en: 'Orbit · where home will be' }, side: 'right' },
     // партия спасателей: карта сигнала бедствия и совет базы, услышавшей первой

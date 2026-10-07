@@ -618,7 +618,7 @@
       <p class="si-foot">${esc(T.legend)}. ${esc(T.note)}</p></div>`;
   }
   function openInspect(panel) {
-    if (!view || !shieldOf(view.result.state)) return;
+    if (!view || !shieldOf(view.result.state) || yearAnim) return;
     insp = {}; if (panel) shieldSel = panel; else if (!shieldSel) shieldSel = worstPanel(view.result.state);
     if (window.M31Space && M31Space.ok) { clearTimeout(viewTimer); camView = 'manual:shield'; camAt = performance.now(); M31Space.show('shield'); }
     shown.hud = null; syncScene();
@@ -653,6 +653,7 @@
   }
 
   function closeInspect() {
+    if (yearAnim) return;                                              // Esc во время показа перемотки — не трогает скрытое решение
     const beat = view && screenStop(view.result), was = !!insp || shieldScreen(beat);
     if (!was) return;
     insp = null; if (beat && beat.overlay === 'shield') inspClosed = beat.id;   // и ручной, и автоматический осмотр этого решения
@@ -674,27 +675,137 @@
 
   // Сцена следует за чтением: верхняя видимая запись колонки задаёт кадр и прибор.
   let view = null;
-  // Промотка: дата на HUD и корабль в 3D доезжают до нового года.
-  let yearAnim = null;
-  function shownYear(y) {
-    if (!yearAnim) return y;
-    const k = Math.min(1, (performance.now() - yearAnim.t0) / yearAnim.dur);
-    if (k >= 1) { yearAnim = null; return y; }
-    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(2 - 2 * k, 2) / 2;
-    return yearAnim.from + (y - yearAnim.from) * e;
+  // ---------------------------------------------------------------- перемотка как процесс (DOC «Симулятор v2 — видимость», шаг 2)
+  // Новый экран после перемотки открывается не сразу: курсор времени идёт от прежнего года к новому, HUD, таймлайн и 3D
+  // показывают корабль по снимкам журнала на этот год (люди, запасы, щит меняются в момент записи, без промежуточных
+  // вымышленных значений), события периода всплывают, когда курсор проходит их дату. Записи экрана, решение и крупный
+  // заголовок — в конце; ракурс до конца показа — прежний. Длительность — по длине участка, «К результату» — сразу.
+  const FF = {
+    ru: { toEnd: 'К результату', pass: 'перемотка', cut: 'Перемотка прервана: нужно решение совета', hit: p => `удар в панель ${p}`, breach: p => `пробита панель ${p}`,
+      bul: 'принята сводка Кольца', phase: 'фаза полёта' },
+    en: { toEnd: 'To the result', pass: 'skipping ahead', cut: 'The skip is interrupted: the council must decide', hit: p => `an impact on panel ${p}`, breach: p => `panel ${p} breached`,
+      bul: 'a Ring bulletin received', phase: 'flight phase' }
+  };
+  const FF_HOLD = 0.7, FF_MAX = 7, FF_FAST = 0.3;
+  const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(2 - 2 * k, 2) / 2;
+  let yearAnim = null;                                                 // идущий показ перемотки (план ffPlan + время)
+  const shownYear = y => yearAnim ? yearAnim.y : y;
+  const storyKey = () => `${exp}|${relief ? 'r' : 'm'}`;
+  // фаза полёта на год y — как на таймлайне
+  function phaseOf(s, y) {
+    if (!s.arrive) return null;
+    const A = C.arriveView(s), b0 = M.brakeStart(A, s.tMag);
+    return y < M.ACC ? 'acc' : y >= A ? 'home' : y < b0 ? 'drift' : s.tMag != null && y >= A - M.ENGINE ? 'eng' : 'mag';
   }
-  function animateYear(from) {
-    yearAnim = { from, t0: performance.now(), dur: 1800 };
-    // в кадре обновляются только дата и положение корабля; сцена целиком — в конце
-    const tick = () => {
-      if (!view) return;
-      const y = shownYear(view.result.state.year);
-      if (window.M31Space && M31Space.ok) M31Space.setWorld({ year: y, atEarth: y < 0.5, anim: yearAnim ? { from: yearAnim.from, to: view.result.state.year } : null });
-      if (hudBeat) { setHtml('hud', hudHtml(view.result, hudBeat, y)); setTimeline(view.result, y); }
-      if (yearAnim) requestAnimationFrame(tick); else syncScene();
-    };
-    requestAnimationFrame(tick);
+  // план показа: снимки журнала нового экрана по годам и события периода (не больше трёх сообщений, две паузы)
+  function ffPlan(prev, result) {
+    if (!prev || prev.story !== storyKey()) return null;
+    const p0 = prev.result, n0 = p0.log.length, y0 = p0.state.year, y1 = result.state.year;
+    if (!(y1 > y0 + 1e-9) || result.log.length < n0) return null;
+    const tail = result.log.slice(n0);
+    if (!tail.some(i => i.beat.kind === 'skip' || i.beat.kind === 'watch')) return null;
+    const snaps = [{ at: y0, n: n0, state: p0.state }], evs = [];
+    let ps = p0.state;
+    tail.forEach((it, k) => {
+      const s = it.state, at = Math.max(y0, s.year);
+      for (const inc of (s.incidents || []).slice((ps.incidents || []).length)) evs.push({ at: Math.min(at, Math.max(y0, inc.year)), w: 3, k: 'inc', inc });
+      if (s.shield && ps.shield) for (const h of s.shield.hits.slice(ps.shield.hits.length)) evs.push({ at: Math.min(at, Math.max(y0, h.at)), w: 2, k: h.first === 'breached' ? 'breach' : 'hit', panel: h.panel });
+      if (it.beat.kind === 'bulletin') evs.push({ at, w: 1, k: 'bul' });
+      if (it.beat.kind === 'watch' && it.beat.data && it.beat.data.interrupted) evs.push({ at, w: 4, k: 'cut' });
+      snaps.push({ at, n: n0 + k + 1, state: s });
+      ps = s;
+    });
+    // смена фазы полёта (разгон → дрейф → магнит → двигатель → у цели) — по годам границ
+    const s1 = result.state, ph0 = phaseOf(s1, y0), ph1 = phaseOf(s1, y1);
+    if (ph0 && ph0 !== ph1 && !relief) {
+      const A = C.arriveView(s1), cuts = [M.ACC, M.brakeStart(A, s1.tMag), s1.tMag != null ? A - M.ENGINE : null, A].filter(c => c != null && c > y0 && c <= y1);
+      for (const c of cuts) evs.push({ at: c, w: 1, k: 'phase', phase: phaseOf(s1, c + 1e-9) });
+    }
+    for (const e of evs) if (e.w === 2) { const inc = evs.find(x => x.w === 3 && Math.abs(x.at - e.at) < 1e-6 && !x.with);
+      if (inc) { inc.with = e; e.drop = true; } }
+    const msgs = evs.filter(e => !e.drop).sort((a, b) => b.w - a.w || a.at - b.at).slice(0, 3).sort((a, b) => a.at - b.at || a.w - b.w);
+    const days = (y1 - y0) * 365.25, still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const T = still ? 0.4 : Math.min(5.5, Math.max(1.5, 1.2 + 1.1 * Math.log10(1 + days)));
+    // паузы на значимых событиях: время базового хода, когда курсор доходит до года события (обратная к ease)
+    const uAt = f => { let a = 0, b = 1; for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (ease(m) < f) a = m; else b = m; } return b; };
+    const nh = still ? 0 : Math.min(3, Math.floor((FF_MAX - T) / FF_HOLD));
+    const holds = msgs.filter(m => m.w >= 2).sort((a, b) => b.w - a.w).slice(0, nh).map(m => ({ tb: uAt((m.at - y0) / (y1 - y0)) * T })).sort((a, b) => a.tb - b.tb);
+    return { y0, y1, from: y0, y: y0, T, still, holds, total: T + holds.length * FF_HOLD, snaps, msgs, log: result.log, n0, next: 0, cur: null, msg: null, sn: -1 };
   }
+  // текст сообщения — на языке вывода (смена языка посреди показа переводит и текущую строку)
+  function ffText(e) {
+    const F = FF[lang], one = x => x.k === 'inc' ? C.incidentHeadline(x.inc, lang).title : x.k === 'hit' ? F.hit(x.panel) : x.k === 'breach' ? F.breach(x.panel)
+      : x.k === 'bul' ? F.bul : x.k === 'cut' ? F.cut : `${F.phase}: ${C.ui[lang].tlPhase[x.phase]}`;
+    return `<b>${esc(fmtYear(e.at))}</b> · ${esc(one(e) + (e.with ? ` — ${one(e.with)}` : ''))}`;
+  }
+  // базовое время хода курсора (без пауз) по реальному времени показа
+  function ffBase(a, t) {
+    let tb = t;
+    for (const h of a.holds) { if (tb <= h.tb) break; if (tb < h.tb + FF_HOLD) return h.tb; tb -= FF_HOLD; }
+    return tb;
+  }
+  function ffStart(plan) {
+    hideHeadline();
+    yearAnim = Object.assign(plan, { t0: performance.now() });
+    document.querySelector('.app').classList.add('ff');
+    $('ffEnd').textContent = `${FF[lang].toEnd} →`;
+    requestAnimationFrame(ffTick);
+  }
+  function ffTick() {
+    const a = yearAnim;
+    if (!a || !view) return;
+    const now = performance.now();
+    let done;
+    const t = (now - a.t0) / 1000;
+    if (a.fast) { const k = Math.min(1, (now - a.fast.t0) / (FF_FAST * 1000)); a.y = a.fast.y + (a.y1 - a.fast.y) * ease(k); done = k >= 1; }
+    else { a.y = a.y0 + (a.y1 - a.y0) * ease(Math.min(1, ffBase(a, t) / a.T)); done = t >= a.total; }
+    if (done) a.y = a.y1;
+    const y = a.y;
+    // снимок журнала на год y: приборы и щит — каким корабль был на эту дату
+    let k = 0; while (k + 1 < a.snaps.length && a.snaps[k + 1].at <= y + 1e-9) k++;
+    const sn = a.snaps[k], pr = { log: a.log.slice(0, sn.n), state: sn.state };
+    if (window.M31Space && M31Space.ok) {
+      const w = { year: y, atEarth: y < 0.5, anim: { from: a.y0, to: a.y1 } };
+      if (k !== a.sn && sn.state.shield && !relief) w.shield = C.shield.publicView(sn.state.shield);
+      M31Space.setWorld(w);
+    }
+    a.sn = k;
+    if (hudBeat) {
+      const ph = phaseOf(sn.state, y), line = `<span class="ffl">${esc(FF[lang].pass)}${ph && !relief ? ` · ${esc(C.ui[lang].tlPhase[ph])}` : ''}</span>`;
+      setHtml('hud', hudHtml(pr, hudBeat, y).replace('</span>', `</span>${line}`)); setTimeline(pr, y);
+    }
+    // сообщения — по очереди: пройденное событие ждёт, пока предыдущее провисит FF_HOLD (одновременные не затирают друг друга)
+    const ready = a.next < a.msgs.length && a.msgs[a.next].at <= y + 1e-9;
+    if (ready && (!a.cur || now - a.cur >= FF_HOLD * 1000 || a.fast)) {
+      const e = a.msgs[a.next++], el = $('ffmsg'); a.cur = now; a.msg = e;
+      el.innerHTML = ffText(e); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+    }
+    // досказать очередь — но не дольше общего потолка показа; при reduced motion не ждём
+    if (done && !a.fast && !a.still && t < FF_MAX && (a.next < a.msgs.length || (a.cur && now - a.cur < FF_HOLD * 1000))) done = false;
+    if (done) ffDone(); else requestAnimationFrame(ffTick);
+  }
+  function ffFast() { const a = yearAnim; if (a && !a.fast) a.fast = { t0: performance.now(), y: a.y }; }
+  // конец показа: экран целиком — записи, решение, ракурс, заголовок
+  function ffStop() {
+    yearAnim = null;
+    document.querySelector('.app').classList.remove('ff');
+    $('ffmsg').classList.remove('on');
+  }
+  function ffDone() {
+    ffStop();
+    if (!view) return;
+    const c = $('current'); c.classList.remove('fresh'); void c.offsetWidth; c.classList.add('fresh');
+    syncScene();
+    showHeadline(view.result, true);
+    fillArchive(view.result.log);
+    if (view.result.stop && view.result.stop.beat && view.result.stop.beat.kind === 'cinematic') startCinematic(view.result.stop.beat);
+  }
+  // архив — весь журнал; во время показа перемотки — только до неё (иначе архив раскрыл бы период раньше курсора)
+  function fillArchive(log) {
+    $('log').innerHTML = withIllus(log).map(html => html ? `<div class="item">${html}</div>` : '').join('');
+    $('log').dataset.filter = filter;
+  }
+
   // DOM меняется, только когда меняется содержимое: прокрутка не пересобирает приборы
   const shown = {};
   function setHtml(id, html) { if (shown[id] !== html) { shown[id] = html; $(id).innerHTML = html; } }
@@ -709,7 +820,7 @@
     return first ? first.beat : currentBeat(result);
   }
   function syncScene() {
-    if (!view) return;
+    if (!view || yearAnim) return;                                      // идёт показ перемотки: экран откроется в конце
     const y = shownYear(view.result.state.year);
     const box = $('panelScroll'), top = box.getBoundingClientRect().top + 60;
     // всё видно без прокрутки или дочитано до конца — показываем последнее событие
@@ -729,7 +840,7 @@
     const y2 = view.result.state.year;
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
-      M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target), relic: inc.target === M.SOURCE,
+      M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target),
         burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0,
         relief: { P: R.P, sent: inc.sent, council: R.council.id, list: R.list.map(r => ({ id: r.id, colony: r.colony || null, hear: r.hear, launch: r.launch, complete: r.complete })),
           voyages: res ? res.voyages : [] }, legacy: { passTug: relief.world.passTug !== false, settled: relief.world.settled || [] } });
@@ -741,7 +852,7 @@
       M31Space.setWorld({ shield: sh ? C.shield.publicView(sh) : null, shieldSel: sh && inspOn(view.result) ? shieldSel : null,
         launches: [st.scout > 0 ? { id: 'scout', at: st.scout } : null, st.choices['d.stream'] === 'probe' ? { id: 'stream', at: st.arrive - 5 } : null].filter(Boolean),
         wreck: !!st.lostShip, dark: st.dutchman ? 'empty' : st.outcome === 'sos' ? 'sleep' : null, relief: null, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, legacy: { passTug: world.passTug !== false, settled: world.settled || [] }, year: y, separated: ids.has('a1.stage'), cloudSeen: ids.has('a1.cloud'),
-        worldClass: st.target ? M.worldOf(st.target) : null, relic: st.target === M.SOURCE,
+        worldClass: st.target ? M.worldOf(st.target) : null,
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
         target: st.target || (atStop('map') && mapPickName(st)) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
         cargo: cargo3d(atStop('passport') && draft ? draft : st), cargoLabels: atStop('passport'), tMag: st.tMag,
@@ -865,15 +976,20 @@
     if (canSkip) $('sceneSkip').textContent = `${t(sb.label, result.stop.state)} →`;
     if (isNew) { $('current').classList.remove('fresh'); void $('current').offsetWidth; $('current').classList.add('fresh'); $('panelScroll').scrollTop = 0; }
     shownTokens = cur().length;
-    view = { result, group, cam: screenBeat(result, group) };
+    const prevView = view;
+    view = { result, group, cam: screenBeat(result, group), story: storyKey() };
+    // новый ход с перемоткой — показ процесса; экран, заголовок и заставка — в его конце (ffDone)
+    if (isNew) { if (yearAnim) ffStop(); const plan = ffPlan(prevView, result); if (plan) ffStart(plan); }
+    else if (yearAnim) { $('ffEnd').textContent = `${FF[lang].toEnd} →`; if (yearAnim.msg) $('ffmsg').innerHTML = ffText(yearAnim.msg); }   // смена языка посреди показа
     syncScene();
-    showHeadline(result, isNew);
-    if (result.stop && result.stop.beat && result.stop.beat.kind === 'cinematic') startCinematic(result.stop.beat);
+    if (!yearAnim) {
+      showHeadline(result, isNew);
+      if (result.stop && result.stop.beat && result.stop.beat.kind === 'cinematic') startCinematic(result.stop.beat);
+    }
 
     $('filters').innerHTML = Object.entries(u.filters).map(([k, v]) =>
       `<button data-filter="${k}" aria-pressed="${k === filter}">${esc(v)}</button>`).join('');
-    $('log').innerHTML = withIllus(result.log).map(html => html ? `<div class="item">${html}</div>` : '').join('');
-    $('log').dataset.filter = filter;
+    fillArchive(yearAnim ? result.log.slice(0, yearAnim.n0) : result.log);
   }
 
   // настройки: язык, звук (в срезе пока нет), прогресс — новый мир и полный сброс
@@ -892,7 +1008,7 @@
     if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
     camView = null; sceneId = null; clearTimeout(viewTimer);
     world = { passTug: true }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
-    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; yearAnim = null; mapPick = null; draft = null;
+    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; ffStop(); mapPick = null; draft = null;
   }
 
   document.addEventListener('click', e => {
@@ -902,23 +1018,21 @@
     const btn = e.target.closest('button');
     if (!btn) return;
     const act = btn.dataset.act;
+    if (yearAnim && (act === 'inspect' || act === 'inspect-close')) return;          // осмотр — после показа перемотки
     if (act === 'inspect') { if (insp) closeInspect(); else openInspect(); return; }
     if (act === 'inspect-close') { closeInspect(); return; }
-    if (act === 'go') {
-      const st = view && view.result.stop, from = st && st.beat && st.beat.kind === 'skip' ? view.result.state.year : null;
-      cur().push('go'); save(); render(true);
-      if (from !== null) animateYear(from);
-    }
+    if (act === 'ffEnd') { ffFast(); return; }
+    if (act === 'go') { if (yearAnim) return; cur().push('go'); save(); render(true); }
     else if (act === 'vote') { cur().push(btn.dataset.option); mapPick = null; draft = null; save(); render(true); }
     else if (btn.dataset.pick) { mapPick = btn.dataset.pick; refreshStop(); }
     else if (btn.dataset.draft) { draft[btn.dataset.draft] = Number(btn.dataset.v); refreshStop(); }
     else if (btn.dataset.eq) { draft.eq = Object.assign({}, draft.eq, { [btn.dataset.eq]: btn.dataset.v }); const det = btn.closest('details'); refreshStop(); if (det) { const d2 = document.querySelector('details.equip'); if (d2) d2.open = true; } }
     else if (btn.dataset.kit) { const k = btn.dataset.kit; draft.kits = draft.kits.includes(k) ? draft.kits.filter(x => x !== k) : draft.kits.concat(k); refreshStop(); }
-    else if (act === 'back') { cur().pop(); yearAnim = null; mapPick = null; draft = null; save(); render(true); }
+    else if (act === 'back') { cur().pop(); ffStop(); mapPick = null; draft = null; save(); render(true); }
     else if (act === 'relief') {                                          // авария с живыми → совет, услышавший первым
       const st = view.result.state, incident = JSON.parse(JSON.stringify(st.incident));
       incident.id = `${exp}|${incident.id}`;
-      relief = { incident, world: JSON.parse(JSON.stringify(world)), tokens: [] }; yearAnim = null;
+      relief = { incident, world: JSON.parse(JSON.stringify(world)), tokens: [] }; ffStop();
       mapPick = null; draft = null; save(); render(true);
     }
     else if (act === 'restart' || act === 'newWorld') {
@@ -948,7 +1062,7 @@
     try { M31Space.mount($('space')); } catch (err) { M31Space.ok = false; console.warn('3D недоступно:', err); }
     M31Space.onPick = name => { if (atStop('map')) { mapPick = name; refreshStop(); } };
     M31Space.onPartPick = ({ part, panel }) => {
-      if (part !== 'shield' || !view || !shieldOf(view.result.state)) return;
+      if (part !== 'shield' || !view || !shieldOf(view.result.state) || yearAnim) return;
       const beat = view.result.stop && view.result.stop.beat;
       if (inspOn(view.result)) { shieldSel = panel; syncScene(); } else openInspect(panel);
     };

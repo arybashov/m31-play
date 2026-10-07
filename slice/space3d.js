@@ -95,7 +95,7 @@
   let colonyMarks, legacyMarks, legacyKey = '';                                  // колонии и следы по архиву Кольца; наследие прошлых партий   // карта сигнала бедствия (партия спасателей)
   let catalogPts, targetMark, ship, stage, rings = [], plume, radMat, marker, routeDone, routeAhead, relGroup, starsGroup;
   let visible = false, lang = 'ru', shown = false;   // shown: хоть один кадр уже был на экране
-  const world = { relief: null, legacy: null, tMag: null, anim: null, year: 0, worldClass: null, relic: false, cloudSeen: false, separated: false, burning: true, finalBurn: false, sepT: 0, atEarth: true, scout: 0, scoutV: 0.16, beta: 0.1, arrive: 0, cargo: [], cargoLabels: false };
+  const world = { relief: null, legacy: null, tMag: null, anim: null, year: 0, worldClass: null, cloudSeen: false, separated: false, burning: true, finalBurn: false, sepT: 0, atEarth: true, scout: 0, scoutV: 0.16, beta: 0.1, arrive: 0, cargo: [], cargoLabels: false };
   const cam = { focus: 'ship', F: new THREE.Vector3(), dist: 4500, yaw: 2.4, pitch: 0.25, pivot: -1400 };
   let tween = null;
 
@@ -741,7 +741,7 @@
   // Плоскость орбит — по Ab: наклон 102° к картинной плоскости (узел условный); c — в той же плоскости, на 0,5 а.е.
   // Ba + Bb («Тёмная звезда») — 1 460 а.е. от A в проекции на небо; глубина по Gaia неточна.
   const EIND = { name: 'Epsilon Indi', R_km: 0.713 * 696000, c: { a: 0.5, R_km: 6371, P_d: 146 }, Ab: { a: 15.8, e: 0.25, R_km: 74350, P_yr: 85 },
-    hz: [0.47, 0.85], B_au: 1460 };
+    hz: [0.47, 0.85], B_au: 1460, B_los: 1900 };   // пара Ba/Bb: 1460 а.е. поперёк луча, 1900 — ближе к нам вдоль него (выбор автора, у потока)
   let tsys = null, tsysAx = null;
   const tsysParts = { orbits: [], dots: [] };
   function buildTargetSystem() {
@@ -774,7 +774,7 @@
     tsysParts.c = body(EIND.c.R_km, 0x3d6f9e, 0x9cc4e8);
     tsysParts.Ab = body(Ab.R_km, 0xc8b89a, 0xd6c3a0);
     tsysParts.B = body(0.08 * 696000, 0x6a3a30, 0xb0604a);
-    tsysParts.B.position.copy(skyA).multiplyScalar(EIND.B_au * AU_LY);
+    tsysParts.B.position.copy(skyA).multiplyScalar(EIND.B_au * AU_LY).addScaledVector(los, -EIND.B_los * AU_LY);
     tsys.add(new THREE.PointLight(0xffc890, 1.4, 0.02, 1e-4));                     // свет звезды — только в своей системе
     tsys.traverse(o => { if (o.material) o.material.toneMapped = false; });
     tsys.visible = false; starsGroup.add(tsys);
@@ -974,25 +974,6 @@
     arrival.debris.rotation.x = 1.25;
     arrival.planet.add(arrival.body, arrival.rim, arrival.debris);
     arrival.planet.visible = false; shipScene.add(arrival.planet);
-    // находка
-    arrival.relic = new THREE.Group();
-    const metal = new THREE.MeshStandardMaterial({ color: 0x39434e, roughness: 0.3, metalness: 0.8, emissive: 0x10284a, emissiveIntensity: 0.5 });
-    const glow = new THREE.MeshStandardMaterial({ color: 0x4f86c6, roughness: 0.25, metalness: 0.6, emissive: 0x3a7bd5, emissiveIntensity: 0.9 });
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(200, 185, 34, 128), metal);
-    arrival.relic.add(disc);
-    for (let k = 0; k < 6; k++) {                                   // спиральные выступы — светлые дуги голубого металла
-      const arc = new THREE.Mesh(new THREE.TorusGeometry(35 + k * 28, 4, 8, 72, Math.PI * 1.2), glow);
-      arc.rotation.x = Math.PI / 2; arc.rotation.z = k * 1.05; arc.position.y = 19; arrival.relic.add(arc);
-    }
-    const rimR = new THREE.Mesh(new THREE.TorusGeometry(200, 5, 8, 128), glow); rimR.rotation.x = Math.PI / 2; arrival.relic.add(rimR);
-    const hull = new THREE.MeshStandardMaterial({ color: 0x8e8a82, roughness: 0.6, emissive: 0x222018, emissiveIntensity: 0.4 });
-    const old = new THREE.Group();                                   // корабль тридцать второй — младший брат нашего
-    old.add(new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 320, 24), hull));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(70, 7, 12, 64), hull); ring.rotation.x = Math.PI / 2; old.add(ring);
-    old.rotation.z = Math.PI / 2 - 0.3; old.position.set(420, 90, 160);
-    arrival.relic.add(old);
-    arrival.relic.rotation.set(1.05, 0.4, 0.25);   // диск под углом: видны толщина и выступы
-    arrival.relic.visible = false; shipScene.add(arrival.relic);
   }
   // ---------------------------------------------------------------- склад Оттепели (спасатель v3) — болванка
   // Орбитальный склад: цилиндр 120 м, два радиатора, 40 огней капсул. До стыковки висит в полукилометре за кораблём
@@ -1204,14 +1185,6 @@
       arrival.rim.material.uniforms.a.value = 1;
       arrival.planetD = D;
     } else arrival.planetD = 0;
-    // находка у Тёмной звезды
-    const dr = y - (A - 2), rOn = A > 0 && world.relic && Math.abs(dr) < 0.6;
-    arrival.relic.visible = !!rOn;
-    if (rOn) {
-      const D = 1700 * (1 + 6e5 * (dr / 0.5) ** 2);
-      const dir = presetDir('relic').negate().addScaledVector(E2, 0.35).addScaledVector(E3, -0.2).normalize();
-      arrival.relic.position.copy(pivot).addScaledVector(dir, D);
-    }
   }
 
   // ---------------------------------------------------------------- блики объектива
