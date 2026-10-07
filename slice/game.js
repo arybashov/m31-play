@@ -138,7 +138,8 @@
     else if (b.kind === 'end') head = t(b.title, s);
     // ведомость (отчёт вахты): потери с отлёта, все изменения запасов, сводки износа щита — раскрывается по клику
     const ved = b.details ? `<details class="ved"><summary>${esc(u.ved)}</summary>${paras(t(b.details, s))}</details>` : '';
-    return `${pre}<article class="entry k-${b.kind}" data-kind="${b.kind}"><header>${esc(head)}</header>${parasP(t(b.text, s))}${ved}</article>`;
+    const inl = b.inline === 'probe' ? probeSvg(item, true) : '';      // прибор внутри записи (у экрана карты панель занята картой)
+    return `${pre}<article class="entry k-${b.kind}" data-kind="${b.kind}"><header>${esc(head)}</header>${parasP(t(b.text, s))}${inl}${ved}</article>`;
   }
 
   function stopHtml(result) {
@@ -470,9 +471,9 @@
     return `<svg viewBox="0 0 520 236" class="panel-svg lives"><text x="16" y="28" class="ttl">${esc(u.lives.toUpperCase())}</text>${g}${axis}</svg>`;
   }
 
-  // Две записи на станции связи: после сопоставления метки совпадают.
-  function probeSvg(result) {
-    const u = C.ui[lang], done = !!result.state.choices['d.probe'];
+  // Две записи станции связи (приложение к исследовательской заявке): направления сопоставлены, метки совпадают.
+  function probeSvg(result, matched) {
+    const u = C.ui[lang], done = !!matched;
     const bx = done ? 300 : 360, by = done ? 96 : 150;
     return `<svg viewBox="0 0 520 220" class="panel-svg probe"><text x="16" y="26" class="ttl">${esc(u.probeTitle.toUpperCase())}</text>
       <circle cx="260" cy="118" r="70" class="sky"/><circle cx="260" cy="118" r="40" class="sky"/>
@@ -666,7 +667,6 @@
     if (shieldOf(result.state) && inspOn(result)) return shieldInspHtml(result, beat);
     const o = beat.overlay;
     if (o === 'lens') return lensSvg(result);
-    if (o === 'probe') return probeSvg(result);
     if (o === 'sleepers') return sleepersSvg(result);
     if (o === 'trajectory') return trajectorySvg(result);
     if (o === 'lifelines') return lifelinesSvg(result);
@@ -941,7 +941,8 @@
       // старое сохранение: новые решения — вариантом по умолчанию, лишнее после конца — прочь; иначе копия и новая партия
       const fixed = relief ? null : E.migrate(C, tokens, C.INSERTED, ctx());
       if (fixed) tokens = fixed;
-      else { backup(err.message); if (relief) relief = null; else tokens = []; }
+      // сброс основной партии — новая экспедиция целиком: новые правила и сид, а не прежние версии старого сохранения
+      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; mapPick = null; draft = null; } }
       save(); result = E.run(story(), cur(), ctx());
     }
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии

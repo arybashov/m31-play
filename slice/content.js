@@ -2485,93 +2485,69 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
         { F: 'sun', dist: 55, yaw: -1.0, pitch: 0.9, frame: 'galactic', move: 5000, dur: 6500,
           ru: 'Земные экспедиции.', en: "Earth's expeditions." },
         { ship: 'depart', dur: 7500, move: 6500, ru: '', en: '' },
-        { ship: 'passing', dur: 6500, ru: 'Путь в один конец.', en: 'A one-way road.' },
-        // фраза тридцать второй — на корабле в пути, без перелёта к цели: она была о Земле, а не о мире у цели
-        { ship: 'passing', dur: 7500, ru: '«…красивее всего, что мы видели…»', en: "'…more beautiful than anything we've seen…'" }
+        { ship: 'passing', dur: 7500, ru: 'Путь в один конец.', en: 'A one-way road.' }
       ]
     },
 
     // ------------------------------------------------------------ ПРОЛОГ
     {
-      id: 'p.station', scene: 'station', overlay: 'probe', kind: 'archive', year: 0,
-      place: { ru: 'Земля, станция связи Кольца', en: 'Earth, Ring contact station' },
-      text: {
-        ru: `Шесть лет после последнего сообщения тридцать второй.
-
-На рабочей поверхности — две записи из одного сектора неба. Первая — последняя передача экспедиции, обрывок фразы. Вторая пришла в тот же год, повторяется каждые сорок минут и не похожа ни на один код, известный Кольцу.`,
-        en: `Six years after the Thirty-Second's last message.
-
-Two recordings from the same sector of sky lie on the work surface. The first is the expedition's last transmission, a scrap of a sentence. The second arrived the same year, repeats every forty minutes and resembles no code the Ring has ever catalogued.`
-      }
-    },
-    {
-      id: 'd.probe', scene: 'station', overlay: 'probe', kind: 'decision', year: 0,
-      title: { ru: 'Сопоставить записи', en: 'Compare the recordings' },
-      context: { ru: 'Оператор ждёт. Это ничего не стоит.', en: 'The operator is waiting. It costs nothing.' },
-      options: [{
-        id: 'align',
-        label: { ru: 'Совместить направления источников', en: 'Align the source directions' },
-        known: { ru: ['Покажет, связаны ли записи.', 'Ничего не тратит.'], en: ['Shows whether the recordings are related.', 'Costs nothing.'] },
-        record: {
-          ru: `Метки ложатся одна на другую. Направление совпадает. Код — нет.
-
-Оператор не выключает звук. Человеческий голос обрывается на полуслове; чужая последовательность продолжается.`,
-          en: `The markers settle one on the other. The direction matches. The code does not.
-
-The operator leaves the sound on. The human voice breaks off mid-word; the alien sequence goes on.`
-        }
-      }]
-    },
-    {
       id: 'p.council', scene: 'council', kind: 'transcript', year: 0,
       title: { ru: 'Совет Звездоплавания', en: 'Council of Star Navigation' },
       text: {
-        ru: `— Тридцать вторая молчит, — говорит Ирина Кассель и выводит на общую панель вторую запись. — А этот сигнал из того же сектора не замолкает шесть лет.
+        ru: `— Заявок три, экспедиция одна, — говорит Ирина Кассель. — Решаем, какую работу берёт сорок первая. Звезду, задание и паспорт утвердим потом.
 
-Нил Дассер опускает раскрытую ладонь на карту другого сектора.
+На общей карте три отметки. Ни одна ещё не соединена с Землёй линией курса.
 
-— Передатчик Ксилона Ир слабеет. Ещё десять лет без специалиста дальней связи — и они перестанут слышать Кольцо. Там нас ждут.
+Нил Дассер касается первой.
 
-Орин Дал поднимает два пальца к общей панели: один у сигнала, другой у отметки тридцать второй.
+— Ксилона Ир, звезда Барнарда. Передатчик слабеет: ещё десять лет без специалиста дальней связи — и форпост перестанет слышать Кольцо. Им нужны специалист, детали передатчика и запас для капсул.
 
-— Здесь ещё могут ждать. Если кто-то из них спит в капсулах, каждый год — чья-то жизнь. И пока мы не знаем, что там, сектор закрыт для всех, кто полетит после нас.
+Ива Лорн касается второй.
 
-— И Оттепель, — говорит Ива Лорн. — Последняя передача с Росс 128: база погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет. Двадцать пять уже прошло.
+— Оттепель, Росс 128. База погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет; двадцать пять уже прошло. Сколько из сорока живы, мы не знаем.
 
-— Нужны три экспедиции, — говорит Кассель. — Снаряжаем одну.`,
-        en: `"The Thirty-Second is silent," says Irina Kassel, bringing the second recording up on the shared display. "This signal, from the same sector, hasn't stopped in six years."
+Орин Дал увеличивает третий участок карты.
 
-Nil Dasser sets his open palm on the chart of another sector.
+— Исследование. Тридцать вторая шла к ε Индейца; её последняя передача оборвана, а из того же сектора идёт сигнал, которого нет в каталогах Кольца. Это моя первая кандидатура. Но есть и другие системы: подтверждённые планеты, старые наблюдения, поселения, с которыми нужна прямая связь. Выберем звезду — запишем, что именно там выяснить.
 
-"Xylona Ir's transmitter is failing. Ten more years without a deep-relay specialist and they stop hearing the Ring. They're waiting for us there."
+— Две заявки останутся в очереди, — говорит Кассель. — Голосуем.`,
+        en: `"Three requests, one expedition," says Irina Kassel. "We decide what work the Forty-First takes on. The star, the task and the passport come after."
 
-Orin Dal raises two fingers to the shared display: one at the signal, one at the Thirty-Second's marker.
+Three markers stand on the shared chart. None is yet joined to Earth by a course line.
 
-"Someone may still be waiting here. If any of them are asleep in the capsules, every year is someone's life. And until we know what's there, the sector is closed to everyone who flies after us."
+Nil Dasser touches the first.
 
-"And Thaw," says Iva Lorn. "The last transmission from Ross 128: the base is dead, forty people went into capsules at the orbital store. The capsules hold a hundred and fifty years. Twenty-five have passed."
+"Xylona Ir, Barnard's Star. Its transmitter is failing: ten more years without a deep-relay specialist and the outpost stops hearing the Ring. They need a specialist, transmitter parts and capsule spares."
 
-"Three expeditions are needed," says Kassel. "We are fitting out one."`
+Iva Lorn touches the second.
+
+"Thaw, Ross 128. The base is dead; forty people went into capsules at the orbital store. The capsules hold a hundred and fifty years; twenty-five have passed. How many of the forty are alive, we don't know."
+
+Orin Dal enlarges the third region of the chart.
+
+"Research. The Thirty-Second was bound for ε Indi; its last transmission broke off, and from the same sector comes a signal that is in none of the Ring's catalogues. That is my first candidate. But there are other systems: confirmed planets, old observations, settlements that need a direct link. Once we choose a star, we write down exactly what to establish there."
+
+"Two requests stay in the queue," says Kassel. "We vote."`
       }
     },
     {
       id: 'd.mission', scene: 'council', kind: 'decision', year: 0,
       title: { ru: 'Какую работу берёт сорок первая', en: 'Which work the Forty-First takes on' },
       context: {
-        ru: 'Совет голосует. Две другие заявки уйдут следующим экспедициям — через годы.',
-        en: 'The Council votes. The other two requests go to later expeditions — years from now.'
+        ru: 'Совет голосует. Две другие заявки остаются в очереди — их возьмут следующие экспедиции, через годы.',
+        en: 'The Council votes. The other two requests stay in the queue for later expeditions — years from now.'
       },
       options: [
         {
           id: 'contact',
-          label: { ru: 'Сектор Орина: сигнал тридцать второй', en: "Orin's sector: the Thirty-Second's signal" },
+          label: { ru: 'Исследование и контакт', en: 'Research and contact' },
           known: {
-            ru: ['Цель — в секторе сигнала; систему выбирает экспедиция.', 'Форпосту Ксилона Ир обещают специалиста через четыре года — передатчик к тому времени может замолчать.'],
-            en: ['The target lies in the signal sector; the expedition chooses the system.', 'Xylona Ir is promised a specialist in four years — its transmitter may be silent by then.']
+            ru: ['Звезду выбирает экспедиция — любую достижимую; задание уточнят по сведениям о системе: поиск тридцать второй и источника сигнала, обследование системы или прямая связь с поселением.', 'Форпосту Ксилона Ир обещают специалиста через четыре года — передатчик к тому времени может замолчать.'],
+            en: ['The expedition chooses the star — any it can reach; the task is set from what is known of the system: searching for the Thirty-Second and the signal source, surveying the system, or a direct link with a settlement.', 'Xylona Ir is promised a specialist in four years — its transmitter may be silent by then.']
           },
           effect: st => { st.mission = 'contact'; },
           record: {
-            ru: `Совет голосует за сектор Орина. Форпосту обещают специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилона Ир он пока не убирает.
+            ru: `Совет утверждает исследовательскую экспедицию. Форпосту обещают специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилона Ир он пока не убирает.
 
 — Я поведу эту экспедицию.
 
@@ -2581,8 +2557,8 @@ Orin Dal raises two fingers to the shared display: one at the signal, one at the
 
 — Голосовал.
 
-— Тогда я — штурман, — говорит Орин. — Как обычно.`,
-            en: `The Council votes for Orin's sector. The outpost is promised a specialist next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
+— Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.`,
+            en: `The Council approves a research expedition. The outpost is promised a specialist next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
 
 "I'll lead this expedition."
 
@@ -2592,26 +2568,26 @@ Kassel doesn't hurry to note his name.
 
 "I did."
 
-"Then I'm navigator," says Orin. "As usual."`
+"Then I'm navigator," says Orin. "Now we choose where to go, and what for."`
           }
         },
         {
           id: 'supply',
           label: { ru: 'Форпост Ксилона Ир: связь и запчасти', en: 'Xylona Ir outpost: the link and spares' },
           known: {
-            ru: ['Звезда Барнарда, 6 св. лет — ближе всех. Специалист дальней связи, передатчик, запас для капсул.', 'Сектор сигнала закрыт до следующей экспедиции.'],
-            en: ["Barnard's Star, 6 ly — the nearest. A deep-relay specialist, a transmitter, capsule spares.", 'The signal sector stays closed until the next expedition.']
+            ru: ['Звезда Барнарда, 6 св. лет — ближе всех. Специалист дальней связи, передатчик, запас для капсул.', 'Исследование сектора сигнала ждёт следующей экспедиции.'],
+            en: ["Barnard's Star, 6 ly — the nearest. A deep-relay specialist, a transmitter, capsule spares.", 'Research in the signal sector waits for the next expedition.']
           },
           effect: st => { st.mission = 'supply'; },
           record: {
-            ru: `Совет голосует за форпост. Сектор Орина обещают следующей экспедиции.
+            ru: `Совет голосует за форпост. Исследование Орина обещают следующей экспедиции.
 
 — Я поведу, — говорит Дассер.
 
 Орин молча переносит координаты сигнала в свой журнал.
 
 — Тогда я — штурман. Сигнал подождёт; передатчик — нет.`,
-            en: `The Council votes for the outpost. Orin's sector is promised to the next expedition.
+            en: `The Council votes for the outpost. Orin's research is promised to the next expedition.
 
 "I'll lead," says Dasser.
 
@@ -2642,6 +2618,38 @@ Orin silently copies the signal's coordinates into his log.
           }
         }
       ]
+    },
+    {
+      id: 'p.station', scene: 'council', kind: 'archive', year: 0, inline: 'probe', when: s => s.mission === 'contact',
+      place: { ru: 'Земля, Совет Звездоплавания · приложение к исследовательской заявке', en: 'Earth, Council of Star Navigation · research request annex' },
+      text: {
+        ru: `В приложении — две записи станции связи Кольца из одного сектора неба.
+
+Первая — обрывок последней передачи тридцать второй, принятый шесть лет назад:
+
+«…красивее всего, что мы видели…»
+
+Вторая пришла в тот же год. Последовательность повторяется каждые сорок минут; её кода нет в каталогах Кольца.
+
+Направления сопоставлены: области погрешности перекрываются. Общий район возможен, связь записей не доказана.
+
+Орин прикладывает заявленный маршрут тридцать второй — к ε Индейца.
+
+— Там можно искать её след и источник сигнала, — говорит он. — Для другой звезды запишем другое задание.`,
+        en: `The annex holds two recordings from the Ring's contact station, from the same sector of sky.
+
+The first is a fragment of the Thirty-Second's last transmission, received six years ago:
+
+'…more beautiful than anything we've seen…'
+
+The second arrived the same year. Its sequence repeats every forty minutes; its code is in none of the Ring's catalogues.
+
+The directions have been compared: the uncertainty regions overlap. A common origin is possible; a link between the recordings is not proven.
+
+Orin attaches the Thirty-Second's declared route — to ε Indi.
+
+"That is where to search for its trace and the signal source," he says. "Another star will get another task."`
+      }
     },
     {
       id: 'p.supplyEvidence', scene: 'council', kind: 'archive', year: 0, when: supplyS,
@@ -3847,12 +3855,12 @@ The council grants it. The queue has fewer experienced hands.`
       id: 'a2.review', illus: 'watch-review', scene: 'ring', kind: 'transcript', year: s => Y(s, 0.25),
       title: { ru: 'Разбор при пересменке', en: 'Handover review' },
       text: {
-        ru: s => `Уходящая вахта впервые разбирает свои решения не перед советом, а перед теми, кто просыпается: все, включая ошибочные. Разбор идёт шесть часов. Последним пунктом — ${lastCall(s, 'ru')}.
+        ru: s => `Уходящая вахта впервые разбирает свои решения не перед советом, а перед теми, кто просыпается: все, включая ошибочные. Разбор идёт шесть часов. Последним пунктом — ${lastCall(s, 'ru')}.` + (s.mission === 'contact' ? `
 
-В эти годы на корабле появляется присказка. «Красивее всего, что мы видели», — говорят о том, ради чего летят.` + (supplyS(s) ? '\n\nОчередной отчёт Ксилоны не получен; последнее подтверждённое состояние остаётся прежним.' : rescueS(s) ? '\n\nНового полного медицинского отчёта Оттепели нет.' : ''),
-        en: s => `For the first time the outgoing watch reviews its decisions not before the council but before those who are waking: all of them, including the mistakes. The review takes six hours. The last item — ${lastCall(s, 'en')}.${supplyS(s) ? "\n\nXylona's next report has not arrived; its last confirmed state remains unchanged." : rescueS(s) ? "\n\nThere is no new complete medical report from Thaw." : ''}
+В эти годы на корабле появляется присказка. «Красивее всего, что мы видели», — говорят о том, ради чего летят.` : '') + (supplyS(s) ? '\n\nОчередной отчёт Ксилоны не получен; последнее подтверждённое состояние остаётся прежним.' : rescueS(s) ? '\n\nНового полного медицинского отчёта Оттепели нет.' : ''),
+        en: s => `For the first time the outgoing watch reviews its decisions not before the council but before those who are waking: all of them, including the mistakes. The review takes six hours. The last item — ${lastCall(s, 'en')}.${supplyS(s) ? "\n\nXylona's next report has not arrived; its last confirmed state remains unchanged." : rescueS(s) ? "\n\nThere is no new complete medical report from Thaw." : ''}${s.mission === 'contact' ? `
 
-A saying appears aboard in these years. "More beautiful than anything we've seen," people say of what they are flying for.`
+A saying appears aboard in these years. "More beautiful than anything we've seen," people say of what they are flying for.` : ''}`
       }
     },
     {
@@ -6201,7 +6209,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     pathStraight: 'без коррекции', pathAround: 'манёвр', edgeTrust: 'удары пыли ×1,4 прогноза · щит −1,5 года',
     edgeMan: 'край плотнее модели', measured: 'затмение: пыль крупная, ×1,4', lives: 'Годы бодрствования',
     probeTitle: 'Две записи · один сектор неба', probeA: 'последняя передача 32-й', probeB: 'новый сигнал · каждые 40 мин',
-    probeMatch: 'направление совпадает · код неизвестен',
+    probeMatch: 'совпадают в пределах погрешности · код неизвестен',
     lensTitle: 'Снимок Кольца · гравитационная линза', lensSub: 'реконструкция 48 × 48 точек',
     lensClass: { ruined: 'кора расколота · расплав · обломки', hostile: 'облачная крыша · парник > 400 °C', none: 'на расчётной орбите пусто', dome: 'приливный захват · пар и лёд', open: 'вода · облака · суша' },
     // карта и паспорт экспедиции
@@ -6258,7 +6266,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     pathStraight: 'no correction', pathAround: 'manoeuvre', edgeTrust: 'dust impacts ×1.4 forecast · shield −1.5 yr',
     edgeMan: 'edge denser than model', measured: 'occultation: coarse dust, ×1.4', lives: 'Years awake',
     probeTitle: 'Two recordings · one sector of sky', probeA: "32nd's last transmission", probeB: 'new signal · every 40 min',
-    probeMatch: 'direction matches · code unknown',
+    probeMatch: 'match within the error · code unknown',
     lensTitle: 'Ring image · gravitational lens', lensSub: 'reconstruction 48 × 48 points',
     lensClass: { ruined: 'crust split · melt · debris', hostile: 'cloud deck · greenhouse > 400 °C', none: 'predicted orbit empty', dome: 'tidally locked · vapour and ice', open: 'water · clouds · land' },
     mapHint: 'Click a star on the chart to the left, or pick one from the signal sector.',
