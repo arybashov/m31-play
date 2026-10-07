@@ -45,7 +45,7 @@
   let filter = 'all';
   let shownTokens = -1;
   let sceneId = null, layer = 0;
-  let mapPick = null, draft = null;   // черновики экрана карты и паспорта — не ходы, пока не утверждены
+  let mapPick = null, draft = null, votePick = null;   // черновики экрана: звезда на карте, паспорт, выделенный вариант — не ходы
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const paras = s => s.split(/\n\n+/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
@@ -180,13 +180,22 @@
     // рекомендация Совета: по известному, с основанием и допущением — это не обещание безопасности
     const rec = b.rec ? b.rec(pub) : null;
     const recHtml = o => rec && rec.id === o.id ? `<p class="rec"><b>${esc(u.recTitle)}</b> — ${esc(t(rec.why, pub))}${rec.assume ? `; ${esc(u.recAssume)}: ${esc(t(rec.assume, pub))}` : ''}.</p>` : '';
-    const opts = stop.options.map(o => `<div class="option${rec && rec.id === o.id ? ' rec' : ''}">
-        <h4>${esc(t(o.label, pub))}</h4>${recHtml(o)}<p class="knownlabel">${esc(u.known)}</p>
-        <ul>${knownOf(o, pub).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${afterOf(o)}
-        <button class="action" data-act="vote" data-option="${esc(o.id)}">${esc(u.vote)}</button></div>`).join('');
+    // выбор — списком, как архив Кольца: строка варианта — метка, название, пояснение справа; нажатие выделяет вариант
+    // и открывает его карточку ниже, голосование — кнопкой карточки. Голосование по заявкам: в строке — звезда и
+    // расстояние, метка — по объекту заявки (как в архиве), нажатие подводит камеру к системе
+    const agenda = b.ui === 'agenda';
+    const sel = stop.options.find(o => o.id === votePick) || (rec && stop.options.find(o => o.id === rec.id)) || stop.options[0];
+    const reqOf = o => agenda ? C.requests.get(o.id) : null;
+    const rowNote = o => { const q = reqOf(o); return q ? `${M.nameOf(q.star, lang)} · ${num(M.star(q.star).d, 1)}` : ''; };
+    const rowCls = o => { const q = reqOf(o); return q ? `st-${reqStatus(q)}` : rec && rec.id === o.id ? 'st-viable' : 'st-plain'; };
+    const rows = stop.options.map(o => `<button class="colrow optrow ${rowCls(o)}" data-sel="${esc(o.id)}" aria-pressed="${o === sel}"><span class="dot"></span>${esc(t(o.label, pub))}${rec && rec.id === o.id ? ` <b class="recmark">${esc(u.recShort)}</b>` : ''}<i>${esc(rowNote(o))}</i></button>`).join('');
+    const q = reqOf(sel);
+    const detail = `<div class="option${rec && rec.id === sel.id ? ' rec' : ''}"><h4>${esc(t(sel.label, pub))}</h4>${recHtml(sel)}<p class="knownlabel">${esc(u.known)}</p>
+        <ul>${knownOf(sel, pub).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${afterOf(sel)}${q ? starFacts(q.star) : ''}
+        <button class="action" data-act="vote" data-option="${esc(sel.id)}">${esc(u.vote)}</button></div>`;
     return `<section class="card vote"><header>${esc(u.decision)} · ${esc(fmtYear(stop.state.year))}</header>
-      <h3>${esc(t(b.title, pub))}</h3><p class="muted">${esc(t(b.context, pub))}</p><div class="options">${opts}</div></section>`
-      + (b.ui === 'agenda' ? chartHtml(stop) : '');                   // голосование по заявкам — с картой-обзором
+      <h3>${esc(t(b.title, pub))}</h3><p class="muted">${esc(t(b.context, pub))}</p><div class="colrows optrows">${rows}</div>${detail}</section>`
+      + (agenda ? chartHtml(stop, q) : '');                           // голосование по заявкам — с архивом и справкой о звёздах
   }
 
   const knownOf = (o, st) => (typeof o.known[lang] === 'function' ? o.known[lang](st) : o.known[lang]);
@@ -201,29 +210,42 @@
 
   // ---------------------------------------------------------------- карта-обзор при голосовании Совета
   // Выбора звезды нет — курс задаёт заявка (DOC «Повороты по обстановке Кольца», «Заявки из мира»). Карту можно вращать
-  // и приближать; щелчок по звезде или кнопка заявки — справка: расстояние, класс, планеты каталога, архив Кольца
+  // и приближать; строка заявки или архива, щелчок по звезде — камера подлетает к системе, ниже — справка: расстояние,
+  // класс, подтверждённые планеты, архив Кольца
   const mapPickName = st => mapPick || (st && st.target) || null;
-  function chartHtml(stop) {
+  // метка заявки — по её объекту, как в архиве: колония — её состояние, след экспедиции — ромб, планета — своя
+  const reqStatus = q => q.object.kind === 'colony' ? M.colony(q.object.id).status : q.object.kind === 'trace' ? 'trace' : 'planet';
+  function starFacts(name) {
+    const u = C.ui[lang], st = M.star(name), pl = (st.planets || []).filter(p => p.status === 'confirmed');
+    const plText = pl.length ? `${u.planetsKnown}: ${pl.map(p => p.name + (p.massEarth != null ? ` (${num(p.massEarth, p.massEarth < 10 ? 1 : 0)} ${u.mEarth})` : '')).join(', ')}.` : u.noPlanets;
+    const info = M.objectsAtStar(name).map(o => C.archiveLines(o, lang, 0, world)).concat([C.legacyLines(name, lang, world)]).flat();
+    return `<p class="knownlabel">${esc(M.nameOf(name, lang))} · ${num(st.d, 1)} ${lyWord()} · ${esc(st.sp || '')}</p><p class="small">${esc(plText)}</p>
+      ${info.length ? `<ul class="colarch">${info.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
+  }
+  function chartHtml(stop, sel) {
     const u = C.ui[lang], pickName = mapPickName(stop.state);
-    const reqs = stop.options.map(o => C.requests.get(o.id)).filter(Boolean);
-    const chips = reqs.map(q => `<button class="chip" data-pick="${esc(q.star)}" aria-pressed="${q.star === pickName}">${esc(M.nameOf(q.star, lang))} <i>${num(M.star(q.star).d, 1)}</i></button>`).join('');
-    // колонии и следы: архив Кольца на старт; наследие прошлых экспедиций — отдельной строкой
     const objs = M.knownAtStart(), here = pickName ? M.objectsAtStar(pickName) : [];
     const rows = objs.map(o => `<button class="colrow st-${o.status}" data-pick="${esc(o.star)}" aria-pressed="${o.star === pickName}"><span class="dot"></span>${esc(C.archiveShort(o, lang, 0))}<i>${esc(M.nameOf(o.star, lang))} · ${num(M.star(o.star).d, 1)}</i></button>`).join('');
     const legacy = (world.settled || []).length || world.passTug === false;
     const colBlock = `<details class="colonies"${here.length ? ' open' : ''}><summary class="knownlabel">${esc(u.colonies(objs.length))}</summary>
       <p class="muted small">${esc(u.archiveNote)} ${esc(u.road(M.ROAD.flying, M.ROAD.done))}</p><div class="colrows">${rows}</div>${legacy ? `<p class="muted small">${esc(u.legacyNote)}</p>` : ''}</details>`;
-    let card = `<p class="muted small">${esc(u.mapHint)}</p>`;
-    if (pickName) {
-      const st = M.star(pickName), pl = (st.planets || []).filter(p => p.status === 'confirmed');
-      const plText = pl.length ? `${u.planetsKnown}: ${pl.map(p => p.name + (p.massEarth != null ? ` (${num(p.massEarth, p.massEarth < 10 ? 1 : 0)} ${u.mEarth})` : '')).join(', ')}.` : u.noPlanets;
-      const info = here.map(o => C.archiveLines(o, lang, 0, world)).concat([C.legacyLines(pickName, lang, world)]).flat();
-      const q = reqs.find(x => x.star === pickName), o = q && stop.options.find(x => x.id === q.id);
-      card = `<h4>${esc(M.nameOf(pickName, lang))} · ${num(st.d, 1)} ${lyWord()} · ${esc(st.sp || '')}</h4><p class="small">${esc(plText)}</p>
-        ${info.length ? `<ul class="colarch">${info.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-        <p class="${o ? 'knownlabel' : 'muted small'}">${esc(o ? `${u.requestHere}: ${t(o.label, stop.state)}` : u.noRequest)}</p>`;
-    }
-    return `<section class="card chart"><p class="knownlabel">${esc(u.agendaChips)}</p><div class="chips">${chips}</div>${colBlock}<div class="starcard">${card}</div></section>`;
+    // справка — о звезде без заявки (у звезды заявки она в карточке заявки)
+    const other = pickName && !(sel && sel.star === pickName);
+    const card = other ? `<div class="starcard">${starFacts(pickName)}<p class="muted small">${esc(u.noRequest)}</p></div>` : `<p class="muted small">${esc(u.mapHint)}</p>`;
+    return `<section class="card chart">${colBlock}${card}</section>`;
+  }
+  // строки выбора перерисовываются целиком — клавиатурный фокус возвращается на ту же строку
+  function refocus(kind, v) { const el = [...document.querySelectorAll(`#stop [data-${kind}]`)].find(x => x.dataset[kind] === v); if (el) el.focus({ preventScroll: true }); }
+  // камера подлетает к системе (вид «цель»), плавно — как кнопка «Цель» на панели камеры
+  function flyTo(name) {
+    mapPick = name; refreshStop();
+    if (window.M31Space && M31Space.ok) applyView('target');
+  }
+  // выбор заявки или звезды при голосовании: строка заявки, строка архива, щелчок по звезде на карте
+  function agendaPick(name, reqId) {
+    const st = view && view.result.stop, q = reqId ? C.requests.get(reqId) : st ? st.options.map(o => C.requests.get(o.id)).find(x => x && x.star === name) : null;
+    if (q) votePick = q.id;
+    flyTo(q ? q.star : name);
   }
 
   // ---------------------------------------------------------------- паспорт экспедиции: три рычага
@@ -484,44 +506,6 @@
       <circle cx="${bx}" cy="${by}" r="11" class="mB"/><text x="16" y="206" class="lbl">${esc(u.probeB)}</text>
       ${done ? `<text x="16" y="44" class="res">${esc(u.probeMatch)}</text>` : ''}</svg>`;
   }
-  // Снимок с гравитационной линзы: восстановленные 48 × 48 точек в ложных цветах.
-  function lensSvg(result) {
-    const u = C.ui[lang], st = result.state, name = st.target, w = M.worldOf(name);
-    let seed = 0; for (const ch of name) seed = (seed * 31 + ch.charCodeAt(0)) | 0;
-    const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-    const N = 48, px = 5, R = 19, cx = N / 2, cy = N / 2;
-    // грубый шум: значения в узлах 8×8, между ними — сглаживание
-    const G = 9, grid = [...Array(G * G)].map(rnd);
-    const noise = (x, y) => { const gx = x / N * (G - 1), gy = y / N * (G - 1), i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
-      const g = (a, b) => grid[Math.min(G - 1, b) * G + Math.min(G - 1, a)];
-      return (g(i, j) * (1 - fx) + g(i + 1, j) * fx) * (1 - fy) + (g(i, j + 1) * (1 - fx) + g(i + 1, j + 1) * fx) * fy; };
-    const hex = (r, g, b) => `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
-    let cells = '';
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const dx = (x + 0.5 - cx) / R, dy = (y + 0.5 - cy) / R, rr = dx * dx + dy * dy, n = noise(x, y), speck = rnd();
-      let c = null;
-      if (w === 'none') { if (speck > 0.985) c = hex(90, 110, 130); }
-      else if (rr <= 1) {
-        const light = Math.max(0.12, 0.25 + 0.75 * (-dx * 0.7 - dy * 0.3 + Math.sqrt(1 - rr) * 0.6));
-        if (w === 'ruined') {
-          const crack = Math.abs(noise(x * 1.7, y * 1.7) - 0.5) < 0.035 || Math.abs(noise(y * 2.3, x * 2.3) - 0.5) < 0.025;
-          const basin = (dx - 0.25) ** 2 + (dy + 0.15) ** 2 < 0.12;
-          c = crack ? hex(255, 120 + 80 * speck, 40) : basin ? hex(40 * light, 30 * light, 26 * light) : hex((70 + 60 * n) * light, (52 + 40 * n) * light, (44 + 30 * n) * light);
-        } else if (w === 'hostile') c = hex((200 + 40 * n) * light, (180 + 30 * n) * light, (120 + 20 * n) * light);
-        else if (w === 'dome') c = dx < -0.1 ? hex((150 + 60 * n) * light, (170 + 50 * n) * light, 190 * light) : dx < 0.1 ? hex(90 * light, 120 * light, 110 * light) : hex(120 * light + 30, 140 * light + 30, 170 * light + 40);
-        else c = n > 0.62 ? hex(240 * light, 240 * light, 245 * light) : n > 0.5 ? hex(70 * light, 110 * light, 60 * light) : hex(30 * light, 70 * light, 140 * light);
-      } else if (w === 'ruined') {
-        const ex = dx * Math.cos(0.4) + dy * Math.sin(0.4), ey = -dx * Math.sin(0.4) + dy * Math.cos(0.4), e = ex * ex / 2.1 + ey * ey / 0.35;
-        if (e > 0.85 && e < 1.15 && speck > 0.55) c = hex(150 + 60 * speck, 120 + 40 * speck, 90);
-      }
-      if (c) cells += `<rect x="${16 + x * px}" y="${52 + y * px}" width="${px}" height="${px}" fill="${c}"/>`;
-    }
-    const orbit = w === 'none' ? `<circle cx="${16 + cx * px}" cy="${52 + cy * px}" r="${R * px}" class="lensorbit"/>` : '';
-    return `<svg viewBox="0 0 520 300" class="panel-svg lens"><text x="16" y="26" class="ttl">${esc(u.lensTitle.toUpperCase())}</text>
-      <text x="16" y="42" class="sub">${esc(M.nameOf(name, lang))} · ${esc(u.lensSub)}</text>
-      <rect x="16" y="52" width="${N * px}" height="${N * px}" class="lensbg"/>${cells}${orbit}
-      <text x="272" y="140" class="lbl">${esc(u.lensClass[w])}</text></svg>`;
-  }
   // Прибор паспорта поверх 3D: полосы меняют длину плавно, рядом — разница с прошлым выбором.
   // Разметка строится один раз на экране паспорта; дальше меняются только ширины и тексты (иначе переходы не видны).
   let ppPrev = {};
@@ -668,7 +652,6 @@
   function overlayHtml(result, beat) {
     if (shieldOf(result.state) && inspOn(result)) return shieldInspHtml(result, beat);
     const o = beat.overlay;
-    if (o === 'lens') return lensSvg(result);
     if (o === 'sleepers') return sleepersSvg(result);
     if (o === 'trajectory') return trajectorySvg(result);
     if (o === 'lifelines') return lifelinesSvg(result);
@@ -944,7 +927,7 @@
       const fixed = relief ? null : E.migrate(C, tokens, C.INSERTED, ctx());
       if (fixed) tokens = fixed;
       // сброс основной партии — новая экспедиция целиком: новые правила и сид, а не прежние версии старого сохранения
-      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; mapPick = null; draft = null; } }
+      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; mapPick = null; draft = null; votePick = null; } }
       save(); result = E.run(story(), cur(), ctx());
     }
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии
@@ -1012,7 +995,7 @@
     if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
     camView = null; sceneId = null; clearTimeout(viewTimer);
     world = { passTug: true }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
-    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; ffStop(); mapPick = null; draft = null;
+    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; ffStop(); mapPick = null; draft = null; votePick = null;
   }
 
   document.addEventListener('click', e => {
@@ -1027,17 +1010,18 @@
     if (act === 'inspect-close') { closeInspect(); return; }
     if (act === 'ffEnd') { ffFast(); return; }
     if (act === 'go') { if (yearAnim) return; cur().push('go'); save(); render(true); }
-    else if (act === 'vote') { cur().push(btn.dataset.option); mapPick = null; draft = null; save(); render(true); }
-    else if (btn.dataset.pick) { mapPick = btn.dataset.pick; refreshStop(); }
+    else if (act === 'vote') { cur().push(btn.dataset.option); mapPick = null; draft = null; votePick = null; save(); render(true); }
+    else if (btn.dataset.sel) { const id = btn.dataset.sel; if (atStop('agenda')) agendaPick(null, id); else { votePick = id; refreshStop(); } refocus('sel', id); }
+    else if (btn.dataset.pick) { const n = btn.dataset.pick; if (atStop('agenda')) agendaPick(n); else { mapPick = n; refreshStop(); } refocus('pick', n); }
     else if (btn.dataset.draft) { draft[btn.dataset.draft] = Number(btn.dataset.v); refreshStop(); }
     else if (btn.dataset.eq) { draft.eq = Object.assign({}, draft.eq, { [btn.dataset.eq]: btn.dataset.v }); const det = btn.closest('details'); refreshStop(); if (det) { const d2 = document.querySelector('details.equip'); if (d2) d2.open = true; } }
     else if (btn.dataset.kit) { const k = btn.dataset.kit; draft.kits = draft.kits.includes(k) ? draft.kits.filter(x => x !== k) : draft.kits.concat(k); refreshStop(); }
-    else if (act === 'back') { cur().pop(); ffStop(); mapPick = null; draft = null; save(); render(true); }
+    else if (act === 'back') { cur().pop(); ffStop(); mapPick = null; draft = null; votePick = null; save(); render(true); }
     else if (act === 'relief') {                                          // авария с живыми → совет, услышавший первым
       const st = view.result.state, incident = JSON.parse(JSON.stringify(st.incident));
       incident.id = `${exp}|${incident.id}`;
       relief = { incident, world: JSON.parse(JSON.stringify(world)), tokens: [] }; ffStop();
-      mapPick = null; draft = null; save(); render(true);
+      mapPick = null; draft = null; votePick = null; save(); render(true);
     }
     else if (act === 'restart' || act === 'newWorld') {
       // из настроек посреди партии — с подтверждением; прежнее сохранение — в резервную копию
@@ -1064,7 +1048,7 @@
 
   if (window.M31Space && M31Space.mount) {
     try { M31Space.mount($('space')); } catch (err) { M31Space.ok = false; console.warn('3D недоступно:', err); }
-    M31Space.onPick = name => { if (atStop('agenda')) { mapPick = name; refreshStop(); } };   // справка о звезде, курс не меняется
+    M31Space.onPick = name => { if (atStop('agenda')) agendaPick(name); };   // справка о звезде (и её заявка), курс не меняется
     M31Space.onPartPick = ({ part, panel }) => {
       if (part !== 'shield' || !view || !shieldOf(view.result.state) || yearAnim) return;
       const beat = view.result.stop && view.result.stop.beat;

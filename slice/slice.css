@@ -274,6 +274,9 @@ body.cine .cinebar{display:flex}
 /* колонии и следы: цвет — состояние по архиву Кольца, дублируется символом и текстом */
 .l3.colony{font-size:11.5px}.l3.legacy{color:#c8a0ff;font-size:11.5px;transform:translate(9px,60%)}
 .st-viable{--st:#6fd0c0}.st-establishing{--st:#8fc4ff}.st-declining{--st:#e0a858}.st-dead{--st:#9aa0a6}.st-trace{--st:#c3a4ff}
+.st-planet{--st:#c9d98a}.st-plain{--st:#4a5560}.colrow.st-planet .dot{border-radius:50%}
+/* выбор списком: строки вариантов, выделенный — рамкой; карточка выделенного — ниже */
+.optrows{margin:12px 0 10px}.optrow{cursor:pointer;font-size:14px;padding:7px 12px}.optrow .recmark{font-weight:500;color:var(--mint);font-size:12px}
 .l3.colony{color:var(--st)}
 .colonies summary{cursor:pointer;list-style:revert;margin-top:6px}
 .colrows{display:flex;flex-direction:column;gap:3px;margin:4px 0 8px}
