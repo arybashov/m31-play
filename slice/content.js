@@ -1408,12 +1408,15 @@ The log's last entry is a woman's voice: to those who come after — do not open
   });
   // что из решений Акта I уходящая вахта разбирает последним
   function lastCall(s, lang) {
-    const c = s.choices, ru = lang === 'ru';
+    const c = s.choices, ru = lang === 'ru', E = s.earlyCouncil;
+    const why = E && (E.family === 'signal' ? (ru ? 'сообщения об источнике' : 'the report on the source') : (ru ? 'новых сведений о мирах' : 'new information on the worlds'));
+    if (E && E.choice === 'turn') return ru ? `смену курса с ${nameAt(E.from, 'ru')} на ${nameAt(E.to, 'ru')} после ${why}` : `the course change from ${M.nameOf(E.from, 'en')} to ${M.nameOf(E.to, 'en')} after ${why}`;
     if (c['d.cloud'] === 'trust') return ru ? 'доверие модели у края облака и полтора года щита' : 'trusting the model at the cloud edge, and a year and a half of shield';
     if (c['d.cloud'] === 'manoeuvre') return ru ? 'манёвр у облака и то, чем за него заплатили' : 'the manoeuvre at the cloud and what it cost';
     if (c['d.scout'] === 'launch') return ru ? 'зонд, отправленный вперёд' : 'the probe sent ahead';
     if (c['d.scout'] === 'keep') return ru ? 'зонд, который не стали строить' : 'the probe that was not built';
     if (c['d.long']) return ru ? `вахту в ${ppl(s.watch)}` : `a watch of ${s.watch}`;
+    if (E) return ru ? `решение держать курс после ${why}` : `the decision to hold the course after ${why}`;
     return ru ? 'курс, выбранный на Земле' : 'the course chosen on Earth';
   }
   // миссии: окно спасения и опоздание снабженца (M.COLONIES)
@@ -1964,7 +1967,7 @@ All this time, "nominal" described the equipment's operating mode.`;
     let cost = null;
     const pp = String(s.choices['d.passport'] || '').split('|');
     if (pp.length === 4 && s.eq) {
-      const sp = Object.assign({}, s, { target: reqOf(s) ? reqOf(s).star : s.target }), d0 = { b: Number(pp[0]), r: Number(pp[1]), kits: pp[2] ? pp[2].split('+') : [], eq: s.eq };
+      const sp = Object.assign({}, s, { target: s.taskHistory && s.taskHistory.length ? s.taskHistory[0].star : reqOf(s) ? reqOf(s).star : s.target }), d0 = { b: Number(pp[0]), r: Number(pp[1]), kits: pp[2] ? pp[2].split('+') : [], eq: s.eq };
       const cur = passportNumbers(sp, d0), base = passportNumbers(sp, Object.assign({}, d0, { eq: M.EQ_BASE })),
         rec = passportNumbers(sp, Object.assign({}, d0, { eq: M.eqDefault(s.mission, s.riskVersion) })), mo = x => `${sgn(x * 12, lang, 1)} ${ru ? 'мес.' : 'months'}`;
       const same = Math.abs(cur.used - rec.used) < 1e-9;
@@ -2211,7 +2214,12 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     // когда Земля узнает: отчёт первого утра дома; последняя передача погибшего; о «голландце» и аварии — не по отчёту
     const reportAt = end === 'lost' ? s.year + d : ['dutchman', 'sos'].includes(end) ? null : Y4(s) + d;
     const ok = !['lost', 'dutchman', 'sos'].includes(end);
+    // задание заявки: выполнено ли и когда отчёт о нём дойдёт до Земли (DOC «Ревью Codex — заявки из мира», шаг 5)
+    // выполнение — одно правило с эпилогом (у снабжения и спасения — по их итогу, отчёт — с отчётом экспедиции)
+    const task = s.task ? Object.assign({}, s.task, { done: ok && missionComplete(s),
+      reportEarthAt: s.task.reportAt != null ? Math.round(s.task.reportAt + d) : ok && missionComplete(s) ? reportAt : null }) : null;
     return { id: `${exp}|done`, expedition: { id: exp, number: 41, mission: s.mission, target: s.target, outcome: end, arrive: s.arrive, endedAt: s.year, reportAt,
+      request: s.requestId || null, task,
       home: ok && end !== 'supplyFailed' ? homeKind(s) : null, alive: ok ? aliveOf(s) : null,
       incidents: JSON.parse(JSON.stringify(s.incidents || [])),
       hull: end === 'lost' ? 'wreck' : end === 'dutchman' ? 'orbitDead' : end === 'sos' ? 'sleeping' : null,
@@ -2262,6 +2270,9 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
         + (x.reportAt == null ? '' : x.reportAt <= x.endedAt ? (ru ? ` Отчёт получен на Земле около года ${x.reportAt}.` : ` The report was received on Earth around year ${x.reportAt}.`)
           : x.outcome === 'lost' ? (ru ? ` Последняя передача дойдёт до Земли около года ${x.reportAt}.` : ` The last transmission will reach Earth around year ${x.reportAt}.`)
           : (ru ? ` Отчёт дойдёт до Земли около года ${x.reportAt}.` : ` The report will reach Earth around year ${x.reportAt}.`)));
+      if (x.task && TASK_NAME[x.task.work]) { const n = TASK_NAME[x.task.work][ru ? 0 : 1], at = x.task.reportEarthAt;
+        out.push(x.task.done ? (ru ? `Задание — ${n}: выполнено${at != null ? `; отчёт дойдёт до Земли около года ${at}` : ''}.` : `The task — ${n}: done${at != null ? `; the report will reach Earth around year ${at}` : ''}.`)
+          : (ru ? `Задание — ${n}: не выполнено.` : `The task — ${n}: not done.`)); }
       if (f && x.mission === 'supply' && (f.capsLost || f.failed)) out.push(ru ? `Ксилона Ир: ${f.failed ? 'снабжение сорвано — постоянного обеспечения нет' : 'капсульная секция потеряна при повторном включении'}.` : `Xylona Ir: ${f.failed ? 'the supply mission failed — no permanent support' : 'the capsule section was lost on restart'}.`);
       if (f && x.mission === 'rescue' && f.v !== 3) out.push(!f.rescued ? (ru ? 'Оттепель: помощь опоздала — живых на складе не осталось.' : 'Thaw: help came too late — no one was left alive in the store.')
         : ru ? `Оттепель: спасены ${f.rescued === THAW0 ? `все ${THAW0}` : `${f.rescued} из ${THAW0}`} — ${f.housed ? 'устроены' : f.op === 'restore' ? 'спят на восстановленном складе, ждут жилья' : 'в лазарете, ждут жилья'}.`
@@ -2311,7 +2322,9 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     const st = {
       riskVersion: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? ctx.riskVersion : 0,   // правила цены ошибки
       riskSeed: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? String(ctx.riskSeed) : null,
-      evOff: !!(ctx && ctx.events === false),   // события v1 выключены (проверки и калибровка: те же сиды без событий)
+      evOff: !!(ctx && ctx.events === false),
+      worldSeed: ctx && typeof ctx.worldSeed === 'string' && ctx.worldSeed ? ctx.worldSeed : null,   // сид мира: события Кольца
+      agenda: ctx && Array.isArray(ctx.agenda) ? ctx.agenda.slice() : null,   // повестка Совета на старт экспедиции (requests.js)   // события v1 выключены (проверки и калибровка: те же сиды без событий)
       year: 0,
       reserve: 100,        // резерв манёвров, % паспортного
       shieldWear: 0,       // износ фронтального щита сверх нормы, лет из ~150 расчётных
@@ -2424,6 +2437,10 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       shieldFixed: false,  // пробитый сектор щита заменён запасным
       blueprint: null,     // капельный радиатор по чертежу Кольца: built | archived
       incident: null,      // авария с живыми — для партии спасателей
+      earlyNews: null,     // пакет наблюдений Кольца года 3: { family, change, objects, from, received }
+      earlyCouncil: null,  // решение совета «Новые сведения»: { at, family, choice: turn | stay, from, to, dvKms }
+      route: null,         // излом траектории после поворота: { knee: { at, x, from }, D — длина пути }
+      taskHistory: [],     // снятые с программы задания
       choices: {}
     };
     if (v5(st)) startBooks(st);                                         // журнал запасов и людей, ревизии маршрута (v5)
@@ -2478,6 +2495,128 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     if (s.mission === 'rescue') return !!s.housed || s.outcome === 'housed';
     return !!(s.task && s.task.done && s.task.reportAt != null);
   }
+
+  // ---------------------------------------------------------------- совет «Новые сведения» (ранний поворот, год 3)
+  // DOC «Повороты по обстановке Кольца», «Ревью Codex — ранний срез поворотов» (C), «Ревью Codex — заявки из мира» (шаг 6).
+  // Курс меняют сведения Кольца, а не напоминания: к году 3 приходит пакет наблюдений (на Земле обработан на году 2,5,
+  // отправлен на 2,75, корабль ещё у Солнца) — изменился сигнал источника либо уточнены миры у звёзд исследовательских
+  // заявок. Совет — только если есть физически доступный поворот к звезде другой исследовательской заявки повестки;
+  // иначе — только запись. Снабжение и спасение адресны: им пакет не меняет курса. Один совет за рейс, «держать курс» —
+  // всегда, без штрафа. Поворот — импульс: модуль скорости сохраняется, Δv = 2v·sin(θ/2) — из резерва манёвров, с
+  // запасом на увод ступени; разгон продолжается к новой цели; траектория — с изломом в точке поворота
+  const NEWS = { at: 3, earth: 2.5, sent: 2.75, none: 0.35, signal: 0.5 };
+  const CKMS = 299792.458;
+  const unitOf = n => { const st = M.star(n); return [st.x / st.d, st.y / st.d, st.z / st.d]; };
+  const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // план пакета: есть ли сведения и какие — скрытый факт партии; объекты — звёзды исследовательских заявок повестки
+  // (текущая цель и до двух ближайших по направлению)
+  // события Кольца — факты мира: при одном мире у разных кораблей одна и та же новость (ревью Codex, шаг 6)
+  const worldU = (s, key) => s.worldSeed ? hashU32(JSON.stringify(['world', s.worldSeed, key])) / 4294967296 : hidden(s, key);
+  // дата приёма пакета кораблём: свет, ушедший на году NEWS.sent, догоняет корабль — t = sent + путь(t) (c = 1 св. год/год)
+  function newsReceived(s) {
+    let lo = NEWS.sent, hi = NEWS.at;
+    for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (m - NEWS.sent < M.distLy(m, s.beta)) lo = m; else hi = m; }
+    return (lo + hi) / 2;
+  }
+  function newsPlan(s) {
+    if (s.mission !== 'contact' || !s.target) return null;
+    const u = worldU(s, 'ring.early.family');
+    if (u == null || u < NEWS.none) return null;
+    const family = u < NEWS.signal ? 'signal' : 'world', u0 = unitOf(s.target);
+    const others = agendaOf(s).map(id => R.get(id)).filter(q => q && q.branch === 'contact' && q.star !== s.target)
+      .sort((a, b) => dot3(unitOf(b.star), u0) - dot3(unitOf(a.star), u0) || (a.star < b.star ? -1 : 1));
+    const objects = family === 'signal' ? [M.SOURCE] : [s.target].concat(others.slice(0, 2).map(q => q.star));
+    // наблюдения фиксируются в пакете при получении: карточка и решения читают пакет, а не истинный мир
+    const observed = family === 'world' ? Object.fromEntries(objects.map(n => [n, M.worldOf(n)])) : {};
+    return { family, change: (worldU(s, 'ring.early.signal') ?? 0.5) < 0.5 ? 'pattern' : 'stopped', objects, observed, from: s.target, received: newsReceived(s) };
+  }
+  // расчёт поворота к звезде заявки q на году NEWS.at; null — недоступен (резерв, увод ступени, срок, бодрствование)
+  function earlyTurnQuote(s, q) {
+    if (!q || !s.target || q.star === s.target || !s.reserveDv) return null;
+    const t = NEWS.at, v = s.beta * t / M.ACC, x = M.distLy(t, s.beta), u0 = unitOf(s.target), to = M.star(q.star);
+    const P = u0.map(k => k * x), w = [to.x - P[0], to.y - P[1], to.z - P[2]], L = Math.hypot(...w), u1 = w.map(k => k / L);
+    const th = Math.acos(Math.max(-1, Math.min(1, dot3(u0, u1)))), dv = 2 * v * Math.sin(th / 2), D = x + L;
+    let pf; try { pf = M.flightProfile(D, s.beta, s.tMag); } catch (e) { return null; }
+    const A = pf.arrive, sy = M.brakeStart(A, s.tMag) + M.brakeDist(s.beta, s.tMag) / s.beta - M.ACC;   // ступень до прохода новой цели
+    const stage = M.divert(sy, s.reserveDv).dv / CKMS, R0 = s.reserveDv * s.reserve / 100;
+    if (dv + stage > R0 + 1e-12 || A > M.REACH || M.awake(A, 48, crewOf(s)) > 25) return null;
+    const A0 = s.arriveExact != null ? s.arriveExact : s.arrive;
+    return { req: q.id, to: q.star, angle: th * 180 / Math.PI, dv, dvKms: dv * CKMS, stageKms: stage * CKMS, reserveBefore: R0 * CKMS,
+      reserveAfter: (R0 - dv) * CKMS, reservePct: 100 * dv / s.reserveDv, arriveExact: A, arrive: Math.round(A), delta: A - A0,
+      awakeDelta: s.watch * (A - A0) / crewOf(s), x, D };
+  }
+  const newsCandidates = s => !s.earlyNews || s.earlyCouncil ? [] : (s.earlyNews.family === 'signal' ? [M.SOURCE] : s.earlyNews.objects.slice(1))
+    .map(n => agendaOf(s).map(id => R.get(id)).find(q => q && q.branch === 'contact' && q.star === n)).filter(Boolean)
+    .map(q => earlyTurnQuote(s, q)).filter(Boolean).sort((a, b) => a.dv - b.dv || a.arriveExact - b.arriveExact || (a.to < b.to ? -1 : 1)).slice(0, 2);
+  // что сообщает пакет о мире звезды: только опубликованные признаки (класс мира — истина, текст — наблюдение)
+  const NEWS_WORLD = {
+    open: ['планета подтверждена; признаки воды и атмосферы; пригодность для дыхания не подтверждена', 'the planet is confirmed; signs of water and an atmosphere; breathability unconfirmed'],
+    dome: ['сильные различия условий на поверхности; есть район для закрытого поселения', 'strong contrasts across the surface; there is a region worth checking for a closed settlement'],
+    hostile: ['экстремальные условия на поверхности; работы возможны только с орбиты', 'extreme surface conditions; work is possible only from orbit'],
+    ruined: ['разрушенная поверхность и обломки', 'a shattered surface and debris'],
+    none: ['пригодный мир не подтверждён', 'no habitable world is confirmed']
+  };
+  const nameAt = (n, lang) => lang === 'ru' ? nmG({ target: n }) : M.nameOf(n, 'en');
+  function newsText(s, lang) {
+    const ru = lang === 'ru', N = s.earlyNews, f2 = y => nf(y, 2, lang), recv = f2(N.received);
+    const dates = n => { const ep = Math.round(NEWS.earth - M.star(n).d), y = `${ep < 0 ? '−' : ''}${Math.abs(ep)}`;
+      return ru ? `наблюдаемое состояние — год ${y}` : `the state observed is that of year ${y}`; };
+    const head = ru ? `Служба наблюдений Кольца обработала данные на году ${f2(NEWS.earth)} и отправила пакет на году ${f2(NEWS.sent)}; на борту он принят на году ${recv}.`
+      : `The Ring's observation service processed the data in year ${f2(NEWS.earth)} and sent the packet in year ${f2(NEWS.sent)}; it reached us in year ${recv}.`;
+    let body;
+    if (N.family === 'signal') body = ru ? `Источник в направлении ε Индейца: ${N.change === 'pattern' ? 'повторяющаяся последовательность изменилась' : 'прежняя последовательность прекратилась'} (${dates(M.SOURCE)}). Причина неизвестна; о людях пакет ничего не сообщает.`
+      : `The source in the direction of ε Indi: ${N.change === 'pattern' ? 'the repeating sequence has changed' : 'the old sequence has stopped'} (${dates(M.SOURCE)}). The cause is unknown; the packet says nothing about people.`;
+    else body = N.objects.map(n => ru ? `У ${nameAt(n, 'ru')}: ${NEWS_WORLD[N.observed[n]][0]} (${dates(n)}).` : `At ${nameAt(n, 'en')}: ${NEWS_WORLD[N.observed[n]][1]} (${dates(n)}).`).join(' ')
+      + (ru ? ' Это состояние прошлых лет, а не нынешняя обстановка у звёзд.' : " These are past years' conditions, not the stars' present situation.");
+    const cand = newsCandidates(s), tail = cand.length ? (ru ? ' Ирсон пересчитал доступные маршруты по оставшемуся резерву: вопрос — на совет.' : ' Irson has recalculated the available routes on the remaining reserve: the question goes to the council.')
+      : (ru ? ' Ирсон пересчитал маршруты по оставшемуся резерву: доступной смены курса до отделения ступени нет.' : ' Irson has recalculated the routes on the remaining reserve: no course change is available before stage separation.');
+    return `${head}\n\n${body}${tail}`;
+  }
+  const taskLabel = (q, lang) => { const T = R.TEXT[q.id], X = RESEARCH[q.id]; return T ? T.label[lang] : X ? X.label[lang] : q.id; };
+  function turnOption(qt) {
+    const q = R.get(qt.req), id = `accept:${q.id}`, fk = (x, lang) => nf(x, 0, lang);
+    const yd = (d, lang) => `${d >= 0 ? '+' : '−'}${nf(Math.abs(d), 1, lang).replace(/[.,]0$/, '')}`;
+    return { id,
+      label: { ru: s => `Повернуть — ${taskLabel(q, 'ru')}`, en: s => `Turn — ${taskLabel(q, 'en')}` },
+      known: {
+        ru: s => [`Новое задание — ${taskLabel(q, 'ru')}; прежнее будет снято с программы.`,
+          `Поворот на ${nf(qt.angle, 1, 'ru')}° при ${nf(s.beta * NEWS.at / M.ACC, 3, 'ru')}c: Δv ${fk(qt.dvKms, 'ru')} км/с.`,
+          `Резерв манёвров: ${fk(qt.reserveBefore, 'ru')} → ${fk(qt.reserveAfter, 'ru')} км/с; из остатка ${fk(qt.stageKms, 'ru')} км/с — на увод ступени.`,
+          `Прибытие — около года ${qt.arrive} (${yd(qt.delta, 'ru')} г.); бодрствование при вахте ${s.watch} — ${yd(qt.awakeDelta, 'ru')} г. на человека.`],
+        en: s => [`New task — ${taskLabel(q, 'en')}; the old one comes off the programme.`,
+          `A ${nf(qt.angle, 1, 'en')}° turn at ${nf(s.beta * NEWS.at / M.ACC, 3, 'en')}c: Δv ${fk(qt.dvKms, 'en')} km/s.`,
+          `Manoeuvre reserve: ${fk(qt.reserveBefore, 'en')} → ${fk(qt.reserveAfter, 'en')} km/s; ${fk(qt.stageKms, 'en')} km/s of the rest goes to clearing the stage.`,
+          `Arrival around year ${qt.arrive} (${yd(qt.delta, 'en')} yr); waking time at a watch of ${s.watch} — ${yd(qt.awakeDelta, 'en')} yr per person.`]
+      },
+      cost: st => { st.reserve -= qt.reservePct; },                      // «После»: только публичная цена манёвра
+      effect: st => {
+        const t2 = earlyTurnQuote(st, q); if (!t2) return;               // повторная проверка на полном состоянии
+        const from = st.target;
+        st.reserve -= t2.reservePct;
+        (st.taskHistory = st.taskHistory || []).push(Object.assign({}, st.task, { status: 'abandoned', at: st.year }));
+        st.requestId = q.id; st.target = q.star; st.task = { work: q.work, star: q.star, done: false, found: null, reportAt: null };
+        st.arriveExact = t2.arriveExact; st.arrive = t2.arrive;
+        st.route = { knee: { at: st.year, x: t2.x, from }, D: t2.D };
+        st.earlyCouncil = { at: st.year, family: st.earlyNews.family, choice: 'turn', from, to: q.star, dvKms: t2.dvKms };
+      },
+      record: {
+        ru: s => `Совет меняет курс: с ${nameAt(s.earlyCouncil ? s.earlyCouncil.from : q.star, 'ru')} на ${nameAt(q.star, 'ru')}. Ирсон заносит расход ${fk(qt.dvKms, 'ru')} км/с и новое прибытие — около года ${s.arrive}. Прежнее задание снято с программы; принято: ${taskLabel(q, 'ru')}. Уведомление уходит на Землю.`,
+        en: s => `The council changes course: from ${M.nameOf(s.earlyCouncil ? s.earlyCouncil.from : q.star, 'en')} to ${M.nameOf(q.star, 'en')}. Irson enters ${fk(qt.dvKms, 'en')} km/s spent and the new arrival — around year ${s.arrive}. The old task comes off the programme; accepted: ${taskLabel(q, 'en')}. A notice goes out to Earth.`
+      } };
+  }
+  const stayOption = {
+    id: 'stay',
+    label: { ru: s => `Держать курс на ${nameAt(s.target, 'ru')}`, en: s => `Hold the course for ${M.nameOf(s.target, 'en')}` },
+    known: {
+      ru: s => [`Задание прежнее — ${reqOf(s) ? taskLabel(reqOf(s), 'ru') : '—'}; прибытие — около года ${s.arrive}.`, 'Резерв манёвров сохраняется. Сведения остаются в программе наблюдений.'],
+      en: s => [`The task stays — ${reqOf(s) ? taskLabel(reqOf(s), 'en') : '—'}; arrival around year ${s.arrive}.`, 'The manoeuvre reserve is kept. The information stays in the observation programme.']
+    },
+    effect: st => { st.earlyCouncil = { at: st.year, family: st.earlyNews.family, choice: 'stay', from: st.target, to: st.target }; },
+    record: {
+      ru: s => `Совет сохраняет курс на ${nameAt(s.target, 'ru')} и задание. Пакет приложен к решению; манёвра нет.`,
+      en: s => `The council keeps the course for ${M.nameOf(s.target, 'en')} and the task. The packet is attached to the decision; no manoeuvre.`
+    }
+  };
 
   // ---------------------------------------------------------------- голосование Совета по заявкам
   // DOC «Повороты по обстановке Кольца» (заявки из мира) и «Ревью Codex — заявки из мира». Вариант голосования — заявка
@@ -2564,7 +2703,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
             }
           }
         ];
-  const agendaOf = s => R.agenda(null);                                // повестка первой экспедиции (память мира — позже)
+  // повестка — снимок на старт экспедиции (ctx.agenda: мир после финала меняется, повтор партии — нет); без снимка — первая
+  const agendaOf = s => { const a = s && Array.isArray(s.agenda) ? s.agenda.filter(id => R.get(id)) : null; return a && a.length ? a : R.agenda(null); };
   const reqOf = s => s.requestId ? R.get(s.requestId) : null;
   const RESEARCH = {
     'req:search32:e32': {
@@ -2606,8 +2746,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   }
   // стенограмма Совета — по повестке: кто какую заявку докладывает
   const NUMW = { ru: ['', '', 'две', 'три', 'четыре', 'пять', 'шесть'], en: ['', '', 'two', 'three', 'four', 'five', 'six'] };
-  function councilText(lang) {
-    const A = agendaOf(null), n = A.length, ru = lang === 'ru', has = id => A.includes(id), W = id => R.TEXT[id].council[lang];
+  function councilText(s, lang) {
+    const A = agendaOf(s), n = A.length, ru = lang === 'ru', has = id => A.includes(id), W = id => R.TEXT[id].council[lang];
     const N = ru ? NUMW.ru[n] : NUMW.en[n].replace(/^./, c => c.toUpperCase());
     const out = [ru ? `— Заявок ${N}, экспедиция одна, — говорит Ирина Кассель. — Решаем, какую берёт сорок первая: заявка задаёт и звезду, и работу. Паспорт утвердим потом.`
         : `"${N} requests, one expedition," says Irina Kassel. "We decide which one the Forty-First takes on: a request sets both the star and the work. The passport comes after."`,
@@ -2650,11 +2790,11 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     {
       id: 'p.council', scene: 'council', kind: 'transcript', year: 0,
       title: { ru: 'Совет Звездоплавания', en: 'Council of Star Navigation' },
-      text: { ru: () => councilText('ru'), en: () => councilText('en') }
+      text: { ru: s => councilText(s, 'ru'), en: s => councilText(s, 'en') }
     },
     {
       // голосование — по заявкам повестки; рядом карта-обзор (ui: 'agenda'): звёзды можно смотреть, курс задаёт заявка
-      id: 'd.mission', scene: 'chart', kind: 'decision', year: 0, ui: 'agenda',
+      id: 'd.mission', scene: 'agenda', kind: 'decision', year: 0, ui: 'agenda',
       title: { ru: 'Какую заявку берёт сорок первая', en: 'Which request the Forty-First takes on' },
       context: {
         ru: 'Совет голосует. Заявка задаёт и звезду, и работу; остальные остаются в очереди — их возьмут следующие экспедиции, через годы.',
@@ -2972,6 +3112,22 @@ For the first time the ship is empty. In the rings you can hear the ventilation 
 
 The trays have names on them.`
       }
+    },
+    {
+      // пакет наблюдений Кольца (совет «Новые сведения»): сведения — всегда записью; совет — если есть доступный поворот
+      id: 'a1.newInfo', scene: 'ring', kind: 'bulletin', year: NEWS.at, when: s => !s.earlyNews && !!newsPlan(s),
+      effect: s => { s.earlyNews = newsPlan(s); },
+      title: { ru: 'Пакет наблюдений Кольца', en: "The Ring's observation packet" },
+      text: { ru: s => newsText(s, 'ru'), en: s => newsText(s, 'en') }
+    },
+    {
+      id: 'd.newInfo', scene: 'ring', kind: 'decision', year: NEWS.at, when: s => newsCandidates(s).length > 0,
+      title: { ru: 'Новые сведения · совет о курсе', en: 'New information · course council' },
+      context: {
+        ru: s => `Пакет Кольца изменил то, что мы знаем. Курс можно сменить до отделения ступени — к звезде другой заявки; прежнее задание тогда снимается с программы. Наше задание сейчас — ${reqOf(s) ? taskLabel(reqOf(s), 'ru') : '—'}.`,
+        en: s => `The Ring's packet has changed what we know. The course can change before stage separation — to the star of another request; the old task then comes off the programme. Our task now — ${reqOf(s) ? taskLabel(reqOf(s), 'en') : '—'}.`
+      },
+      options: s => newsCandidates(s).map(turnOption).concat([stayOption])
     },
     { id: 's.y4', kind: 'skip', toYear: 4, label: { ru: 'Промотать до года 4 · середина разгона', en: 'Skip ahead to year 4 · mid-acceleration' } },
     {
@@ -3549,6 +3705,7 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
 Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.
 Цель: ${nm(s, 'ru')} · прибытие около года ${s.arrive}.` +
           (s.materials !== 100 ? `\nМатериалы для высадки: ${s.materials}% запаса.` : '') +
+          (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nКурс изменён на году ${s.earlyCouncil.at}: к ${nameAt(s.target, 'ru')}.` : '') +
           (s.riskVersion >= 5 && s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : s.shieldWear > 0 ? `\nФронтальный щит: износ сверх нормы — ${pct(s.shieldWear, 'ru')} года из ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : ''),
         en: s => `Acceleration-stage thrust cut. Velocity ${fb(s.beta, 'en')}.
 Acceleration stage separated. For the last ${stageOff(s).days} days thrust was angled 10°: the stage drifts off sideways at ${kms(stageOff(s).dv)} km/s. The core cancelled its own sideways velocity — manoeuvre reserve −${pct(stageOff(s).reservePct, 'en')}%.
@@ -3557,6 +3714,7 @@ Plasma magnet: switch-on in year ${Math.round(brake(s))}.
 Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.
 Target: ${nm(s, 'en')} · arrival around year ${s.arrive}.` +
           (s.materials !== 100 ? `\nLanding materials: ${s.materials}% of stock.` : '') +
+          (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nCourse changed in year ${s.earlyCouncil.at}: for ${M.nameOf(s.target, 'en')}.` : '') +
           (s.riskVersion >= 5 && s.shield ? `\nForward shield: ${shieldGaugeV5(s, 'en')}.` : s.shieldWear > 0 ? `\nForward shield: wear beyond norm — ${pct(s.shieldWear, 'en')} years of ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : '')
       }
     },
@@ -6008,6 +6166,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     register: { view: 'route', img: 'assets/council.jpg', fallback: 'assets/depart.jpg', label: { ru: 'Земля · Совет Звездоплавания · курс', en: 'Earth · Council of Star Navigation · course' } },
     fitting: { view: 'cargo', fallback: 'assets/depart.jpg', label: { ru: 'Орбита Земли · комплектация', en: 'Earth orbit · fitting out' } },
     chart: { view: 'sector', fallback: 'assets/depart.jpg', label: { ru: 'Штурманская · звёздная карта', en: 'Navigation room · star chart' } },
+    agenda: { view: 'agenda', fallback: 'assets/depart.jpg', label: { ru: 'Совет Звездоплавания · карта заявок', en: 'Council of Star Navigation · request chart' } },
     // цель задана заявкой (снабженец, спасатель) и лежит вне сектора сигнала — в кадре Солнце и цель, ракурс «Маршрут»
     chartTarget: { view: 'targetRoute', fallback: 'assets/depart.jpg', label: { ru: 'Штурманская · звёздная карта', en: 'Navigation room · star chart' } },
     scout: { view: 'ship', fallback: 'assets/depart.jpg', label: { ru: 'Корма · запуск зонда', en: 'Stern · probe launch' } },
@@ -6229,11 +6388,17 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
   function applyEvents(world, events) {
     const w = JSON.parse(JSON.stringify(world || {}));
     w.applied = w.applied || [];
+    const markDone = x => { if (x && x.request && x.task && x.task.done && !(w.requestsDone || []).includes(x.request)) (w.requestsDone = w.requestsDone || []).push(x.request); };
     for (const ev of events) {
-      if (w.applied.includes(ev.id)) continue;
+      if (w.applied.includes(ev.id)) {                                 // уже записанный итог старой партии: дописать заявку и задание
+        const x = ev.expedition, old = x && (w.expeditions || []).find(e => e.id === x.id);
+        if (old && old.request === undefined) { old.request = x.request; old.task = x.task; markDone(x); }
+        continue;
+      }
       if (ev.passTug === false) w.passTug = false;
       if (ev.settle) (w.settled = w.settled || []).push(ev.settle);
       if (ev.expedition) (w.expeditions = w.expeditions || []).push(ev.expedition);
+      markDone(ev.expedition);
       w.applied.push(ev.id);
     }
     return w;
@@ -6246,7 +6411,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     && inc.alive === inc.sleepers + inc.watch && inc.deadline === inc.sent + inc.hold);
   // решения, добавленные в сюжет позже: старые сохранения проходят их вариантом по умолчанию (engine.migrate)
   // (id варианта не 'go': иначе старая перемотка молча съедалась бы решением и ответы сдвигались)
-  const INSERTED = { 'd.sos.drift': 'carry', 'd.sos.stream': 'carry', 'd.supplyApproach': 'protect', 'd.rescuePrep': 'defer', 'd.rescueShelter': 'direct' };
+  const INSERTED = { 'd.sos.drift': 'carry', 'd.sos.stream': 'carry', 'd.supplyApproach': 'protect', 'd.rescuePrep': 'defer', 'd.rescueShelter': 'direct', 'd.newInfo': 'stay' };
   const marginLine = (c, dl, lang) => lang === 'ru'
     ? `Капсулы держат до года ${dl}: ` + (c <= dl ? `запас — ${yrs(dl - c)}.` : c < dl + 5 ? `опоздание ${yrs(Math.max(1, c - dl))} — часть блоков откажет.` : 'не успеть.')
     : `The capsules hold until year ${dl}: ` + (c <= dl ? `margin ${yrsEn(dl - c)}.` : c < dl + 5 ? `${yrsEn(Math.max(1, c - dl))} late — some blocks will fail.` : 'too late.');
@@ -6520,7 +6685,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, navDeparture, requests: R, reqOf, missionComplete, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, events: EV, navDeparture, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

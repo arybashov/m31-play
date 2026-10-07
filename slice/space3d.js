@@ -71,11 +71,26 @@
   // Год прибытия округлён — поправка разложена на весь дрейф, чтобы корабль остановился точно у цели, без скачка.
   const brakeYears = () => world.tMag == null ? 20 : world.tMag + 4;
   function distLy(y) { return distLyRaw(y); }
+  // излом траектории (совет «Новые сведения»): до года поворота корабль шёл к прежней цели, дальше — от точки поворота
+  // к новой; длина пути для профиля — сумма отрезков, и корабль встаёт точно у новой цели, без скачка в точке поворота
+  function kneeOf() {
+    const k = world.knee; if (!k) return null;
+    const st = stars.find(x => x.name === k.from); if (!st) return null;
+    const start = E0.clone().addScaledVector(EARTH_OFF, -1 / LY), u0 = new THREE.Vector3(st.x, st.y, st.z).normalize();
+    const P = start.clone().addScaledVector(u0, k.x), w = T.clone().sub(P);
+    return { start, u0, P, u1: w.clone().normalize(), x: k.x, D: k.x + w.length() };
+  }
+  // точка пути на расстоянии dist св. лет от старта: прямая к цели или ломаная после поворота
+  function pathPoint(dist) {
+    const K = kneeOf();
+    if (!K) return E0.clone().addScaledVector(EARTH_OFF, -1 / LY).addScaledVector(U, dist);
+    return dist <= K.x ? K.start.clone().addScaledVector(K.u0, dist) : K.P.clone().addScaledVector(K.u1, dist - K.x);
+  }
   function distLyRaw(y) {
     const b = world.beta || 0.1, A = world.arrive, tm = world.tMag;
     if (y <= 8) return b / 16 * y * y;
     if (!A) return b * 4 + b * (y - 8);
-    const D = T.clone().sub(E0).addScaledVector(EARTH_OFF, 1 / LY).dot(U);
+    const K = kneeOf(), D = K ? K.D : T.clone().sub(E0).addScaledVector(EARTH_OFF, 1 / LY).dot(U);
     if (tm == null) {
       const t0 = A - 20;
       if (y <= t0) return b * 4 + b * (y - 8) + (D - 10 * b - b * (t0 - 4)) * (y - 8) / Math.max(1, t0 - 8);
@@ -93,7 +108,7 @@
   let sunLight, rim, cloudGroup, scoutMark, sectorMarks, distRings = [];
   let distress, shell, incMark, baseMarks = [], rescueLines = [], rescueMarks = [], voyKey = '';
   let colonyMarks, legacyMarks, legacyKey = '';                                  // колонии и следы по архиву Кольца; наследие прошлых партий   // карта сигнала бедствия (партия спасателей)
-  let catalogPts, targetMark, ship, stage, rings = [], plume, radMat, marker, routeDone, routeAhead, relGroup, starsGroup;
+  let reqMarks, reqKey = '', reqTex = null, catalogPts, targetMark, ship, stage, rings = [], plume, radMat, marker, routeDone, routeAhead, relGroup, starsGroup;
   let visible = false, lang = 'ru', shown = false;   // shown: хоть один кадр уже был на экране
   const world = { relief: null, legacy: null, tMag: null, anim: null, year: 0, worldClass: null, cloudSeen: false, separated: false, burning: true, finalBurn: false, sepT: 0, atEarth: true, scout: 0, scoutV: 0.16, beta: 0.1, arrive: 0, cargo: [], cargoLabels: false };
   const cam = { focus: 'ship', F: new THREE.Vector3(), dist: 4500, yaw: 2.4, pitch: 0.25, pivot: -1400 };
@@ -783,7 +798,7 @@
   // корабль приходит к планете: фаза c на году прибытия — там, куда ведёт прямая траектория
   function tsysArrival() {
     const A = world.arrive, b = world.beta || 0.1;
-    const end = E0.clone().addScaledVector(EARTH_OFF, -1 / LY).addScaledVector(U, distLyRaw(A));
+    const end = pathPoint(distLyRaw(A));                                  // конец пути — и после поворота (излом)
     const v = end.clone().sub(tsysAx.C0), th0 = Math.atan2(v.dot(tsysAx.p2), v.dot(tsysAx.p1));
     return { end, th0 };
   }
@@ -1361,6 +1376,7 @@
       m.scale.set(0.02, 0.02, 1); m.position.set(st.x, st.y, st.z); m.userData = o; colonyMarks.add(m);
     });
     starsGroup.add(colonyMarks);
+    reqMarks = new THREE.Group(); starsGroup.add(reqMarks);              // кольца у звёзд заявок (голосование Совета)
     legacyMarks = new THREE.Group(); starsGroup.add(legacyMarks);
     // Карта сигнала бедствия: сфера света растёт из точки аварии со скоростью света (1 св. год за год),
     // базы вспыхивают, когда сигнал до них дошёл; линия рейса и метка спасателя — после вылета.
@@ -1389,7 +1405,7 @@
     // группа относительно корабля: маршрут, метка корабля, облако
     relGroup = new THREE.Group();
     const lineMat = c => new THREE.LineBasicMaterial({ color: c, depthTest: false, transparent: true });
-    routeDone = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat(0xe7c68f));
+    routeDone = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]), lineMat(0xe7c68f));   // через излом
     routeAhead = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
       new THREE.LineDashedMaterial({ color: 0x8fb3c9, dashSize: 0.12, gapSize: 0.08, depthTest: false, transparent: true, opacity: 0.8 }));
     relGroup.add(routeDone, routeAhead);
@@ -1679,6 +1695,7 @@
     target: { focus: 'target', dist: 0.8 * LY, yaw: 2.6, pitch: 0.35, pivot: -1400 },
     sun: { focus: 'sun', dist: 0.004 * LY, yaw: 0, pitch: 0, pivot: -1400, frame: 'galactic' },   // углы — от полюса эклиптики, ниже
     map: { focus: 'sun', dist: 95 * LY, yaw: 1.2, pitch: 1.0, pivot: -1400 },
+    agenda: { focus: 'sun', dist: 46 * LY, yaw: 1.2, pitch: 0.95, pivot: -1400 },   // голосование Совета: все звёзды заявок вокруг Солнца
     sector: { focus: 'sector', dist: 33 * LY, yaw: 1.15, pitch: 0.32, pivot: -1400, frame: 'galactic' },   // сбоку от луча на сектор
     distress: { focus: 'distress', dist: 20 * LY, yaw: 1.3, pitch: 0.32, pivot: -1400, frame: 'galactic' },   // карта сигнала бедствия
     // плазменный магнит: камера медленно отъезжает, пока в кадр не войдёт весь пузырь (дистанция — по его размеру)
@@ -1695,7 +1712,7 @@
     return U.clone().multiplyScalar(cp * Math.cos(p.yaw)).add(E2.clone().multiplyScalar(cp * Math.sin(p.yaw))).add(E3.clone().multiplyScalar(Math.sin(p.pitch))); };
   // корабль: орбита Земли в день отлёта + путь вдоль курса
   function shipPos() {
-    const p = E0.clone().addScaledVector(EARTH_OFF, -1 / LY).addScaledVector(U, distLy(world.year)), A = world.arrive;
+    const p = pathPoint(distLy(world.year)), A = world.arrive;
     // у ε Индейца: последние три года траектория плавно сходит к планете c (0,5 а.е. от звезды), а не к точке прямой
     if (A && tsysAx && targetInfo.star === EIND.name && world.year > A - 3) {
       const k = Math.min(1, (world.year - (A - 3)) / 3), sk = k * k * (3 - 2 * k), ar = tsysArrival();
@@ -2090,7 +2107,8 @@
       v.set(s.x, s.y, s.z).sub(cam.F).project(starCam);
       if (v.z > 1 || v.z < -1) continue;
       const px = (v.x + 1) / 2 * r.width + r.left, py = (1 - v.y) / 2 * r.height + r.top;
-      const d = Math.hypot(px - e.clientX, py - e.clientY) / (sectorNames.has(s.name) ? 2 : LABELED.includes(s) ? 1.4 : 1);
+      const big = world.preview ? (world.requestStars || []).includes(s.name) : sectorNames.has(s.name);
+      const d = Math.hypot(px - e.clientX, py - e.clientY) / (big ? 2 : LABELED.includes(s) ? 1.4 : 1);
       if (d < bestD && d < 12) { bestD = d; best = s.name; }
     }
     if (best) api.onPick(best);
@@ -2123,11 +2141,11 @@
   // ---------------------------------------------------------------- подписи и шкала
   const TXT = {
     ru: { ship: 'Корабль', route: 'Маршрут', target: 'Цель', sun: 'Солнце', map: 'Карта', hint: 'тянуть — вращать · колесо — масштаб',
-      sunL: 'Солнце', gcL: 'центр Галактики', linkL: d => `${Math.round(d)} св. лет: вопрос идёт ${Math.round(d)} лет, ответ приходит через ${Math.round(2 * d)}`, targetL: 'цель', shipL: 'Сорок первая', scoutL: 'зонд', kits: { materials: 'материалы и запчасти', landing: 'расширенная посадка', probes: 'зонды-разведчики', ir: 'ИК-обсерватория', agro: 'второй агромодуль' }, cloudL: 'облако D2', scale: 'до камеры',
+      sunL: 'Солнце', gcL: 'центр Галактики', linkL: d => `${Math.round(d)} св. лет: вопрос идёт ${Math.round(d)} лет, ответ приходит через ${Math.round(2 * d)}`, targetL: 'цель', requestL: 'заявка', shipL: 'Сорок первая', scoutL: 'зонд', kits: { materials: 'материалы и запчасти', landing: 'расширенная посадка', probes: 'зонды-разведчики', ir: 'ИК-обсерватория', agro: 'второй агромодуль' }, cloudL: 'облако D2', scale: 'до камеры',
       sosL: 'сорок первая · сигнал бедствия', hearL: y => `сигнал — год ${y}`, rescuerL: 'спасатель', earthL: 'Земля',
       legacyL: n => `спасённые прошлой экспедиции · ${n}` },
     en: { ship: 'Ship', route: 'Route', target: 'Target', sun: 'Sun', map: 'Map', hint: 'drag — rotate · wheel — zoom',
-      sunL: 'Sun', gcL: 'Galactic centre', linkL: d => `${Math.round(d)} ly: a question takes ${Math.round(d)} years, the answer comes after ${Math.round(2 * d)}`, targetL: 'target', shipL: 'Forty-First', scoutL: 'probe', kits: { materials: 'materials and spares', landing: 'extended landing kit', probes: 'scout probes', ir: 'IR observatory', agro: 'second agro module' }, cloudL: 'D2 cloud', scale: 'to camera',
+      sunL: 'Sun', gcL: 'Galactic centre', linkL: d => `${Math.round(d)} ly: a question takes ${Math.round(d)} years, the answer comes after ${Math.round(2 * d)}`, targetL: 'target', requestL: 'request', shipL: 'Forty-First', scoutL: 'probe', kits: { materials: 'materials and spares', landing: 'extended landing kit', probes: 'scout probes', ir: 'IR observatory', agro: 'second agro module' }, cloudL: 'D2 cloud', scale: 'to camera',
       sosL: 'Forty-First · distress signal', hearL: y => `signal in year ${y}`, rescuerL: 'rescuer', earthL: 'Earth',
       legacyL: n => `rescued by a past expedition · ${n}` }
   };
@@ -2167,18 +2185,21 @@
     const tgtObj = colonyMarks.visible ? colonyMarks.children.find(m => m.userData.star === targetInfo.star) : null;
     const CC = window.M31Content;
     const localBase = distress.visible ? world.relief.list.find(b => b.id === 'local') : null;
-    if (!galactic) put(rel(T), `${targetInfo[lang]} · ${shipAtT ? TXT[lang].shipL : TXT[lang].targetL}`
+    const tFree = world.preview && !world.inspect;                       // до выбора звезды цели нет: её подписывают как любую другую
+    const tSuffix = world.preview ? ((world.requestStars || []).includes(targetInfo.star) ? ` · ${TXT[lang].requestL}` : '') : ` · ${shipAtT ? TXT[lang].shipL : TXT[lang].targetL}`;
+    if (!galactic && (!world.preview || world.inspect)) put(rel(T), `${targetInfo[lang]}${tSuffix}`
       + (localBase ? ` · ${baseName(localBase)} · ${TXT[lang].hearL(Math.round(localBase.hear))}` : tgtObj && CC && !distress.visible ? ` · ${CC.archiveShort(tgtObj.userData, lang, world.year, true)}` : ''), 'target');
     // на карте сигнала бедствия подписи — у баз; здесь только метки
-    if (colonyMarks.visible && CC && !distress.visible) colonyMarks.children.forEach(m => { const o = m.userData; if (o.star !== targetInfo.star) put(rel(m.position), CC.archiveShort(o, lang, world.year, true), 'colony st-' + o.status); });
+    if (colonyMarks.visible && CC && !distress.visible) colonyMarks.children.forEach(m => { const o = m.userData; if (o.star !== targetInfo.star || tFree) put(rel(m.position), CC.archiveShort(o, lang, world.year, true), 'colony st-' + o.status); });
+    if (reqMarks.visible) reqMarks.children.forEach(m => { const n = m.userData.name; if ((n !== targetInfo.star || tFree) && !(colonyMarks.visible && OBJ_STARS.has(n))) put(rel(m.position), `${MI ? MI.nameOf(n, lang) : n} · ${TXT[lang].requestL}`, 'star'); });
     if (legacyMarks.visible) legacyMarks.children.forEach(m => put(rel(m.position), TXT[lang].legacyL(m.userData.people), 'legacy'));   // ниже звезды — сдвиг в CSS
     if (!galactic && far && scoutMark.visible) put(rel(scoutMark.position), TXT[lang].scoutL, 'ship');
     if (galactic) { put(rel(GC), TXT[lang].gcL, 'star'); }
     if (hiLine && hiLine.visible) put(rel(hiLink.b.clone().multiplyScalar(0.5)), TXT[lang].linkL(hiLink.len), 'target');
-    if (dly > 0.3 && dly < 150) LABELED.forEach(s => { if (s.name !== targetInfo.star && !sectorNames.has(s.name) && !(colonyMarks.visible && OBJ_STARS.has(s.name))) put(rel(new THREE.Vector3(s.x, s.y, s.z)), MI ? MI.nameOf(s.name, lang) : s.name, 'star'); });
+    if (dly > 0.3 && dly < 150) LABELED.forEach(s => { if ((s.name !== targetInfo.star || tFree) && !sectorNames.has(s.name) && !(colonyMarks.visible && OBJ_STARS.has(s.name))) put(rel(new THREE.Vector3(s.x, s.y, s.z)), MI ? MI.nameOf(s.name, lang) : s.name, 'star'); });
     // на карте сигнала звезда базы подписана именем колонии — без повтора каталожного имени
     const baseStar = n => distress.visible && world.relief.list.some(b => b.id !== 'earth' && MI.colony(b.id === 'pass' ? 'pass' : b.colony).star === n);
-    if (sectorMarks.visible) sectorMarks.children.forEach(m => { if (m.userData.name !== targetInfo.star && !baseStar(m.userData.name) && !(colonyMarks.visible && OBJ_STARS.has(m.userData.name))) put(rel(m.position), MI.nameOf(m.userData.name, lang), 'sector'); });
+    if (sectorMarks.visible) sectorMarks.children.forEach(m => { if ((m.userData.name !== targetInfo.star || tFree) && !baseStar(m.userData.name) && !(colonyMarks.visible && OBJ_STARS.has(m.userData.name))) put(rel(m.position), MI.nameOf(m.userData.name, lang), 'sector'); });
     if (distress.visible) drawDistressLabels(put, rel);
     if (world.cargoLabels && cam.focus === 'ship' && cam.dist < 4000) {
       const w2 = container.clientWidth, h2 = container.clientHeight;
@@ -2321,6 +2342,15 @@
     updateLegacy();
     const colA = band(dly, 1.5, 4, 100, 200);
     colonyMarks.children.forEach(m => fadeObj(m, colA, 0.95)); colonyMarks.visible = colA > 0.003;
+    const rk = (world.requestStars || []).join('|');
+    if (rk !== reqKey) { reqKey = rk;
+      while (reqMarks.children.length) { const m = reqMarks.children[0]; reqMarks.remove(m); m.material.dispose(); }
+      (world.requestStars || []).forEach(n => { const st = stars.find(x => x.name === n); if (!st) return;
+        const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: reqTex || (reqTex = ringTexture()), color: 0xe7c68f, sizeAttenuation: false, depthTest: false, transparent: true, opacity: 0.75 }));   // текстура — общая
+        m.scale.set(0.034, 0.034, 1); m.position.set(st.x, st.y, st.z); m.userData.name = n; reqMarks.add(m); }); }
+    reqMarks.children.forEach(m => fadeObj(m, colA, 0.75)); reqMarks.visible = colA > 0.003 && reqMarks.children.length > 0;
+    routeDone.visible = routeAhead.visible = !world.preview;              // до голосования курса нет
+    targetMark.visible = !world.preview || !!world.inspect;              // и цели нет: кольцо — только у звезды, которую осматривают
     legacyMarks.children.forEach(m => fadeObj(m, colA, 0.9)); legacyMarks.visible = colA > 0.003 && legacyMarks.children.length > 0;
     if (!tween && cam.fit && !dragging) {                     // держим звезду и планету в кадре
       const f = arrivalLook(cam.fit), kk = 1 - Math.exp(-dt * 0.8);
@@ -2336,7 +2366,8 @@
     if (sp.x !== lastSp.x || sp.y !== lastSp.y || sp.z !== lastSp.z) {
       lastSp.copy(sp);
       const d = routeDone.geometry.attributes.position, a = routeAhead.geometry.attributes.position;
-      d.setXYZ(0, E0.x - sp.x, E0.y - sp.y, E0.z - sp.z); d.setXYZ(1, 0, 0, 0); d.needsUpdate = true;
+      const K = kneeOf(), kp = K ? K.P : E0;                             // пройденный путь — через точку поворота
+      d.setXYZ(0, E0.x - sp.x, E0.y - sp.y, E0.z - sp.z); d.setXYZ(1, kp.x - sp.x, kp.y - sp.y, kp.z - sp.z); d.setXYZ(2, 0, 0, 0); d.needsUpdate = true;
       a.setXYZ(0, 0, 0, 0); a.setXYZ(1, T.x - sp.x, T.y - sp.y, T.z - sp.z); a.needsUpdate = true;
       routeDone.geometry.computeBoundingSphere(); routeAhead.geometry.computeBoundingSphere();
       routeAhead.computeLineDistances();
@@ -2548,6 +2579,8 @@
     return { dist: cam.dist, dir: [d.x, d.y, d.z], up: [camUp.x, camUp.y, camUp.z], viewUp: [viewUp.x, viewUp.y, viewUp.z], F: [cam.F.x, cam.F.y, cam.F.z], frame: cam.frame, focus: cam.focus, shift: viewShift, tween: !!tween,
       starNdc: (() => { const v = shipCam.position.clone().addScaledVector(lux.dirT, 1e9).project(shipCam); return [v.x, v.y, v.z]; })(),
       glare: tglare ? [tglare.visible, tglare.material.opacity, tglare.scale.x] : null,
+      shipAt: shipPos().toArray().map(v => +v.toFixed(6)), targetAt: T.toArray(),
+      preview: !!world.preview, routeVis: !!(routeAhead && routeAhead.visible), reqMarks: reqMarks ? reqMarks.children.length : 0,
       streaks: +streaks.a.toFixed(3), pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3),
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,
       tw: tween ? { fromF: tween.from.F.toArray(), fromDist: tween.from.dist, fromFocus: tween.from.focus, toF: tween.to.F.toArray(), toDist: tween.to.dist, dur: tween.dur, age: performance.now() - tween.t0 } : null,

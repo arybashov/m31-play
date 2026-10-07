@@ -7,7 +7,7 @@
   const $ = id => document.getElementById(id);
 
   function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed })); } catch (e) { /* без сохранения */ } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed, agenda })); } catch (e) { /* без сохранения */ } }
   // сохранение, которое не удалось восстановить, не стираем молча — откладываем копию
   function backup(why) { try { localStorage.setItem(KEY + '-bak', localStorage.getItem(KEY) || ''); console.warn('Сохранение отложено:', why); } catch (e) { /* нет */ } }
 
@@ -21,6 +21,7 @@
   // Память мира между партиями (аппарат Перевала, новые поселения) и партия спасателей после аварии с живыми:
   // relief = { incident, world, tokens } — снимки на её старте, чтобы повторный проход давал тот же итог.
   let world = Object.assign({ passTug: true }, saved.world || {});
+  if (!world.seed) world.seed = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);   // сид мира: события Кольца
   // снимок аварии из сохранения проверяем целиком; ходы из адреса — всегда основная партия
   let relief = !fromHash && saved.relief && C.validIncident(saved.relief.incident) && saved.relief.world && Array.isArray(saved.relief.tokens) ? saved.relief : null;
   if (saved.relief && !relief && !fromHash) backup('снимок аварии повреждён');
@@ -31,14 +32,18 @@
   // (уже сыгранное не получает задним числом погибших); версия без сида — повреждение: копия и новая экспедиция
   const fresh0 = tokens.every(t => t === 'go');                      // ни одного решения — прошлого, которое могло бы измениться, нет
   const seedOK = x => typeof x === 'string' && x.length > 0;
-  let riskVersion, riskSeed;
+  let riskVersion, riskSeed, hashWorld = null;
   if (fresh0) { riskVersion = C.RISK; riskSeed = seedOK(saved.riskSeed) ? saved.riskSeed : exp; }   // без решений — прошлого нет: новые правила
   else if (saved.riskVersion >= 1) { riskVersion = saved.riskVersion; riskSeed = saved.riskSeed; }   // заданные правила не перезаписываем
   else { riskVersion = 0; riskSeed = null; }
   if (fromHash) { let sd = ''; try { sd = decodeURIComponent(hashArg('seed') || ''); } catch (e) { sd = ''; }
-    const v = Number(hashArg('risk')) || 0; riskVersion = v >= 1 && seedOK(sd) ? v : 0; riskSeed = riskVersion ? sd : null; }
-  if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; }
-  const ctx = () => ({ riskVersion, riskSeed });
+    const v = Number(hashArg('risk')) || 0; riskVersion = v >= 1 && seedOK(sd) ? v : 0; riskSeed = riskVersion ? sd : null;
+    try { hashWorld = decodeURIComponent(hashArg('world') || '') || null; } catch (e) { hashWorld = null; } }   // сид мира партии из адреса: те же события Кольца
+  // повестка Совета — снимок мира на старт экспедиции: итог партии меняет мир, но не её собственное голосование
+  let agenda = Array.isArray(saved.agenda) ? saved.agenda : null;      // снимок меняется только с новой экспедицией
+  if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); }
+  if (!agenda) agenda = C.requests.agenda(world);
+  const ctx = () => ({ riskVersion, riskSeed, agenda, worldSeed: hashWorld || world.seed });
   C.setWorld(world);
   const cur = () => relief ? relief.tokens : tokens;                      // ходы текущей партии
   const story = () => relief ? C.relief(relief.incident, relief.world) : C;
@@ -841,6 +846,9 @@
         worldClass: st.target ? M.worldOf(st.target) : null,
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
         target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
+        // голосование по заявкам: курса ещё нет — звезда только осматривается; кольца у звёзд заявок повестки
+        knee: st.route ? st.route.knee : null,                          // излом траектории после поворота (совет «Новые сведения»)
+        preview: atStop('agenda') && !st.target, inspect: !!(atStop('agenda') && mapPick), requestStars: atStop('agenda') ? view.result.stop.options.map(o => (C.requests.get(o.id) || {}).star).filter(Boolean) : [],
         cargo: cargo3d(atStop('passport') && draft ? draft : st), cargoLabels: atStop('passport'), tMag: st.tMag,
         scout: st.scout, scoutV: st.scout === 6 ? st.beta * 0.75 + 0.085 : st.beta + 0.07,
         // склад Оттепели (спасатель v3): с ближней диагностики до перехода к дому
@@ -927,7 +935,7 @@
       const fixed = relief ? null : E.migrate(C, tokens, C.INSERTED, ctx());
       if (fixed) tokens = fixed;
       // сброс основной партии — новая экспедиция целиком: новые правила и сид, а не прежние версии старого сохранения
-      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; mapPick = null; draft = null; votePick = null; } }
+      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); mapPick = null; draft = null; votePick = null; } }
       save(); result = E.run(story(), cur(), ctx());
     }
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии
@@ -994,8 +1002,8 @@
     // новый круг начинается как при загрузке: 3D гаснет и проявляется, вступление — с кадра, а не перелётом от прошлой партии
     if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
     camView = null; sceneId = null; clearTimeout(viewTimer);
-    world = { passTug: true }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
-    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; ffStop(); mapPick = null; draft = null; votePick = null;
+    world = { passTug: true, seed: newExp() }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
+    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); ffStop(); mapPick = null; draft = null; votePick = null;
   }
 
   document.addEventListener('click', e => {
