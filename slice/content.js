@@ -986,9 +986,9 @@ There are no longer years of waiting between question and answer.`;
       .concat(burnt.map(h => ru ? `пыль прожгла место удара на ${h.panel} (${yr(h.burntAt)})` : `the dust burned through the impact point on ${h.panel} (${yr(h.burntAt)})`))
       .concat(EV.since(s, y0, y1).filter(e => !(ev && ev.id === e.id)).map(e => `${EV.TYPES[e.type].name[lang]} (${yr(e.at)})`));
     const head = [];
-    if (ev) head.push(ev.kind === 'shieldService' ? (ru ? `Перемотка прервана: пробита панель щита ${ev.panel}. Нужно решение совета.` : `The skip is interrupted: shield panel ${ev.panel} is breached. The council must decide.`)
-      : ev.kind === 'event' ? (ru ? `Перемотка прервана: ${EV.TYPES[ev.type].name.ru}. Нужно решение совета.` : `The skip is interrupted: ${EV.TYPES[ev.type].name.en}. The council must decide.`)
-      : (ru ? 'Перемотка прервана: нужно решение совета.' : 'The skip is interrupted: the council must decide.'));
+    if (ev) head.push(ev.kind === 'shieldService' ? (ru ? `Требуется решение совета: пробита панель щита ${ev.panel}.` : `Council decision required: shield panel ${ev.panel} is breached.`)
+      : ev.kind === 'event' ? (ru ? `Требуется решение совета: ${EV.TYPES[ev.type].name.ru}.` : `Council decision required: ${EV.TYPES[ev.type].name.en}.`)
+      : (ru ? 'Требуется решение совета.' : 'Council decision required.'));
     if (events.length) head.push((ru ? 'За период: ' : 'Over the period: ') + events.join('; ') + '.');
     // среда, пройденная за период (уже пройденное — не прогноз), если не обычная межзвёздная
     const envs = envsPassed(s, y0, y1);
