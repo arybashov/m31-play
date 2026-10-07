@@ -133,9 +133,12 @@
     else if (b.kind === 'note') head = `${u.note} · ${t(b.author, s)} · ${fmtYear(s.year)}`;
     else if (b.kind === 'bulletin') head = `${u.bulletin} · ${t(b.title, s)}`;
     else if (b.kind === 'instrument') head = `${t(b.title, s)} · ${fmtYear(s.year)}`;
+    else if (b.kind === 'watch') head = t(b.title, s);                // отчёт вахты: годы периода — в заголовке
     else if (b.kind === 'document') head = `${u.document} · ${t(b.title, s)}`;
     else if (b.kind === 'end') head = t(b.title, s);
-    return `${pre}<article class="entry k-${b.kind}" data-kind="${b.kind}"><header>${esc(head)}</header>${parasP(t(b.text, s))}</article>`;
+    // ведомость (отчёт вахты): потери с отлёта, все изменения запасов, сводки износа щита — раскрывается по клику
+    const ved = b.details ? `<details class="ved"><summary>${esc(u.ved)}</summary>${paras(t(b.details, s))}</details>` : '';
+    return `${pre}<article class="entry k-${b.kind}" data-kind="${b.kind}"><header>${esc(head)}</header>${parasP(t(b.text, s))}${ved}</article>`;
   }
 
   function stopHtml(result) {
@@ -327,7 +330,7 @@
       lines.push(`${u.speed} <b>${num(beta, 3)}c</b>`);
       lines.push(ly < 2 ? `${u.lag} <b>${num(ly * 12, 1)} ${u.months}</b>` : `${u.lag} <b>${num(ly, 1)} ${lang === 'ru' ? 'г.' : 'yr'}</b>`);
     }
-    const gs = relief ? [] : C.gauges(result.state, lang);
+    const gs = relief ? [] : C.gauges(result.state, lang, ids);
     const canInspect = shieldOf(result.state);
     const gHtml = gs.length ? `<div class="gauges"><span class="gt">${esc(u.gaugesTitle)}</span>${gs.map(g => g.id === 'shield' && canInspect
       ? `<button type="button" class="gbtn" data-act="inspect" aria-pressed="${!!insp}" title="${esc(SI[lang].open)}">${esc(g.label)} <b>${esc(g.value)}</b></button>`
@@ -397,9 +400,9 @@
 
   function sleepersSvg(result) {
     const u = C.ui[lang], y = result.state.year, ids = new Set(result.log.map(i => i.beat.id));
-    const total = y < 2 && !ids.has('a1.empty') ? 500 : (ids.has('a1.handover') ? result.state.watch : 60);
+    const total = C.awakeOf(result.state, ids);                       // тот же счёт, что у прибора «на вахте» и в отчёте вахты
     const na = namedAwake(result);
-    const awake = new Set(Object.keys(na).filter(k => na[k] || total === 500).map(Number));
+    const awake = new Set(Object.keys(na).filter(k => na[k] || total >= (result.state.crew || 500)).map(Number));
     for (const i of ORDER) { if (awake.size >= total) break; awake.add(i); }
     // погибшие в пути — погасшие капсулы (медицинский журнал Акта III)
     const lost = result.state.lost || 0, dead = new Set(), crew = result.state.crew || 500;

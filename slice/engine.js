@@ -39,9 +39,20 @@
       return null;
     }
 
-    // записи приборов из модели (приборный журнал) — в журнал партии; забираются и в play, чтобы состояние было одно
+    // записи приборов из модели (приборный журнал) — в журнал партии; забираются и в play, чтобы состояние было одно.
+    // Сухие сводки (fold) копятся до ближайшего отчёта вахты и входят в его ведомость
+    let base = null, mark = 0, folded = [];
     function notes() {
-      for (const b of sim.notes ? sim.notes(state) : []) if (record) log.push({ beat: b, state: clone(state) });
+      for (const b of sim.notes ? sim.notes(state) : []) if (record) (b.fold && sim.report ? folded : log).push({ beat: b, state: clone(state) });
+    }
+    // отчёт вахты (только журнал run): период — от прошлой точки отчёта; точки — конец перемотки и остановка модели на
+    // событии (ev). Отчёт строится из состояния и записей периода и ничего в состоянии не меняет
+    function report(ev) {
+      if (!record || !sim.report) return;
+      const b = base ? sim.report(state, base, log, mark, folded.map(f => f.beat), ev || null) : null;
+      // без отчёта (корабль потерян) сводки идут в ленту как есть — снимком точки отчёта, чтобы время не шло назад
+      if (b) log.push({ beat: b, state: clone(state) }); else for (const f of folded) log.push({ beat: f.beat, state: clone(state) });
+      base = sim.observe(state, log); mark = log.length; folded = [];
     }
 
     // ход модели к году target: каждое событие с решением — вставка, после ответа — дальше к той же цели
@@ -51,6 +62,7 @@
         const ev = sim.advance(state, target, beat);
         notes();
         if (!ev) return null;
+        report(ev);                                                    // донесение — до решения-вставки
         const st = decide(sim.decision(state, ev, beat));
         if (st) return st;
       }
@@ -77,6 +89,7 @@
             if (record) log.push({ beat, state: clone(state) });
             stop = advanceTo(target, beat);
             if (stop) break;
+            report();                                                  // отчёт вахты — в конце перемотки
             continue;
           } else state.year = target;
         }
@@ -90,6 +103,7 @@
         // записи приборов встают перед сценой, по времени
         if (sim) { stop = advanceTo(target, beat); if (stop) break; } else state.year = target;
       }
+      if (sim && beat.kind === 'end' && folded.length) report();       // сводки после последнего отчёта — не теряются
       if (record) log.push({ beat, state: clone(state) });
       if (beat.kind === 'end') { stop = { end: true, beat, state: clone(state) }; break; }
     }

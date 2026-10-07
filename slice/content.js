@@ -621,14 +621,16 @@ There are no longer years of waiting between question and answer.`;
   const probesOf = s => { const p = eqOf(s).probes, n = p === 'scout2' ? 2 : p === 'inspect' ? 1 : 0;
     return Math.max(0, n - (p === 'scout2' && s.choices['d.scout'] === 'launch' ? 1 : 0) - (n && s.choices['d.stream'] === 'probe' ? 1 : 0)); };
   const kms0 = s => Math.round(s.reserve / 100 * s.reserveDv * 299792.458);
-  function gauges(s, lang) {
+  // ids — записи партии (интерфейс): «на вахте» — кто на ногах сейчас, как в отчёте вахты и на карте спящих
+  function gauges(s, lang, ids) {
     if (!s || !s.eq || s.relief) return [];
     const ru = lang === 'ru', out = [];
     const g = (id, label, value, n) => out.push({ id, label, value, n });
     g('materials', ru ? 'материалы' : 'materials', `${Math.round(s.materials)}%`, s.materials);
     g('reserve', ru ? 'резерв манёвров' : 'manoeuvre reserve', `${pct(s.reserve, lang)}% · ${kms0(s)} ${ru ? 'км/с' : 'km/s'}`, s.reserve);
     g('alive', ru ? 'живы' : 'alive', `${aliveOf(s)}`, aliveOf(s));
-    g('watch', ru ? 'на вахте' : 'on watch', `${s.watch}`, s.watch);
+    const aw = ids ? awakeOf(s, ids) : s.watch;
+    g('watch', ru ? 'на вахте' : 'on watch', `${aw}`, aw);
     g('loop', ru ? 'контур' : 'cooling loop', s.highPower ? (ru ? 'полный' : 'full') : (ru ? 'без резерва мощности' : 'no high-power reserve'));
     if (v5(s) && s.shield) g('shield', ru ? 'щит' : 'shield', shieldGaugeV5(s, lang), SH.observe(s.shield).min); else
     g('shield', ru ? 'щит' : 'shield', breached(s) && s.year < Y(s, 0.25) && !v1(s) ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г. — пробьёт сектор` : `wear ${pct(s.shieldWear, 'en')} yr — will breach a sector`) : breached(s) ? (ru ? 'сектор пробит' : 'sector breached') : s.shieldWear > 0 ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г.` : `wear ${pct(s.shieldWear, 'en')} yr`) : (ru ? 'цел' : 'whole'));
@@ -827,6 +829,9 @@ There are no longer years of waiting between question and answer.`;
     };
   }
   const nf = (x, d, lang) => { const v = x.toFixed(d); return lang === 'ru' ? v.replace('.', ',') : v; };
+  // измеренная среда отрезка (сводки щита и отчёт вахты)
+  const ENV_NAME = { ism: ['средняя межзвёздная среда', 'average interstellar medium'], cloud: ['край облака D2', "the D2 cloud's edge"],
+    pre: ['предвестник потока у Тёмной звезды', "the stream's precursor at the Dark Star"], core: ['ядро потока', "the stream's core"] };
   function noteText(s, n, lang) {
     const ru = lang === 'ru', sh = s.shield, o = SH.observe(sh), rho = SH.RULES.rhoDust.toExponential(1).replace('e-', '·10⁻').replace('24', '²⁴');
     if (n.kind === 'accept') {
@@ -843,9 +848,7 @@ There are no longer years of waiting between question and answer.`;
     const fd = n.flux >= 100 ? 0 : n.flux >= 1 ? 2 : 4;                  // точность — по величине потока
     const short = n.y1 - n.y0 < 0.1, yd = n.y1 - n.y0 < 0.002 ? 4 : short ? 3 : 1;   // короткий отрезок — с сутками
     const dur = short ? (ru ? ` (${nf((n.y1 - n.y0) * 365.25, 1, 'ru')} сут.)` : ` (${nf((n.y1 - n.y0) * 365.25, 1, 'en')} days)`) : '';
-    const ENV = { ism: ['средняя межзвёздная среда', 'average interstellar medium'], cloud: ['край облака D2', "the D2 cloud's edge"],
-      pre: ['предвестник потока у Тёмной звезды', "the stream's precursor at the Dark Star"], core: ['ядро потока', "the stream's core"] };
-    const env = (n.env && n.env.length ? n.env : ['ism']).map(k => ENV[k][ru ? 0 : 1]).join(', ');
+    const env = (n.env && n.env.length ? n.env : ['ism']).map(k => ENV_NAME[k][ru ? 0 : 1]).join(', ');
     const Env = env[0].toUpperCase() + env.slice(1);
     return ru ? `Годы ${nf(n.y0, yd, 'ru')}–${nf(n.y1, yd, 'ru')}${dur}. ${Env}. Средний поток энергии пыли на щит — ${nf(n.flux, fd, 'ru')} Вт/м². Снято за отрезок — ${nf(n.dSigma * 1000, 1, 'ru')} г/м² проекции, с приёмки — ${nf(done, 1, 'ru')} г/м². Минимум по щиту — ${nf(ob.min, 3, 'ru')} кг/м²${where}, ${lim}.`
       : `Years ${nf(n.y0, yd, 'en')}–${nf(n.y1, yd, 'en')}${dur}. ${Env}. Mean dust energy flux on the shield — ${nf(n.flux, fd, 'en')} W/m². Removed over the interval — ${nf(n.dSigma * 1000, 1, 'en')} g/m² of projected area, since acceptance — ${nf(done, 1, 'en')} g/m². Shield minimum — ${nf(ob.min, 3, 'en')} kg/m²${where}, ${lim}.`;
@@ -887,12 +890,158 @@ There are no longer years of waiting between question and answer.`;
       : h.repair === 'defer' ? (ru ? ' Ремонт отложен: пробоина открыта.' : ' Repair deferred: the hole is open.') : '';
     return head + grain + streamLossLine(s, lang) + (ru ? ` Отсеки — материалы для высадки −${STREAM_MAT5[h.level]}%.` : ` The compartments — landing materials −${STREAM_MAT5[h.level]}%.`) + fix;
   }
+  // сводки износа (summary) — не в ленту, а в ведомость ближайшего отчёта вахты (fold); приёмка — отдельной записью
   function simNotes(s) {
     if (!s.shield) return [];
     return SH.take(s.shield).map(n => ({ id: `sim.shield.${n.kind}.${nf(n.y1 != null ? n.y1 : s.year, 3, 'en')}`, kind: 'instrument', title: SIM_TITLE,
-      text: { ru: noteText(s, n, 'ru'), en: noteText(s, n, 'en') } }));
+      text: { ru: noteText(s, n, 'ru'), en: noteText(s, n, 'en') }, fold: n.kind === 'summary', env: n.env || [] }));
   }
-  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => serviceDecision(s, ev) };
+
+  // ---- отчёт вахты (DOC «Симулятор v2 — видимость», шаг 1): что случилось на корабле за период — от прошлого отчёта
+  // до конца перемотки или до остановки модели на событии. Только зарегистрированное и рассчитанное: кто на вахте,
+  // расчётные потери по категориям модели, происшествия, удары по щиту, резерв, материалы, путь. Состояние не меняет.
+  // На вахте: до года 2 на ногах весь экипаж, до передачи полномочий — шестьдесят, дальше — штат (один счёт для отчёта,
+  // прибора HUD и карты спящих)
+  const awakeOf = (s, ids) => s.year < 2 && !ids.has('a1.empty') ? crewOf(s) : ids.has('a1.handover') ? s.watch : 60;
+  function observeShip(s, log) {
+    if (!s.eq || s.relief || !s.arrive) return null;
+    const ids = new Set((log || []).map(i => i.beat.id));
+    return { year: s.year, watch: s.watch, awake: awakeOf(s, ids), crew: crewOf(s), alive: aliveOf(s), dead: s.dead || 0, deadHere: s.deadHere || 0, out: s.outpostDead || 0,
+      L: lossesOf(s, Math.max(0, Math.min(s.year, s.arrive))), reserve: s.reserve, materials: s.materials, highPower: !!s.highPower,
+      inc: (s.incidents || []).length, shield: s.shield ? { eroded: s.shield.erodedKg / SH.AREA, hits: s.shield.hits.length } : null };
+  }
+  const LOSS_KEYS = ['capsule', 'revival', 'accident', 'cancer'];
+  const LOSS_NAME = { capsule: ['отказы капсул', 'capsule failures'], revival: ['при пробуждении', 'on waking'], accident: ['несчастные случаи на вахте', 'accidents on watch'],
+    cancer: ['рак в пути', 'cancers on the road'] };
+  const phaseAt = (s, y) => { const A = arriveView(s), b0 = M.brakeStart(A, s.tMag);
+    return y < M.ACC ? 'acc' : y >= A ? 'home' : y < b0 ? 'drift' : s.tMag != null && y >= A - M.ENGINE ? 'eng' : 'mag'; };
+  const txt = (v, lang, st) => { const x = v && v[lang]; return typeof x === 'function' ? x(st) : (x || ''); };
+  const yWhole = y => Math.abs(y - Math.round(y)) < 1e-6;
+  function spanText(y0, y1, lang) {
+    const ru = lang === 'ru', d = y1 - y0, k = d < 0.002 ? 4 : d < 0.1 ? 3 : 1, f = y => nf(y, yWhole(y) ? 0 : k, lang).replace(/[.,]0$/, '');
+    const days = d < 0.1 ? (ru ? ` (${nf(d * 365.25, 1, 'ru')} сут.)` : ` (${nf(d * 365.25, 1, 'en')} days)`) : '';
+    return `${ru ? 'годы' : 'years'} ${f(y0)}–${f(y1)}${days}`;
+  }
+  // изменения запаса за период — по записям периода: разность снимка записи и предыдущего; причина — решение или запись
+  // изменения внутри хода модели (удар, выход из ядра) записи не имеют — остаток относим к происшествиям периода
+  function resourceMoves(base, items, key, lang, s, incs) {
+    const ru = lang === 'ru', out = [];
+    let prev = base[key];
+    for (const it of items) {
+      const v = it.state[key], d = v - prev; prev = v;
+      if (Math.abs(d) < 0.05) continue;
+      const b = it.beat, title = txt(b.title, lang, it.state);
+      const why = b.kind === 'decision' && it.option ? (ru ? `решение «${title}» — ${txt(it.option.label, lang, it.state).toLowerCase()}` : `decision “${title}” — ${txt(it.option.label, lang, it.state).toLowerCase()}`)
+        : title ? (ru ? `«${title}»` : `“${title}”`) : '';
+      out.push({ d, why });
+    }
+    const d = s[key] - prev;
+    if (Math.abs(d) >= 0.05) out.push({ d, why: incs.map(x => lc1(HEADLINE_NAME[x.kind] ? HEADLINE_NAME[x.kind][ru ? 0 : 1] : x.kind)).join(', ') });
+    return out;
+  }
+  const endDot = x => /\.$/.test(x) ? x : x + '.';
+  // особая среда, через которую корабль прошёл за [y0, y1]: край облака, предвестник и ядро потока — по тем же
+  // границам, что и износ (rhoAt); после y1 ничего не смотрим
+  function envsPassed(s, y0, y1) {
+    const over = (a, b) => a != null && b != null && a < y1 && b > y0, out = [];
+    if (cloudThrough(s)) { const c = cloudSpan(s); if (over(c.a, c.b)) out.push('cloud'); }
+    if (streamOn(s)) { const P = streamPlan(s);
+      if (over(P.warn, P.preEnd)) out.push('pre');
+      if (P.coreEnd != null && over(P.core, P.coreEnd)) out.push('core'); }
+    return out;
+  }
+  const lc1 = x => x[0].toLowerCase() + x.slice(1);
+  const POP_WHO = { outpost: [' форпоста', ' of the outpost'], thaw: [' из Оттепели', ' of Thaw'] };
+  function watchReport(s, base, items, folded, ev, lang, now) {
+    const ru = lang === 'ru', y0 = base.year, y1 = s.year, A = s.arrive;
+    const yr = y => `${ru ? 'год' : 'year'} ${nf(y, yWhole(y) ? 0 : 2, lang)}`;
+    // что передаём: остановка модели, происшествия, удары по щиту
+    const incs = (s.incidents || []).slice(base.inc);
+    const hits = s.shield && base.shield ? s.shield.hits.slice(base.shield.hits) : [];
+    const burnt = s.shield ? s.shield.hits.filter(h => h.burntAt != null && h.burntAt > y0 + 1e-9 && h.burntAt <= y1 + 1e-9) : [];
+    const hitLine = h => ru ? `удар в панель ${h.panel} (${yr(h.at)}) — ${h.first === 'breached' ? 'сквозной пробой' : 'выбоина, щит держит'}`
+      : `an impact on panel ${h.panel} (${yr(h.at)}) — ${h.first === 'breached' ? 'breached through' : 'a scar, the shield holds'}`;
+    const events = incs.map(x => { const nm = HEADLINE_NAME[x.kind] ? HEADLINE_NAME[x.kind][ru ? 0 : 1] : INCIDENT_NAME[x.kind] ? INCIDENT_NAME[x.kind][lang] : x.kind;
+      const who = POP_WHO[x.pop] ? POP_WHO[x.pop][ru ? 0 : 1] : '';
+      return `${lc1(nm)} (${ru ? 'год' : 'year'} ${incYear(x)})${x.dead ? (ru ? ` — погибли ${ppl(x.dead)}${who}` : ` — ${x.dead}${who} dead`) : ''}`; })
+      .concat(hits.filter(h => !(ev && ev.id === h.id)).map(hitLine))
+      .concat(burnt.map(h => ru ? `пыль прожгла место удара на ${h.panel} (${yr(h.burntAt)})` : `the dust burned through the impact point on ${h.panel} (${yr(h.burntAt)})`));
+    const head = [];
+    if (ev) head.push(ev.kind === 'shieldService' ? (ru ? `Перемотка прервана: пробита панель щита ${ev.panel}. Нужно решение совета.` : `The skip is interrupted: shield panel ${ev.panel} is breached. The council must decide.`)
+      : (ru ? 'Перемотка прервана: нужно решение совета.' : 'The skip is interrupted: the council must decide.'));
+    if (events.length) head.push((ru ? 'За период: ' : 'Over the period: ') + events.join('; ') + '.');
+    // среда, пройденная за период (уже пройденное — не прогноз), если не обычная межзвёздная
+    const envs = envsPassed(s, y0, y1);
+    if (envs.length) head.push((ru ? 'Приборы фиксируют среду: ' : 'The instruments register: ') + envs.map(k => ENV_NAME[k][ru ? 0 : 1]).join(', ') + '.');
+    // люди: расчётные потери периода при нынешних параметрах; смена штата вахты пересчитывает оценку за прошлые годы
+    const Lre = lossesOf(s, Math.max(0, Math.min(y0, A))), dk = {}; let dl = 0;
+    for (const k of LOSS_KEYS) { dk[k] = Math.max(0, now.L[k] - Lre[k]); dl += dk[k]; }
+    // погибшие своего экипажа (люди форпоста — в deadHere, но не наши); чужие — отдельной строкой по поселениям
+    const reest = Lre.total - base.L.total, dInc = (now.dead - base.dead) + (now.deadHere - base.deadHere) - (now.out - base.out);
+    const others = ['outpost', 'thaw'].map(p => [p, incs.filter(x => x.pop === p).reduce((a, x) => a + (x.dead || 0), 0)]).filter(x => x[1]);
+    const cats = LOSS_KEYS.filter(k => dk[k]).map(k => `${LOSS_NAME[k][ru ? 0 : 1]} — ${dk[k]}`).join(', ');
+    const watchLine = now.awake === now.crew ? (ru ? 'На ногах весь экипаж' : 'The whole crew is awake')
+      : (ru ? `На вахте — ${now.awake}${now.awake !== base.awake ? ` (было: ${base.awake === now.crew ? 'весь экипаж' : base.awake})` : ''}` : `On watch — ${now.awake}${now.awake !== base.awake ? ` (was: ${base.awake === now.crew ? 'the whole crew' : base.awake})` : ''}`);
+    // запасы: изменения — с причиной; без изменений — одной строкой
+    const res = resourceMoves(base, items, 'reserve', lang, s, incs), mat = resourceMoves(base, items, 'materials', lang, s, incs);
+    const why = (ms, f) => ms.slice(0, 2).map(m => `${f(m.d)}${m.why ? ` — ${m.why}` : ''}`).join('; ') + (ms.length > 2 ? (ru ? `; и ещё ${ms.length - 2}` : `; and ${ms.length - 2} more`) : '');
+    const resNow = `${pct(s.reserve, lang)}% (${kms0(s)} ${ru ? 'км/с' : 'km/s'})`, matNow = `${Math.round(s.materials)}%`;
+    const sgn = (d, k) => `${d > 0 ? '+' : '−'}${nf(Math.abs(d), k, lang)}`;
+    const g = s.shield && base.shield ? (now.shield.eroded - base.shield.eroded) * 1000 : 0;
+    const shieldNow = s.shield ? shieldGaugeV5(s, lang).replace(' · ', ', ') : '';
+    const shieldSame = !s.shield || (g < 0.005 && !hits.length && !burnt.length);
+    const gT = g >= 1000 ? `${nf(g / 1000, 2, lang)} ${ru ? 'кг/м²' : 'kg/m²'}` : `${nf(g, g < 10 ? 2 : 1, lang)} ${ru ? 'г/м²' : 'g/m²'}`;
+    // путь: скорость, задержка связи, смена фазы полёта, сводки Кольца
+    const AV = arriveView(s), beta = M.speedAt(y1, s.beta, AV, s.tMag), ly = M.distLy(y1, s.beta, AV, s.tMag, M.star(s.target).d);
+    const p0 = phaseAt(s, y0), p1 = phaseAt(s, y1), PH = ui[lang].tlPhase;
+    const lagT = ly * 12 < 1 ? (ru ? `${Math.max(1, Math.round(ly * 365.25))} сут.` : `${Math.max(1, Math.round(ly * 365.25))} days`)
+      : ly < 2 ? `${nf(ly * 12, 0, lang)} ${ru ? 'мес.' : 'months'}` : `${nf(ly, 1, lang)} ${ru ? 'г.' : 'years'}`;
+    const way = [p1 === 'home' ? endDot(ru ? `Корабль у цели; сигнал до Земли идёт ${lagT}` : `The ship is at the target; a signal takes ${lagT} to reach Earth`)
+      : endDot(ru ? `Скорость — ${nf(beta, 3, 'ru')}c, сигнал до Земли идёт ${lagT}` : `Velocity — ${nf(beta, 3, 'en')}c, a signal takes ${lagT} to reach Earth`)];
+    if (p0 !== p1) way.unshift(ru ? `Фаза полёта: ${PH[p0]} → ${PH[p1]}.` : `Flight phase: ${PH[p0]} → ${PH[p1]}.`);
+    const bul = items.filter(i => i.beat.kind === 'bulletin').length;
+    if (bul) way.push(ru ? (bul === 1 ? 'Принята сводка Кольца.' : `Приняты сводки Кольца: ${bul}.`) : (bul === 1 ? 'A Ring bulletin was received.' : `Ring bulletins received: ${bul}.`));
+    // ведомость: потери с отлёта по категориям модели, все изменения запасов, сводки износа щита
+    const Lall = now.L, det = [ru ? `С отлёта, по расчёту модели: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][0]} — ${Lall[k]}`).join(', ')}; в происшествиях — ${now.dead + now.deadHere - now.out}. Отложенный риск — рак после пробуждения у цели: около ${ppl(Lall.later)}.`
+      : `Since departure, by the model: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][1]} — ${Lall[k]}`).join(', ')}; in incidents — ${now.dead + now.deadHere - now.out}. Deferred risk — cancers after waking at the target: about ${Lall.later}.`];
+    if (res.length > 2) det.push((ru ? 'Резерв манёвров: ' : 'Manoeuvre reserve: ') + res.map(m => `${sgn(m.d, 1)} ${ru ? 'п.п.' : 'pp'} — ${m.why}`).join('; ') + '.');
+    if (mat.length > 2) det.push((ru ? 'Материалы: ' : 'Materials: ') + mat.map(m => `${sgn(m.d, 0)}% — ${m.why}`).join('; ') + '.');
+    for (const f of folded) det.push(txt(f.text, lang));
+    const title = ev ? (ru ? `Донесение вахты · ${spanText(y0, y1, 'ru')}` : `Watch report · ${spanText(y0, y1, 'en')} · interrupted`)
+      : (ru ? `Отчёт вахты · ${spanText(y0, y1, 'ru')}` : `Watch report · ${spanText(y0, y1, 'en')}`);
+    // спокойный период — две строки: без событий, потерь, работ и перемен
+    const data = { y0, y1, losses: dl, reest, crewDead: dInc, alive: now.alive, interrupted: !!ev };   // числа периода — для перемотки и проверок
+    const calm = !ev && !events.length && !envs.length && !dl && !dInc && !others.length && !reest && !res.length && !mat.length && shieldSame && now.awake === base.awake && now.highPower === base.highPower;
+    if (calm) return { title, data, details: det.join('\n\n'), text: [ru ? `Передаём корабль без происшествий. ${watchLine}, живы — ${now.alive}; запасы${s.shield ? ' и щит' : ''} без изменений.`
+      : `We hand over the ship with no incidents. ${watchLine}, alive — ${now.alive}; stores${s.shield ? ' and shield' : ''} unchanged.`, way.join(' ')].join('\n\n') };
+    if (!events.length && !ev) head.unshift(ru ? 'Передаём корабль без происшествий.' : 'We hand over the ship with no incidents.');
+    const people = [`${watchLine}.`, dl ? (ru ? `Расчётные потери за период — ${ppl(dl)}: ${cats}.` : `Estimated losses over the period — ${dl}: ${cats}.`)
+      : (ru ? 'Расчётных потерь за период нет.' : 'No estimated losses over the period.')];
+    if (dInc) people.push(ru ? `В происшествиях погибли ${ppl(dInc)} экипажа.` : `${dInc} of the crew died in incidents.`);
+    if (others.length) people.push(ru ? `Погибли ${others.map(([p, n]) => `${ppl(n)}${POP_WHO[p][0]}`).join(' и ')}.` : `${others.map(([p, n]) => `${n}${POP_WHO[p][1]}`).join(' and ')} died.`);
+    if (reest) people.push(ru ? `Оценка потерь за прошлые годы пересчитана под новый штат вахты: ${reest > 0 ? '+' : '−'}${Math.abs(reest)}.`
+      : `The estimate for past years is recalculated for the new watch roster: ${reest > 0 ? '+' : '−'}${Math.abs(reest)}.`);
+    people.push(ru ? `Живы — ${now.alive}.` : `Alive — ${now.alive}.`);
+    const sys = [!res.length && !mat.length
+      ? (ru ? `Резерв манёвров — ${resNow}, материалы — ${matNow}: без изменений.` : `Manoeuvre reserve — ${resNow}, materials — ${matNow}: unchanged.`)
+      : [res.length ? (ru ? `Резерв манёвров — ${resNow}: ${why(res, d => `${sgn(d, 1)} п.п.`)}.` : `Manoeuvre reserve — ${resNow}: ${why(res, d => `${sgn(d, 1)} pp`)}.`)
+          : (ru ? `Резерв манёвров — ${resNow}.` : `Manoeuvre reserve — ${resNow}.`),
+        mat.length ? (ru ? `Материалы — ${matNow}: ${why(mat, d => `${sgn(d, 0)}%`)}.` : `Materials — ${matNow}: ${why(mat, d => `${sgn(d, 0)}%`)}.`)
+          : (ru ? `Материалы — ${matNow}.` : `Materials — ${matNow}.`)].join(' ')];
+    if (now.highPower !== base.highPower) sys.push(now.highPower ? (ru ? 'Контуру вернули резерв мощности.' : 'The loop has its high-power reserve back.')
+      : (ru ? 'Контур остался без резерва мощности.' : 'The loop is left without its high-power reserve.'));
+    if (s.shield) sys.push(shieldSame ? (ru ? `Щит без изменений: ${shieldNow}.` : `Shield unchanged: ${shieldNow}.`)
+      : (ru ? `Щит: за период пыль сняла ${gT} проекции; ${shieldNow}.` : `Shield: the dust removed ${gT} of projected area over the period; ${shieldNow}.`));
+    return { title, data, text: [head.join(' '), people.join(' '), sys.join(' '), way.join(' ')].join('\n\n'), details: det.join('\n\n') };
+  }
+  function simReport(s, base, log, mark, folded, ev) {
+    const now = observeShip(s, log);
+    if (!base || !now || s.lostShip || !(s.year > base.year)) return null;
+    const items = log.slice(mark), ru = watchReport(s, base, items, folded, ev, 'ru', now), en = watchReport(s, base, items, folded, ev, 'en', now);
+    return { id: `sim.watch.${nf(s.year, 4, 'en')}`, kind: 'watch', title: { ru: ru.title, en: en.title }, text: { ru: ru.text, en: en.text },
+      details: { ru: ru.details, en: en.details }, parts: folded, data: ru.data };
+  }
+  const sim = { active: v5, advance: simAdvance, notes: simNotes, decision: (s, ev) => serviceDecision(s, ev), observe: observeShip, report: simReport };
   // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
     const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
@@ -5964,7 +6113,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
       bulletin: 'Кольцо', instrument: 'Приборная запись', document: 'Документ', decision: 'Решение',
       known: 'Что известно заранее', vote: 'Решить', skip: 'Промотать',
       restart: 'Новый мир', back: 'Вернуться', newWorld: 'Новый мир', nextRun: 'Новая экспедиция', reliefSummary: 'Итог спасения',
-      filters: { all: 'Все', transcript: 'Стенограммы', note: 'Личные записи', instrument: 'Приборы', bulletin: 'Сводки Кольца' },
+      filters: { all: 'Все', transcript: 'Стенограммы', note: 'Личные записи', watch: 'Вахта', instrument: 'Приборы', bulletin: 'Сводки Кольца' }, ved: 'Ведомость',
       summary: 'Итог пути', decided: 'Решено', prologue: 'Пролог', phaseDrift: 'Дрейф', phaseAccel: 'Разгон',
       lang: 'EN', langLabel: 'Switch to English'
     },
@@ -5974,7 +6123,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
       bulletin: 'Ring', instrument: 'Instrument record', document: 'Document', decision: 'Decision',
       known: 'Known in advance', vote: 'Decide', skip: 'Skip ahead',
       restart: 'New world', back: 'Back', newWorld: 'New world', nextRun: 'A new expedition', reliefSummary: 'The rescue',
-      filters: { all: 'All', transcript: 'Transcripts', note: 'Personal logs', instrument: 'Instruments', bulletin: 'Ring bulletins' },
+      filters: { all: 'All', transcript: 'Transcripts', note: 'Personal logs', watch: 'Watch', instrument: 'Instruments', bulletin: 'Ring bulletins' }, ved: 'Full sheet',
       summary: 'The road so far', decided: 'Decided', prologue: 'Prologue', phaseDrift: 'Drift', phaseAccel: 'Acceleration',
       lang: 'RU', langLabel: 'Переключить на русский'
     }
@@ -6504,7 +6653,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

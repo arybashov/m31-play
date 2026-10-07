@@ -162,6 +162,12 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .k-bulletin{border-left-color:var(--blue)}.k-bulletin>header{color:var(--blue)}
 .k-instrument,.k-document{border-left-color:#4b6470}.k-instrument p,.k-document p{font:13px/1.7 ui-monospace,"Cascadia Mono",Consolas,monospace;color:#d6dccf}
 .k-document{background:rgba(25,40,49,.5);padding:12px 14px;border-radius:0 10px 10px 0}
+/* отчёт вахты: проза вахты; ведомость (сводки приборов) — моноширинным, раскрывается по клику */
+.k-watch{border-left-color:#7f9f86}.k-watch>header{color:#a7c4a4}
+.ved{margin:0 0 .75em}
+.ved>summary{cursor:pointer;width:max-content;font:11px/1.6 system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.ved>summary:hover,.ved>summary:focus-visible{color:var(--text)}
+.ved p{font:12px/1.65 ui-monospace,"Cascadia Mono",Consolas,monospace;color:#c9d0c4;margin:.6em 0 0}
 .k-end{border-left-color:var(--mint)}.k-end>header{color:var(--mint);font-size:13px}
 .decision-done{border-left-color:var(--mint)}.decision-done>header{color:var(--mint)}
 .decision-done h3{font:500 15px/1.4 system-ui,sans-serif;margin:0 0 4px}
@@ -221,7 +227,8 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 #log[data-filter=transcript] .item:not(:has([data-kind=transcript])),
 #log[data-filter=note] .item:not(:has([data-kind=note])),
 #log[data-filter=instrument] .item:not(:has([data-kind=instrument],[data-kind=document])),
-#log[data-filter=bulletin] .item:not(:has([data-kind=bulletin])){display:none}
+#log[data-filter=bulletin] .item:not(:has([data-kind=bulletin])),
+#log[data-filter=watch] .item:not(:has([data-kind=watch])){display:none}
 
 @media (max-width:900px){
   .app{grid-template-columns:1fr;grid-template-rows:46vh auto;height:auto;min-height:100vh}
