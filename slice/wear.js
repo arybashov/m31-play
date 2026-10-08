@@ -29,7 +29,7 @@
     pump: { eta: 180, k: 3, l0: 0.0005, live: true },
     cooler: { eta: 600, k: 3, l0: 0.0001, live: true },
     control: { eta: 650, k: 3, l0: 0.0001, live: true },
-    collector: { eta: 500, k: 4, l0: 0.0001, live: false },
+    collector: { eta: 500, k: 4, l0: 0.0001, live: true },              // шаг 3e: отказывают, ремонт — вставка (COLL)
     radiator: { eta: 350, k: 3, l0: 0.0001, live: false },
     power: { eta: 600, k: 3, l0: 0.0001, live: false },
     bus: { eta: 600, k: 3, l0: 0.0001, live: false },
@@ -40,7 +40,16 @@
   };
   // ремонт привода — ручным набором (станок не чинит сам себя): первый и второй; третий отказ — машин больше нет
   const DRIVE_FIX = [{ materials: 2, work: 28, hold: 7 }, { materials: 3, work: 56, hold: 14 }];
-  const NG = 20, SEATS = 25, NOM = 5, MAX = 7;
+  const NG = 20, SEATS = 25, NOM = 5, MAX = 7;                         // NOM — групп на контуре по раскладке; MAX — прежний предел (справка)
+  // бюджет охлаждения (шаг 3d, «Ревью Codex — цепочка решений», путь, шаг 1): единица — тепло активной капсульной группы;
+  // обязательное ядро — 6 единиц, жилые кольца — одна на 24 бодрствующих. Нагрузку ядра и колец работающие контуры делят
+  // поровну; контур — номинал 7 единиц (старение 1×), предел 10. Групп на контуре — столько, сколько помещается рядом с его
+  // долей ядра; лишние — без охлаждения (по номеру группы). Последний контур не бесплатен: ядро и кольца на нём всегда
+  const PWR = { nom: 7, max: 10, core: 6, ring: 24 };
+  // основание контура (коллектор, шаг 3e; план B5): ремонт — вставка: клапанный комплект, материалы по оснащению, 28 чел.-сут
+  // и 48 ч опрессовки; не больше двух, после второй предел контура −1 единица; возраст основания сохраняется
+  const COLL = { inserts: 2, materials: { repair: 2, tools: 1.5, printQC: 1.2 }, work: 28, hold: 2 };
+  const limitOf = (w, L) => PWR.max - ((w.nodes[L + '.coll'].inserts || 0) >= COLL.inserts ? 1 : 0);
   const LOOPS = ['L1', 'L2', 'L3', 'L4'], BUSES = ['BUS1', 'BUS2'], BLOCKS = ['PB1', 'PB2'], RADS = ['R1', 'R2', 'R3', 'R4'];
   const GIDS = Array.from({ length: NG }, (_, i) => 'G' + String(i + 1).padStart(2, '0'));
   const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1 };
@@ -58,6 +67,9 @@
   const YIELD = { repair: 0.15, tools: 0.25, printQC: 0.35 };            // выход годного при переработке лома
   const BATCH = 4, BATCH_DAYS = 90;                                      // партия переработки: до 4 пунктов, 90 суток одним специалистом
   const BUF = { std: 72, safe: 168 }, RECHARGE = 24;                     // часы аварийного запаса группы; полное восстановление
+  // обязательные потребители ядра (автоматика, жилой объём вахты, энергетика) отводят тепло через любой работающий контур;
+  // все контуры стоят — тепловой запас минимального режима 96 ч (план Codex, шаг 3d), затем рейс окончен
+  const CORE_BUF = 96;
   const CAPS_RATE = { std: 2e-4, safe: 1e-4 };                          // одиночные отказы капсул на занятое капсуло-лето
   // Фон пути (коэффициенты прежней модели M.losses, calc_life.py §5, §10) — по фактической экспозиции людей:
   // смерть при пробуждении — на живого в год (циклы ротации; у надёжных капсул вдвое реже), несчастные случаи и рак —
@@ -91,10 +103,13 @@
     for (const cat of BG) w.bg[cat] = { x0: 0, t0: t, r: 0, n: 0 };
     w.bg.later = { x0: 0, t0: t, r: 0, h: [] };                          // поздние раки — оценка; h — опоры (t, x, r) для истории
     for (const g of GIDS) { const cap = bufCap(w); w.buf[g] = { heat: { v: cap, t0: t, d: 0 }, power: { v: cap, t0: t, d: 0 } }; w.med[g] = { x0: 0, t0: t, n: 0, k: 0 }; }
-    partsOf(w);
+    partsOf(w); coreOf(w, t);
     setAwake(w, o.watch || 0, t);
     return w;
   }
+  // тепловой запас ядра (и у модели, созданной до шага 3d)
+  const coreOf = (w, t) => w.core || (w.core = { v: CORE_BUF, t0: t != null ? t : w.t, d: 0 });
+  const coreAt = (w, t) => { const c = coreOf(w); return Math.max(0, Math.min(CORE_BUF, c.v + c.d * (t - c.t0) / YH)); };
   // реестр экземпляров (и у модели, созданной до шага 3b): заводские агрегаты на местах и в запасе, склад лома
   function partsOf(w) {
     if (w.parts) return w.parts;
@@ -159,19 +174,34 @@
   const activeMap = (w, c) => { c = c || census(w); const a = {}; for (const g of GIDS) a[g] = c[g].sleep.length > 0; return a; };
   // нагрузка контура — число активных групп на нём (одна группа — единица тепловой нагрузки)
   function loopLoad(w, L, act) { act = act || activeMap(w); let n = 0; for (const g of GIDS) if (w.link.group[g] === L && act[g]) n++; return n; }
-  // дефицит группы: тепловой — нет охлаждения (контур, холодильник или управление), энергетический — шина без питания
-  function deficit(w, g) {
-    const L = w.link.group[g], power = busPowered(w, w.link.loop[L]);
-    const heat = !(ok(w, g + '.cool') && ok(w, g + '.ctrl') && L && loopRuns(w, L));
+  // бюджет: постоянная нагрузка (ядро + кольца), доля на работающий контур, групп на контур (gcap), номер группы на её контуре
+  function budget(w, act) {
+    act = act || activeMap(w);
+    let awake = 0; for (let i = 0; i < w.crew; i++) if (w.ps[i] === 'A') awake++;
+    const fixed = PWR.core + awake / PWR.ring, run = LOOPS.filter(L => loopRuns(w, L)), share = run.length ? fixed / run.length : Infinity;
+    const gcap = run.length ? Math.max(0, Math.floor(PWR.max - share + 1e-9)) : 0, rank = {}, gcapL = {};
+    for (const L of LOOPS) { let k = 0; for (const g of GIDS) if (w.link.group[g] === L && act[g]) rank[g] = k++;
+      gcapL[L] = run.length ? Math.max(0, Math.floor(limitOf(w, L) - share + 1e-9)) : 0; }   // после двух вставок — на единицу меньше
+    const capSum = run.reduce((a, L) => a + limitOf(w, L), 0);
+    return { fixed, share, gcap, gcapL, capSum, run: run.length, rank, awake };
+  }
+  // дефицит группы: тепловой — нет охлаждения (контур, холодильник или управление, или группа сверх вместимости контура рядом
+  // с долей ядра и колец), энергетический — шина без питания
+  function deficit(w, g, B) {
+    const L = w.link.group[g], power = busPowered(w, w.link.loop[L]); B = B || budget(w);
+    const over = B.rank[g] != null && L && B.rank[g] >= B.gcapL[L];
+    const heat = !(ok(w, g + '.cool') && ok(w, g + '.ctrl') && L && loopRuns(w, L)) || over;
     return { heat: heat ? 1 : 0, power: power ? 0 : 1 };
   }
+  // тепловая нагрузка контура в единицах: охлаждаемые группы + доля ядра и колец
+  const loopPower = (w, L, B, act) => loopRuns(w, L) ? Math.min(loopLoad(w, L, act), B.gcapL[L]) + B.share : 0;
   // темп старения узла при текущей схеме
   function rateOf(w, id, act, load) {
     const n = w.nodes[id];
     if (!n.ok) return 0;
     if (n.fam === 'pump' || n.fam === 'collector' || n.fam === 'radiator') {
       const L = n.fam === 'radiator' ? LOOPS.find(x => w.link.rad[x] === id) : id.split('.')[0];
-      return loopRuns(w, L) ? Math.max(0.2, Math.pow(load[L] / NOM, 3)) : 0.2;
+      return loopRuns(w, L) ? Math.max(0.2, Math.pow(load[L] / PWR.nom, 3)) : 0.2;   // load — единицы бюджета (группы + доля ядра)
     }
     if (n.fam === 'cooler' || n.fam === 'control') { const g = id.split('.')[0]; return act[g] ? 1 : 0.2; }
     if (n.fam === 'shopDrive') return w.shop && w.shop.busy ? 1 : 0;   // привод — только в работе
@@ -186,15 +216,15 @@
   const bufAt = (w, b, t) => Math.max(0, Math.min(bufCap(w), b.v + b.d * (t - b.t0) / YH));
   // пересчёт после любого изменения схемы, людей или исправности: новые темпы старения и буферов — от даты t
   function recompute(w, t) {
-    const c = census(w), act = activeMap(w, c), load = {};
-    for (const L of LOOPS) load[L] = loopLoad(w, L, act);
+    const c = census(w), act = activeMap(w, c), load = {}, B = budget(w, act);
+    for (const L of LOOPS) load[L] = loopPower(w, L, B, act);
     for (const id of Object.keys(w.nodes)) {
       const n = w.nodes[id], r = rateOf(w, id, act, load);
       if (r !== n.r && n.ok) { const a = ageAt(n, t), h = hazardAt(n, t); n.a0 = a; n.h0 = h; n.t0 = t; n.r = r; }   // оба — от прежней опоры
     }
     const cap = bufCap(w);
     for (const g of GIDS) {
-      const D = deficit(w, g), on = act[g];
+      const D = deficit(w, g, B), on = act[g];
       for (const k of ['heat', 'power']) {
         const b = w.buf[g][k], v = bufAt(w, b, t);
         const d = on && D[k] ? -D[k] : v < cap ? cap / RECHARGE : 0;      // дефицит — расход, иначе восстановление за сутки
@@ -204,6 +234,11 @@
       const m = w.med[g], n = c[g].sleep.length;
       if (n !== m.n) { m.x0 = m.x0 + m.n * (t - m.t0); m.t0 = t; m.n = n; }
     }
+    // ядро: нет ни одного работающего контура — тепловой запас расходуется (час за час), есть — восстанавливается за сутки
+    { const cap = B.capSum, unc = Math.max(0, B.fixed - cap), cooled = GIDS.reduce((a, g) => a + (act[g] && B.rank[g] < B.gcapL[w.link.group[g]] && loopRuns(w, w.link.group[g]) ? 1 : 0), 0);
+      const free = cap - B.fixed - cooled, c = coreOf(w, t), v = coreAt(w, t);
+      const d = unc > 0 ? -unc / B.fixed : free > 1e-9 && v < CORE_BUF ? CORE_BUF / RECHARGE * Math.min(1, free) : 0;   // заряд — только от свободного теплоотвода
+      if (d !== c.d || Math.abs(v - c.v) > 1e-9) { c.v = v; c.t0 = t; c.d = d; } }
     // фон пути: темп — по живым, бодрствующим и спящим сейчас; накопленное до t не пересчитывается
     let alive = 0, awake = 0, sleep = 0;
     for (let i = 0; i < w.crew; i++) { const ch = w.ps[i]; if (ch !== 'D') { alive++; if (ch === 'A') awake++; else sleep++; } }
@@ -277,6 +312,7 @@
     for (const g of GIDS) take(medAt(w, g, t0, t1, rnd), 'capsule', g, 2);
     for (const cat of BG) take(bgAt(w, cat, t0, t1), 'med', cat, 3);
     for (const g of GIDS) for (const k of ['power', 'heat']) take(bufferOut(w, g, k, t0, t1, act), 'buffer', `${g}.${k}`, 4);
+    { const c = coreOf(w); if (c.d < 0) { const at = c.t0 + c.v / -c.d * YH; if (at >= t0 - 1e-12 && at <= t1) take(Math.max(t0, at), 'core', 'heat', 5); } }   // ядро без отвода тепла
     return best;
   }
 
@@ -344,7 +380,7 @@
   // считают по фактическим спящим (activeMap)
   const capMap = (w, c, except) => { const a = activeMap(w, c); for (const k of heldSeats(w, except)) a[groupOfSeat(k)] = true; return a; };
   // свободная мощность контура: предел 7 минус занятые группы (контур должен работать)
-  function loopRoom(w, L, except) { return loopRuns(w, L) ? MAX - loopLoad(w, L, capMap(w, null, except)) : 0; }
+  function loopRoom(w, L, except) { return loopRuns(w, L) ? budget(w).gcapL[L] - loopLoad(w, L, capMap(w, null, except)) : 0; }
   // раскладка групп остановленного контура по работающим: по одной туда, где свободнее (при равенстве — по номеру).
   // Мест не хватает — переводится сколько помещается (по номерам групп), остальные — в left
   function reroutePlan(w, from) {
@@ -355,6 +391,9 @@
       if (!L) { left.push(g); continue; }
       plan[g] = L; room[L]--;
     }
+    // доля ядра выросла (контуров меньше) — на других контурах группы сверх вместимости тоже без охлаждения
+    const B = budget(w, activeMap(w));
+    for (const L of LOOPS) if (L !== from && loopRuns(w, L)) for (const g of GIDS) if (w.link.group[g] === L && B.rank[g] != null && B.rank[g] >= B.gcapL[L]) left.push(g);
     return { plan, left };
   }
   // места, обещанные начатым перекладкам (кроме работы except): другим не выдаются, пока работа не кончилась
@@ -364,10 +403,10 @@
   // после заселения станет нагрузкой своего контура: её места — только если у контура есть мощность (предел 7); пустая
   // группа, куда уже обещаны люди, нагрузку уже заняла
   function freeSeats(w, from, except) {
-    const c = census(w), act = capMap(w, c, except), room = {}, out = [], held = heldSeats(w, except);
+    const c = census(w), act = capMap(w, c, except), room = {}, out = [], held = heldSeats(w, except), B = budget(w);
     for (const L of LOOPS) room[L] = loopRoom(w, L, except);
     for (const g of GIDS) {
-      if (g === from) continue; const D = deficit(w, g); if (D.heat || D.power) continue;
+      if (g === from) continue; const D = deficit(w, g, B); if (D.heat || D.power) continue;
       const free = c[g].free.filter(k => !held.has(k));
       if (!act[g]) { if (!free.length) continue; const L = w.link.group[g]; if (!(room[L] > 0)) continue; room[L]--; }   // мощность — только под группу, где есть места
       out.push(...free);
@@ -380,7 +419,7 @@
     let moved = 0;
     for (const g of GIDS) {
       const h = homeLoop(g); if (w.link.group[g] === h || !loopRuns(w, h)) continue;
-      const act = capMap(w); if (act[g] && loopLoad(w, h, act) >= MAX) continue;
+      const act = capMap(w); if (act[g] && loopLoad(w, h, act) >= budget(w).gcapL[h]) continue;
       w.link.group[g] = h; moved++;
     }
     if (moved) recompute(w, t);
@@ -411,6 +450,13 @@
     if (track) { n.sn = p.sn; if (p.eta) n.eta = p.eta; else delete n.eta; }
     w.log.push({ at: t, kind: 'install', id, gen: n.gen, sn: track ? n.sn : undefined }); recompute(w, t);
     return old ? old.sn : null;
+  }
+  // вставка в основание контура: исправно, поколение +1 (новый порог), возраст — сохранённый на отказе (не молодеет)
+  const canInsert = (w, L) => (w.nodes[L + '.coll'].inserts || 0) < COLL.inserts;
+  function insertColl(w, L, t) {
+    const n = w.nodes[L + '.coll'], a = n.ok ? ageAt(n, t) : n.a0;
+    Object.assign(n, { ok: true, gen: n.gen + 1, t0: t, a0: a, h0: 0, r: 1, inserts: (n.inserts || 0) + 1 }); delete n.failedAt;
+    w.log.push({ at: t, kind: 'insert', id: n.id, inserts: n.inserts }); recompute(w, t);
   }
   // запас: зарезервировать готовый агрегат под работу (сначала заводские, затем по номеру) — счётчик запаса уменьшается сразу
   function reservePart(w, fam) {
@@ -451,16 +497,19 @@
   // ---------------------------------------------------------------- наблюдение (то, что видят приборы и ведомость)
   function observe(w, t) {
     t = t != null ? t : w.t;
-    const loops = LOOPS.map(L => ({ id: L, runs: loopRuns(w, L), load: loopLoad(w, L), max: MAX, nom: NOM, bus: w.link.loop[L],
+    const B = budget(w);
+    const loops = LOOPS.map(L => ({ id: L, runs: loopRuns(w, L), load: loopLoad(w, L), max: B.gcapL[L], nom: NOM, pwr: +loopPower(w, L, B).toFixed(2), pmax: limitOf(w, L), bus: w.link.loop[L],
+      coll: w.nodes[L + '.coll'].ok, inserts: w.nodes[L + '.coll'].inserts || 0,
       pumpAge: +ageAt(w.nodes[L + '.pump'], t).toFixed(2), collAge: +ageAt(w.nodes[L + '.coll'], t).toFixed(2), pumpGen: w.nodes[L + '.pump'].gen }));
-    const c = census(w), groups = GIDS.map(g => { const p = c[g], D = deficit(w, g);
+    const c = census(w), groups = GIDS.map(g => { const p = c[g], D = deficit(w, g, B);
       return { id: g, loop: w.link.group[g], sleep: p.sleep.length, awake: p.awake.length, free: p.free.length, reserved: p.reserved, broken: p.broken,
         cooler: ok(w, g + '.cool'), control: ok(w, g + '.ctrl'), heat: D.heat, power: D.power,
         heatH: +bufAt(w, w.buf[g].heat, t).toFixed(1), powerH: +bufAt(w, w.buf[g].power, t).toFixed(1) }; });
     const P = Object.values(partsOf(w)), cnt = (fam, st) => P.filter(p => p.fam === fam && p.state === st).length;
     const shop = { removed: { pump: cnt('pump', 'removed'), cooler: cnt('cooler', 'removed') }, rebuilding: { pump: cnt('pump', 'rebuilding'), cooler: cnt('cooler', 'rebuilding') },
       rebuilt: P.filter(p => p.origin === 'rebuilt').length, scrap: +w.scrap.v.toFixed(2) };
-    return { t, loops, groups, inv: Object.assign({}, w.inv), shop, independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
+    const core = { cooled: B.capSum >= B.fixed - 1e-9, heatH: +coreAt(w, t).toFixed(1), cap: CORE_BUF, fixed: +B.fixed.toFixed(2), share: B.run ? +B.share.toFixed(2) : null };   // охлаждено — постоянная нагрузка покрыта
+    return { t, loops, groups, inv: Object.assign({}, w.inv), shop, core, independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
       alive: w.ps.split('').filter(c => c !== 'D').length, asleep: w.ps.split('').filter(c => c === 'S').length, dead: w.ps.split('').filter(c => c === 'D').length };
   }
   // публичная проекция: пороги не хранятся (считаются по ключам), накопленная интенсивность — скрытая величина
@@ -473,7 +522,9 @@
   const take = w => { const out = w.notes; w.notes = []; return out; };
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
-    TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor,
+    TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor, CORE_BUF, coreAt, PWR, budget,
+    COLL, limitOf, canInsert, insertColl,
+    overAge: w => { const B = budget(w); return Math.max(0, ...LOOPS.filter(L => loopRuns(w, L)).map(L => Math.pow(loopPower(w, L, B) / PWR.nom, 3))); },
     partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,

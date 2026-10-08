@@ -355,7 +355,12 @@
     next.classList.add('on'); prev.classList.remove('on');
   }
 
+  // раскрытие списка приборов — удобство зрителя (в браузере; без хранилища — свёрнуто)
+  let hudOpen = (() => { try { return localStorage.getItem('m31.hudOpen') === '1'; } catch (e) { return false; } })();
+  const HUD_TXT = { ru: { ship: 'Корабль', more: 'Показать все приборы', less: 'Свернуть приборы' }, en: { ship: 'Ship', more: 'Show all instruments', less: 'Hide the instruments' } };
+  let hudLast = null;                                                     // последние приборы — перерисовать после раскрытия
   function hudHtml(result, beat, y) {
+    hudLast = [result, beat, y];
     const u = C.ui[lang];
     const ids = new Set(result.log.map(i => i.beat.id));
     const sc = C.scenes[beat.scene];
@@ -369,10 +374,15 @@
     }
     const gs = relief ? [] : C.gauges(result.state, lang, ids);
     const canInspect = shieldOf(result.state);
-    const gHtml = gs.length ? `<div class="gauges"><span class="gt">${esc(u.gaugesTitle)}</span>${gs.map(g => g.id === 'shield' && canInspect
+    // состояние корабля одной строкой (реестр интерфейса, п. 23); список приборов — по раскрытию, кому нужно
+    const h = relief || !ids.has('a1.depart') ? null : C.shipHealth(result.state, lang), HL = HUD_TXT[lang];
+    const hHtml = h ? `<button type="button" class="health lv${h.level}" data-act="hud-more" aria-expanded="${hudOpen}" title="${esc(hudOpen ? HL.less : HL.more)}">${esc(HL.ship)}`
+      + `<span class="hbar" role="img" aria-label="${esc(`${HL.ship}: ${Math.round(h.value * 100)}%`)}"><span style="width:${(h.value * 100).toFixed(1)}%"></span></span>`
+      + `<b>${esc(h.label)}</b><s aria-hidden="true">${hudOpen ? '▴' : '▾'}</s>${h.reason ? `<i>${esc(h.reason)}</i>` : ''}</button>` : '';
+    const gHtml = gs.length && (!h || hudOpen) ? `<div class="gauges"><span class="gt">${esc(u.gaugesTitle)}</span>${gs.map(g => g.id === 'shield' && canInspect
       ? `<button type="button" class="gbtn" data-act="inspect" aria-pressed="${!!insp}" title="${esc(SI[lang].open)}">${esc(g.label)} <b>${esc(g.value)}</b></button>`
       : `<span>${esc(g.label)} <b>${esc(g.value)}</b></span>`).join('')}</div>` : '';
-    return lines.map(l => `<span>${l}</span>`).join('') + gHtml;
+    return lines.map(l => `<span>${l}</span>`).join('') + hHtml + gHtml;
   }
   // таймлайн — полоса внизу экрана во всю ширину; до отлёта и у спасателей его нет
   function setTimeline(result, y) {
@@ -1056,6 +1066,9 @@
     const act = btn.dataset.act;
     if (yearAnim && (act === 'inspect' || act === 'inspect-close')) return;          // осмотр — после показа перемотки
     if (act === 'inspect') { if (insp) closeInspect(); else openInspect(); return; }
+    if (act === 'hud-more') { hudOpen = !hudOpen; try { localStorage.setItem('m31.hudOpen', hudOpen ? '1' : '0'); } catch (err) { /* нет */ }
+      const kb = document.activeElement === btn;                       // клавиатура — фокус остаётся на кнопке после перерисовки
+      if (hudLast) setHtml('hud', hudHtml(...hudLast)); if (kb) { const nb = document.querySelector('#hud .health'); if (nb) nb.focus(); } return; }
     if (act === 'inspect-close') { closeInspect(); return; }
     if (act === 'ffEnd') { ffFast(); return; }
     if (act === 'go') { if (yearAnim) return; cur().push('go'); save(); render(true); }

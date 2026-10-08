@@ -67,11 +67,19 @@
     // переносит даты), а узел, ставший неприменимым, отменяется (CANCELLED). Иначе — остановка или null (цель достигнута)
     const CANCELLED = { cancelled: true };
     const dateOf = (v) => typeof v === 'function' ? v(state) : v;
+    // рейс окончен состоянием корабля (модель: terminalAt): дальше ни сцен, ни перемотки — финал с причиной
+    function terminal() {
+      const b = sim.endBeat(state);
+      report();
+      if (record) log.push({ beat: b, state: clone(state) });
+      return { end: true, beat: b, state: clone(state) };
+    }
     function advanceTo(resolve, beat) {
       for (let guard = 0; ; guard++) {
         if (guard > 1000) throw new Error(`Модель не дошла до цели ${beat.id}`);
         const ev = sim.advance(state, resolve(), beat);
         notes();
+        if (sim.terminal && sim.terminal(state)) return terminal();
         if (!ev) return null;
         report(ev);                                                    // донесение — до решения-вставки
         const st = decide(sim.decision(state, ev, beat));
