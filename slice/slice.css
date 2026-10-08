@@ -277,7 +277,7 @@ body.cine .cinebar{display:flex}
 .st-viable{--st:#6fd0c0}.st-establishing{--st:#8fc4ff}.st-declining{--st:#e0a858}.st-dead{--st:#9aa0a6}.st-trace{--st:#c3a4ff}
 .st-planet{--st:#c9d98a}.st-plain{--st:#4a5560}.colrow.st-planet .dot{border-radius:50%}
 /* выбор списком: строки вариантов, выделенный — рамкой; карточка выделенного — ниже */
-.optrows{margin:12px 0 10px}.optrow{cursor:pointer;font-size:14px;padding:7px 12px}.optrow .recmark{font-weight:500;color:var(--mint);font-size:12px}
+.optrows{margin:12px 0 10px}.optrow{cursor:pointer;font-size:14px;padding:7px 12px}
 .l3.colony{color:var(--st)}
 .colonies summary{cursor:pointer;list-style:revert;margin-top:6px}
 .colrows{display:flex;flex-direction:column;gap:3px;margin:4px 0 8px}
@@ -295,7 +295,7 @@ body.cine .cinebar{display:flex}
 .eqrow{margin:8px 0 4px}.eqpos{margin:0;font:12px/1.4 system-ui,sans-serif;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .eqpos i{font-style:normal;text-transform:none;letter-spacing:0}
 .eqrow .segs{margin:3px 0 2px}.eqopt i{font-style:normal;color:var(--muted);margin-left:4px;font-size:12px}
-.eqopt.rec{border-style:dashed}.eqopt:disabled{opacity:.38;cursor:not-allowed}
+.eqopt:disabled{opacity:.38;cursor:not-allowed}
 .eqfx{margin:0 0 4px;font:12.5px/1.4 system-ui,sans-serif;color:var(--muted)}
 /* анкета оснащения: досье, Совет, карточка варианта и цена замены */
 .dossier{margin:6px 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.03)}

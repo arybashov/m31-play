@@ -19,7 +19,7 @@
   const EVM = root.M31Events || require('./events.js');
   // Износ корабля (DOC «Долгий рейс — износ и смена курса», шаг 2): граф узлов, отказы, буферы групп — wear.js (браузер: M31Wear)
   const W = root.M31Wear || require('./wear.js');
-  const R = root.M31Requests || require('./requests.js');
+  const R = root.M31Requests || require('./requests.js'), RQ = R;   // RQ — там, где R занято локально (досье: признаки маршрута)
   const nm = (s, lang) => M.nameOf(s.target || M.DECLARED, lang);
   // «звезда Барнарда» склоняется: у звезды, к звезде; остальные названия каталога — нет
   const nmG = s => nm(s, 'ru').replace(/^звезда /, 'звезды '), nmD = s => nm(s, 'ru').replace(/^звезда /, 'звезде ');
@@ -188,7 +188,8 @@ Kassel signs for the Council last.`
   const URGENT_WORK = { contactColony: { ru: 'лоции Перевала стареют сейчас', en: "the Pass's charts are ageing now" },
     trace: { ru: 'след двадцать четвёртой стареет сейчас', en: "No. 24's trace is ageing now" },
     survey: { ru: 'Кольцо ждёт измерений', en: 'the Ring is waiting for the measurements' } };
-  const urgentOf = (s, lang) => { const q = s.requestId && R.get(s.requestId), w = q && URGENT_WORK[q.work]; return (w || URGENT[s.mission || 'contact'])[lang]; };
+  const urgentOf = (s, lang) => { const q = s.requestId && R.get(s.requestId), L = R.linkOf(q); if (L) return L.urgent[lang === 'ru' ? 0 : 1];
+    const w = q && URGENT_WORK[q.work]; return (w || URGENT[s.mission || 'contact'])[lang]; };
   const URGENT = { contact: { ru: 'тридцать вторая молчит сейчас', en: 'the Thirty-Second is silent now' },
     supply: { ru: 'передатчик форпоста слабеет сейчас', en: "the outpost's transmitter is fading now" },
     rescue: { ru: 'капсулы Оттепели стареют сейчас', en: "Thaw's capsules are ageing now" } };
@@ -203,7 +204,10 @@ Kassel signs for the Council last.`
     trace: { ru: 'найти след двадцать четвёртой, передать протокол и, если у цели можно жить, построить там дом', en: "find No. 24's trace, transmit the report and, if the target can be lived on, build a home there" },
     survey: { ru: 'обследовать систему и её планету, передать измерения и, если у цели можно жить, построить там дом', en: 'survey the system and its planet, transmit the measurements and, if the target can be lived on, build a home there' }
   };
-  const goalOf = (s, lang) => { const q = s.requestId && R.get(s.requestId); return q && GOAL_WORK[q.work] ? GOAL_WORK[q.work][lang] : goalBase(s, lang); };
+  const goalOf = (s, lang) => { const q = s.requestId && R.get(s.requestId), L = R.linkOf(q), k = lang === 'ru' ? 0 : 1;
+    if (L) return lang === 'ru' ? `установить прямую связь ${L.with[0]}, ${L.whatV[0]} и, если у цели можно жить, построить там дом`
+      : `establish a direct link ${L.with[1]}, ${L.whatV[1]} and, if the target can be lived on, build a home there`;
+    return q && GOAL_WORK[q.work] ? GOAL_WORK[q.work][lang] : goalBase(s, lang); };
   const goalBase = (s, lang) => ({
     contact: { ru: 'найти тридцать вторую, понять сигнал и, если у цели можно жить, построить там дом', en: 'find the Thirty-Second, understand the signal and, if the target can be lived on, build a home there' },
     supply: { ru: 'вернуть форпосту Ксилона Ир связь и капсулы и остаться с ним', en: 'give the Xylona Ir outpost back its link and its capsules, and stay with it' },
@@ -1386,7 +1390,7 @@ There are no longer years of waiting between question and answer.`;
     if (id === 'e.end' && s.arrive) {
       const road = lossesOf(s, s.arrive).total + s.dead, lines = [ru ? `Позади ${yrs(Yepi(s))}` : `${yrsEn(Yepi(s))} behind`];
       if (s.mission === 'rescue' && s.rescued) lines.push(ru ? `спасены ${ppl(s.rescued)} из Оттепели` : `${s.rescued} saved from Thaw`);
-      if (s.mission === 'contact' && s.task) { const n = TASK_NAME[s.task.work][ru ? 0 : 1];
+      if (s.mission === 'contact' && s.task) { const n = taskName(s.task, lang);
         lines.push(s.task.done ? (ru ? `задание выполнено: ${n}` : `task done: ${n}`) : (ru ? `задание не выполнено: ${n}` : `task not done: ${n}`)); }
       lines.push(ru ? `погибли в пути — ${road}, у цели — ${s.deadHere}` : `died on the road — ${road}, at the target — ${s.deadHere}`);
       return { kicker, lines };
@@ -2169,12 +2173,12 @@ All this time, "nominal" described the equipment's operating mode.`;
     if (R.red && !R.source) { hz.push(ru ? 'звёздных вспышек;' : 'stellar flares;'); unk.push(ru ? 'Время вспышек и сила потока частиц заранее неизвестны.' : 'Flare timing and particle flux are not known in advance.'); }
     if (R.colony) { const age = Math.round(-R.colony.observedAt); route.push(ru ? `По последнему отчёту у цели действует «${R.colony.ru}»; сведениям ${yrs(age)}.` : `The last report lists ${R.colony.en} as active at the target; the information is ${yrsEn(age)} old.`); unk.push(ru ? 'Работает ли её сеть сейчас и сможет ли она принять нас, не подтверждено.' : "Its grid's current operation and its ability to receive us are unconfirmed."); }
     else route.push(ru ? 'Подключение к работающей местной сети не подтверждено.' : 'Access to a working local grid is unconfirmed.');
-    const work = s.task && s.task.work, DO = {
-      contactColony: [`Дойти до ${nmG(s)}, установить прямую связь с Перевалом, сверить лоции и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, establish a direct link with the Pass, reconcile the navigation records and assess prospects for settlement. `],
+    const work = s.task && s.task.work, LK = s.task && RQ.linkByStar(s.task.star), DO = {
+      contactColony: LK ? [`Дойти до ${nmG(s)}, установить прямую связь ${LK.with[0]}, ${LK.whatV[0]} и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, establish a direct link ${LK.with[1]}, ${LK.whatV[1]} and assess prospects for settlement. `] : [`Дойти до ${nmG(s)}, установить прямую связь с Перевалом, сверить лоции и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, establish a direct link with the Pass, reconcile the navigation records and assess prospects for settlement. `],
       trace: [`Дойти до ${nmG(s)}, обследовать район последней орбиты двадцать четвёртой и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, survey the region of No. 24's last orbit and assess prospects for settlement. `],
       survey: [`Дойти до ${nmG(s)}, обследовать систему и её планету и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, survey the system and its planet and assess prospects for settlement. `]
     }[work] || [`Дойти до ${nmG(s)}, искать след тридцать второй и оценить возможность поселения. `, `Reach ${nm(s, 'en')}, seek traces of the Thirty-Second and assess prospects for settlement. `];
-    const UNK = { contactColony: ['Нынешнее состояние Перевала', "The Pass's present state"], trace: ['Сохранность корабля двадцать четвёртой и его журнала', "The state of No. 24's ship and its log"],
+    const UNK = { contactColony: LK ? [`Нынешнее состояние ${LK.gen[0]}`, `${LK.gen[1].replace(/^./, x => x.toUpperCase())} present state`] : ['Нынешнее состояние Перевала', "The Pass's present state"], trace: ['Сохранность корабля двадцать четвёртой и его журнала', "The state of No. 24's ship and its log"],
       survey: ['Поверхность планеты', "The planet's surface"] }[work] || ['Судьба тридцать второй', "The Thirty-Second's fate"];
     return [[H[0], DO[ru ? 0 : 1] + route.join(' ')],
       [H[1], ru ? `Отказов капсул в долгом пути; ${hz.join(' ')} нехватки энергии после высадки.` : `Capsule failures during the long voyage; ${hz.join(' ')} an energy shortage after landing.`],
@@ -2545,7 +2549,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
         + (x.reportAt == null ? '' : x.reportAt <= x.endedAt ? (ru ? ` Отчёт получен на Земле около года ${x.reportAt}.` : ` The report was received on Earth around year ${x.reportAt}.`)
           : x.outcome === 'lost' ? (ru ? ` Последняя передача дойдёт до Земли около года ${x.reportAt}.` : ` The last transmission will reach Earth around year ${x.reportAt}.`)
           : (ru ? ` Отчёт дойдёт до Земли около года ${x.reportAt}.` : ` The report will reach Earth around year ${x.reportAt}.`)));
-      if (x.task && TASK_NAME[x.task.work]) { const n = TASK_NAME[x.task.work][ru ? 0 : 1], at = x.task.reportEarthAt;
+      if (x.task && TASK_NAME[x.task.work]) { const n = taskName(x.task, lang), at = x.task.reportEarthAt;
         out.push(x.task.done ? (ru ? `Задание — ${n}: выполнено${at != null ? `; отчёт дойдёт до Земли около года ${at}` : ''}.` : `The task — ${n}: done${at != null ? `; the report will reach Earth around year ${at}` : ''}.`)
           : (ru ? `Задание — ${n}: не выполнено.` : `The task — ${n}: not done.`)); }
       if (f && x.mission === 'supply' && (f.capsLost || f.failed)) out.push(ru ? `Ксилона Ир: ${f.failed ? 'снабжение сорвано — постоянного обеспечения нет' : 'капсульная секция потеряна при повторном включении'}.` : `Xylona Ir: ${f.failed ? 'the supply mission failed — no permanent support' : 'the capsule section was lost on restart'}.`);
@@ -2738,6 +2742,9 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   }
   const TASK_NAME = { search32: ['поиск тридцать второй', 'the search for the Thirty-Second'], contactColony: ['связь с Перевалом', 'the link with the Pass'],
     trace: ['след двадцать четвёртой', "No. 24's trace"], survey: ['обследование системы', 'the system survey'] };
+  // «связь с Перевалом», «связь с Садом»… — по колонии у звезды задания
+  const taskName = (task, lang) => { const L = task.work === 'contactColony' && R.linkByStar(task.star), k = lang === 'ru' ? 0 : 1;
+    return L ? (lang === 'ru' ? `связь ${L.with[0]}` : `the link ${L.with[1]}`) : TASK_NAME[task.work][k]; };
   const SURVEY_WORLD = {
     open: ['Мир у звезды пригоден для жизни — после проверки на месте.', 'The world at the star is fit to live on — once checked on site.'],
     dome: ['Жить можно только под куполами.', 'Life is possible only under domes.'],
@@ -2753,11 +2760,12 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
         : "The report goes out to Earth. The signal source is located at the Dark Star; the Thirty-Second's log is received in full and attached. The Council's task is done.")
       : (ru ? 'Отчёт уходит на Землю. Источник сигнала не локализован; следа тридцать второй нет. Задание Совета не выполнено.'
         : "The report goes out to Earth. The signal source has not been located; there is no trace of the Thirty-Second. The Council's task is not done.")) + way;
-    if (T.work === 'contactColony') return (T.done
-      ? (ru ? 'Отчёт уходит на Землю. Связь с Перевалом двусторонняя; лоции и ведомости возможностей сверены, расхождения отмечены. Задание службы навигации выполнено.'
-        : "The report goes out to Earth. The link with the Pass is two-way; the navigation records and capability lists are reconciled, the discrepancies marked. The navigation service's task is done.")
-      : (ru ? 'Перевал не отвечает на вызовы. Протокол вызовов и снимки станции уходят на Землю; задание службы навигации не выполнено.'
-        : "The Pass does not answer the calls. The call log and images of the station go out to Earth; the navigation service's task is not done.")) + way;
+    if (T.work === 'contactColony') { const LK = R.linkByStar(T.star) || R.linkOf(R.get('req:contact:pass')), cap1 = x => x.replace(/^./, c => c.toUpperCase());
+      return (T.done
+        ? (ru ? `Отчёт уходит на Землю. Связь ${LK.with[0]} двусторонняя; ${LK.what[0]} сверены, расхождения отмечены. Задание ${LK.svcG[0]} выполнено.`
+          : `The report goes out to Earth. The link ${LK.with[1]} is two-way; ${LK.what[1]} are reconciled, the discrepancies marked. ${cap1(LK.svcG[1])} task is done.`)
+        : (ru ? `${LK.nom[0]} не отвечает на вызовы. Протокол вызовов и снимки поселения уходят на Землю; задание ${LK.svcG[0]} не выполнено.`
+          : `${LK.nom[1]} does not answer the calls. The call log and images of the settlement go out to Earth; ${LK.svcG[1]} task is not done.`)) + way; }
     if (T.work === 'trace') return (T.found
       ? (ru ? 'Протокол поиска уходит на Землю. В районе последней орбиты — корпус двадцать четвёртой: питания нет, автоматика молчит, людей на борту нет — как она и сообщала. Журнал снят через внешний порт. Задание архивной комиссии выполнено.'
         : "The search report goes out to Earth. In the region of the last orbit lies No. 24's hull: no power, the automation silent, nobody aboard — just as it reported. The log was read through the outer port. The archive commission's task is done.")
@@ -3010,7 +3018,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   };
   const swap = (text, a, b) => { if (!text.includes(a)) throw new Error(`Нет текста для замены: ${a}`); return text.replace(a, b); };
   function requestOption(id) {
-    const q = R.get(id), base = MISSION_BASE.find(o => o.id === q.branch), T = R.TEXT[id], X = RESEARCH[id];
+    const q = R.get(id), base = MISSION_BASE.find(o => o.id === q.branch), T = R.TEXT[id], L = R.linkOf(q);
+    const X = RESEARCH[id] || (L && L.vote ? { vote: { ru: L.vote[0], en: L.vote[1] }, course: { ru: L.course[0], en: L.course[1] } } : null);
     const effect = st => { st.requestId = q.id; st.mission = q.branch; st.target = q.star; st.arrive = Math.round(M.trip(M.star(q.star).d, st.beta, M.stdMag(st.beta)));
       st.task = { work: q.work, star: q.star, done: false, found: null, reportAt: null }; };   // задание заявки; итог — в отчёте у цели
     if (q.branch !== 'contact') return Object.assign({}, base, { id, effect,
@@ -3023,7 +3032,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       } };
   }
   // стенограмма Совета — по повестке: кто какую заявку докладывает
-  const NUMW = { ru: ['', '', 'две', 'три', 'четыре', 'пять', 'шесть'], en: ['', '', 'two', 'three', 'four', 'five', 'six'] };
+  const NUMW = { ru: ['', '', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', 'десять'], en: ['', '', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'] };
   function councilText(s, lang) {
     const A = agendaOf(s), n = A.length, ru = lang === 'ru', has = id => A.includes(id), W = id => R.TEXT[id].council[lang];
     const N = ru ? NUMW.ru[n] : NUMW.en[n].replace(/^./, c => c.toUpperCase());
@@ -3040,7 +3049,12 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     out.push(ru ? 'Орин Дал увеличивает участок карты с сектором сигнала.' : 'Orin Dal enlarges the region of the chart with the signal sector.',
       ru ? `— Исследование. Тридцать вторая шла к ε Индейца; её последняя передача оборвана, а из того же сектора идёт сигнал, которого нет в каталогах Кольца. Это моя первая кандидатура.${extra ? ' ' + extra : ''}`
         : `"Research. The Thirty-Second was bound for ε Indi; its last transmission broke off, and from the same sector comes a signal that is in none of the Ring's catalogues. That is my first candidate.${extra ? ' ' + extra : ''}"`);
-    if (has('req:contact:pass')) out.push(W('req:contact:pass'));
+    // заявки колоний — одной репликой Кассель: Перевал (служба навигации), затем остальные (Ближний берег, Верфь, Сад)
+    const cols = A.filter(id => id !== 'req:contact:pass' && R.get(id).work === 'contactColony'), cn = cols.length, items = cols.map(W).join(' ');
+    const more = cn ? (ru ? (cn === 1 ? 'Ещё одна заявка — от колонии. ' : `Ещё ${NUMW.ru[cn]} — от колоний. `) : (cn === 1 ? 'One more, from a colony. ' : `${NUMW.en[cn].replace(/^./, c => c.toUpperCase())} more, from the colonies. `)) + items : '';
+    if (has('req:contact:pass')) out.push(!cn ? W('req:contact:pass') : ru ? `${W('req:contact:pass')} ${more}` : `${W('req:contact:pass').replace(/"$/, '')} ${more}"`);
+    else if (cn) out.push(ru ? `— ${cn === 1 ? 'И ещё одна заявка — от колонии' : `И ещё ${NUMW.ru[cn]} — от колоний`}, — говорит Кассель. — ${items}`
+      : `"${cn === 1 ? 'And one more, from a colony' : `And ${NUMW.en[cn]} more, from the colonies`}," says Kassel. "${items}"`);
     out.push(ru ? '— Остальные заявки останутся в очереди, — говорит Кассель. — Голосуем.' : '"The other requests stay in the queue," says Kassel. "We vote."');
     return out.join('\n\n');
   }
@@ -6126,14 +6140,14 @@ The message holds neither coordinates after the disappearance nor a way to save 
       id: 'a4.council', illus: 'last-council', scene: 'ring', kind: 'transcript', year: s => Y4(s), when: s => livable(s) && !rescueS(s),
       title: { ru: 'Последний совет', en: 'The last council' },
       text: {
-        ru: s => `Здесь впервые прямо звучит то, что раньше было фоном. Цель выбрал Совет, чьи члены умерли больше века назад, по данным, которые на Земле давно устарели: дома прошли две эпохи.
+        ru: s => `Здесь впервые прямо звучит то, что раньше было фоном. Цель выбрал Совет, ${Y4(s) >= 100 ? 'чьи члены умерли больше века назад' : `из которого за ${yrs(Y4(s))} почти никого не осталось в живых`}, по данным, которые на Земле давно устарели: ${Y4(s) >= 100 ? 'дома прошли две эпохи' : 'дома прошла целая эпоха'}.
 
 Дассер ещё руководитель экспедиции, но и его спрашивают как старшего, и он отказывается решать за экипаж правом основателя. Дан Осгер, ставший архивариусом, говорит ему прямо:
 
 — Вы выбрали путь. Дом выбираем мы.
 
 ` + (src(s) ? 'Полная фраза тридцать второй лежит в архиве рядом с обрывком. Готовых прекрасных миров никто не нашёл — ни предшественники, ни мы.' : 'Готовых прекрасных миров никто не нашёл.') + ' Миры не находят, а делают, шаг за шагом.',
-        en: s => `Here, for the first time, what used to be background is said aloud. The target was chosen by a Council whose members died more than a century ago, on data long out of date on Earth: two epochs have passed at home.
+        en: s => `Here, for the first time, what used to be background is said aloud. The target was chosen by a Council ${Y4(s) >= 100 ? 'whose members died more than a century ago' : `of which hardly anyone is still alive after ${Y4(s)} years`}, on data long out of date on Earth: ${Y4(s) >= 100 ? 'two epochs have passed at home' : 'a whole epoch has passed at home'}.
 
 Dasser is still the expedition leader, but he too is asked as the eldest, and he refuses to decide for the crew by a founder's right. Dan Osger, now the archivist, tells him plainly:
 
@@ -6478,14 +6492,14 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     lensTitle: 'Снимок Кольца · гравитационная линза', lensSub: 'реконструкция 48 × 48 точек',
     lensClass: { ruined: 'кора расколота · расплав · обломки', hostile: 'облачная крыша · парник > 400 °C', none: 'на расчётной орбите пусто', dome: 'приливный захват · пар и лёд', open: 'вода · облака · суша' },
     // карта и паспорт экспедиции
-    mapHint: 'Карту можно вращать и приближать. Строка заявки или архива, щелчок по звезде — камера подлетает к системе. Курс задаёт заявка, за которую проголосует Совет.',
+    mapHint: 'Карту можно вращать и приближать. Строка заявки или щелчок по звезде — камера подлетает к системе. Курс задаёт заявка, за которую проголосует Совет.',
     agendaChips: 'Звёзды заявок', requestHere: 'Заявка у этой звезды', noRequest: 'Заявки у этой звезды нет — только справка.',
     planetsKnown: 'Подтверждённые планеты', noPlanets: 'Подтверждённых планет нет.', mEarth: 'массы Земли',
     pSpeed: 'Скорость', pReserve: 'Резерв манёвров', pCargo: 'Груз сверх ядра', kt: 'тыс. т', free: 'свободно', over: 'перегруз',
     pTarget: 'Цель', pPath: 'Путь', pArrive: 'прибытие около года', pAwake: 'каждый проживёт в пути', pAwakeTail: 'при вахте 48',
     pChecks: 'Проверки Совета', cFit: 'Груз помещается в выделенное топливо', cAwake: 'Не больше 25 лет бодрствования на человека',
     cThin: 'Больше 20 лет бодрствования: понадобится тонкая вахта', approve: 'Утвердить паспорт',
-    gaugesTitle: 'Запасы', after: 'После', noChange: 'Запасы не меняются.', worldTitle: 'Мир после экспедиции', incidentsTitle: 'Протокол происшествий', recTitle: 'Совет рекомендует', recShort: 'рекомендация', recAssume: 'допущение', tlArrive: 'прибытие', tlShip: 'Корабль', tlPhase: { acc: 'разгон', drift: 'дрейф', mag: 'торможение магнитом', eng: 'торможение двигателем, кормой вперёд', home: 'у цели' }, tlPhases: { acc: 'разгон', drift: 'дрейф', mag: 'магнит', eng: 'двигатель', home: 'у цели' }, settings: 'Настройки', setLang: 'Язык', setSound: 'Звук', soundNone: 'В срезе пока нет звука.',
+    gaugesTitle: 'Запасы', after: 'После', noChange: 'Запасы не меняются.', worldTitle: 'Мир после экспедиции', incidentsTitle: 'Протокол происшествий', recTitle: 'Совет рекомендует', recAssume: 'допущение', tlArrive: 'прибытие', tlShip: 'Корабль', tlPhase: { acc: 'разгон', drift: 'дрейф', mag: 'торможение магнитом', eng: 'торможение двигателем, кормой вперёд', home: 'у цели' }, tlPhases: { acc: 'разгон', drift: 'дрейф', mag: 'магнит', eng: 'двигатель', home: 'у цели' }, settings: 'Настройки', setLang: 'Язык', setSound: 'Звук', soundNone: 'В срезе пока нет звука.',
     setProgress: 'Прогресс', newWorldHint: 'Начать сначала в новом мире. Текущая партия уходит в резервную копию.',
     wipe: 'Сбросить весь прогресс', wipeHint: 'Стереть сохранение, память мира и резервную копию. Язык останется.',
     wipeAsk: 'Сбросить весь прогресс? Сохранение, память мира и резервная копия будут стёрты без возврата.', thawBerths: 'мест для Оттепели', ownPeople: 'своих', thawIn: 'спят из Оттепели', newWorldAsk: 'Начать новый мир? Ходы этой партии и память мира будут стёрты.', ppTitle: 'Расчёт паспорта · что изменит выбор',
@@ -6535,14 +6549,14 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     probeMatch: 'match within the error · code unknown',
     lensTitle: 'Ring image · gravitational lens', lensSub: 'reconstruction 48 × 48 points',
     lensClass: { ruined: 'crust split · melt · debris', hostile: 'cloud deck · greenhouse > 400 °C', none: 'predicted orbit empty', dome: 'tidally locked · vapour and ice', open: 'water · clouds · land' },
-    mapHint: 'The chart can be turned and zoomed. A request or archive row, or a click on a star, brings the camera to the system. The course is set by the request the Council votes for.',
+    mapHint: 'The chart can be turned and zoomed. A request row or a click on a star brings the camera to the system. The course is set by the request the Council votes for.',
     agendaChips: 'Request stars', requestHere: 'Request at this star', noRequest: 'No request at this star — reference only.',
     planetsKnown: 'Confirmed planets', noPlanets: 'No confirmed planets.', mEarth: 'Earth masses',
     pSpeed: 'Velocity', pReserve: 'Manoeuvre reserve', pCargo: 'Cargo beyond the core', kt: 'kt', free: 'free', over: 'overload',
     pTarget: 'Target', pPath: 'Road', pArrive: 'arrival around year', pAwake: 'each person lives awake on the road', pAwakeTail: 'with a watch of 48',
     pChecks: 'Council checks', cFit: 'Cargo fits the allotted fuel', cAwake: 'No more than 25 waking years per person',
     cThin: 'Over 20 waking years: a thin watch will be needed', approve: 'Approve the passport',
-    gaugesTitle: 'Stores', after: 'After', noChange: 'Stores do not change.', worldTitle: 'The world after the expedition', incidentsTitle: 'Incident minutes', recTitle: 'The council recommends', recShort: 'recommended', recAssume: 'assumption', tlArrive: 'arrival', tlShip: 'The ship', tlPhase: { acc: 'acceleration', drift: 'drift', mag: 'braking on the magnet', eng: 'braking on the engine, stern first', home: 'at the target' }, tlPhases: { acc: 'acceleration', drift: 'drift', mag: 'magnet', eng: 'engine', home: 'at the target' }, settings: 'Settings', setLang: 'Language', setSound: 'Sound', soundNone: 'The slice has no sound yet.',
+    gaugesTitle: 'Stores', after: 'After', noChange: 'Stores do not change.', worldTitle: 'The world after the expedition', incidentsTitle: 'Incident minutes', recTitle: 'The council recommends', recAssume: 'assumption', tlArrive: 'arrival', tlShip: 'The ship', tlPhase: { acc: 'acceleration', drift: 'drift', mag: 'braking on the magnet', eng: 'braking on the engine, stern first', home: 'at the target' }, tlPhases: { acc: 'acceleration', drift: 'drift', mag: 'magnet', eng: 'engine', home: 'at the target' }, settings: 'Settings', setLang: 'Language', setSound: 'Sound', soundNone: 'The slice has no sound yet.',
     setProgress: 'Progress', newWorldHint: 'Start over in a new world. The current run goes to the backup copy.',
     wipe: 'Reset all progress', wipeHint: 'Erase the save, the memory of the world and the backup copy. The language stays.',
     wipeAsk: 'Reset all progress? The save, the memory of the world and the backup copy will be erased for good.', thawBerths: 'berths for Thaw', ownPeople: 'of our own', thawIn: 'from Thaw asleep', newWorldAsk: 'Start a new world? The moves of this run and the memory of the world will be erased.', ppTitle: 'Passport calculation · what the choice changes',

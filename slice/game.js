@@ -44,7 +44,10 @@
   const wearNew = () => hashArg('wear') !== '0';                      // новая экспедиция — с моделью, кроме #wear=0
   let wear = hashArg('wear') === '0' ? false : fromHash || fresh0 ? true : saved.wear === true;
   // повестка Совета — снимок мира на старт экспедиции: итог партии меняет мир, но не её собственное голосование
-  let agenda = Array.isArray(saved.agenda) ? saved.agenda : null;      // снимок меняется только с новой экспедицией
+  // снимок меняется с новой экспедицией; пока в партии нет ни одного решения, повестка собирается заново — новые
+  // заявки мира (например, добавленные в игру) видны без новой экспедиции. Отладочная ссылка — полная повестка без
+  // памяти мира, как у проверок (токены могут вести к уже выполненной заявке)
+  let agenda = fromHash ? C.requests.agenda(null) : Array.isArray(saved.agenda) && !fresh0 ? saved.agenda : null;
   if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); }
   if (!agenda) agenda = C.requests.agenda(world);
   const ctx = () => ({ riskVersion, riskSeed, agenda, worldSeed: hashWorld || world.seed, wear });
@@ -196,8 +199,9 @@
     const sel = stop.options.find(o => o.id === votePick) || (rec && stop.options.find(o => o.id === rec.id)) || stop.options[0];
     const reqOf = o => agenda ? C.requests.get(o.id) : null;
     const rowNote = o => { const q = reqOf(o); return q ? `${M.nameOf(q.star, lang)} · ${num(M.star(q.star).d, 1)}` : ''; };
-    const rowCls = o => { const q = reqOf(o); return q ? `st-${reqStatus(q)}` : rec && rec.id === o.id ? 'st-viable' : 'st-plain'; };
-    const rows = stop.options.map(o => `<button class="colrow optrow ${rowCls(o)}" data-sel="${esc(o.id)}" aria-pressed="${o === sel}"><span class="dot"></span>${esc(t(o.label, pub))}${rec && rec.id === o.id ? ` <b class="recmark">${esc(u.recShort)}</b>` : ''}<i>${esc(rowNote(o))}</i></button>`).join('');
+    // в строках — без пометки рекомендации: рекомендация Совета с основанием — только в карточке варианта (реестр, п. 18)
+    const rowCls = o => { const q = reqOf(o); return q ? `st-${reqStatus(q)}` : 'st-plain'; };
+    const rows = stop.options.map(o => `<button class="colrow optrow ${rowCls(o)}" data-sel="${esc(o.id)}" aria-pressed="${o === sel}"><span class="dot"></span>${esc(t(o.label, pub))}<i>${esc(rowNote(o))}</i></button>`).join('');
     const q = reqOf(sel);
     const detail = `<div class="option${rec && rec.id === sel.id ? ' rec' : ''}"><h4>${esc(t(sel.label, pub))}</h4>${recHtml(sel)}<p class="knownlabel">${esc(u.known)}</p>
         <ul>${knownOf(sel, pub).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${afterOf(sel)}${q ? starFacts(q.star) : ''}
@@ -231,17 +235,16 @@
     return `<p class="knownlabel">${esc(M.nameOf(name, lang))} · ${num(st.d, 1)} ${lyWord()} · ${esc(st.sp || '')}</p><p class="small">${esc(plText)}</p>
       ${info.length ? `<ul class="colarch">${info.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
   }
+  // Отдельного списка архива на голосовании нет: каждая достижимая цель архива — заявка в списке выше, со статусом
+  // и сводкой отчёта в карточке (DOC «Интерфейс — принятые решения», п. 17). Здесь — подсказка карты или справка о
+  // звезде без заявки (щелчок по звезде на карте) и память мира прошлых партий
   function chartHtml(stop, sel) {
     const u = C.ui[lang], pickName = mapPickName(stop.state);
-    const objs = M.knownAtStart(), here = pickName ? M.objectsAtStar(pickName) : [];
-    const rows = objs.map(o => `<button class="colrow st-${o.status}" data-pick="${esc(o.star)}" aria-pressed="${o.star === pickName}"><span class="dot"></span>${esc(C.archiveShort(o, lang, 0))}<i>${esc(M.nameOf(o.star, lang))} · ${num(M.star(o.star).d, 1)}</i></button>`).join('');
     const legacy = (world.settled || []).length || world.passTug === false;
-    const colBlock = `<details class="colonies"${here.length ? ' open' : ''}><summary class="knownlabel">${esc(u.colonies(objs.length))}</summary>
-      <p class="muted small">${esc(u.archiveNote)} ${esc(u.road(M.ROAD.flying, M.ROAD.done))}</p><div class="colrows">${rows}</div>${legacy ? `<p class="muted small">${esc(u.legacyNote)}</p>` : ''}</details>`;
     // справка — о звезде без заявки (у звезды заявки она в карточке заявки)
     const other = pickName && !(sel && sel.star === pickName);
     const card = other ? `<div class="starcard">${starFacts(pickName)}<p class="muted small">${esc(u.noRequest)}</p></div>` : `<p class="muted small">${esc(u.mapHint)}</p>`;
-    return `<section class="card chart">${colBlock}${card}</section>`;
+    return `<section class="card chart">${card}${legacy ? `<p class="muted small">${esc(u.legacyNote)}</p>` : ''}</section>`;
   }
   // строки выбора перерисовываются целиком — клавиатурный фокус возвращается на ту же строку
   function refocus(kind, v) { const el = [...document.querySelectorAll(`#stop [data-${kind}]`)].find(x => x.dataset[kind] === v); if (el) el.focus({ preventScroll: true }); }
@@ -282,7 +285,7 @@
       const cur = draft.eq[p.id], opts = p.opts.filter(o => !o.era && (!E.eqHidden(st, p.id, o.id) || o.id === cur)).map(o => {
         const on = cur === o.id, can = M.eqSwaps(Object.assign({}, draft.eq, { [p.id]: o.id }), st.mission, st.riskVersion) <= M.SWAPS;
         const tag = o.t ? ` +${num(o.t, o.t % 1 ? 2 : 0)}` : '';
-        return `<button class="seg eqopt${o.id === def[p.id] ? ' rec' : ''}" data-eq="${p.id}" data-v="${o.id}" aria-pressed="${on}" title="${esc(E.eqCard(st, o.id, lang)[0] || '')}" ${on || can ? '' : 'disabled'}>${esc(o[lang])}<i>${esc(tag)}</i></button>`;
+        return `<button class="seg eqopt" data-eq="${p.id}" data-v="${o.id}" aria-pressed="${on}" title="${esc(E.eqCard(st, o.id, lang)[0] || '')}" ${on || can ? '' : 'disabled'}>${esc(o[lang])}<i>${esc(tag)}</i></button>`;
       }).join('');
       const card = E.eqCard(st, cur, lang), iff = E.eqIf(st, cur, lang, draft), cost = E.eqCost(st, draft, p.id, lang);
       return `<div class="eqrow"><p class="eqpos">${esc(p[lang])} · <span class="eqq">${esc(E.eqQuestion(st, p.id, lang))}</span></p><div class="segs">${opts}</div>
@@ -1132,6 +1135,7 @@
     const out = [], ck = (name, ok, info) => out.push([name, !!ok, info || '']), st = view && view.result && view.result.stop;
     const b = st && st.beat;
     ck('сборка', true, window.M31_BUILD || 'локальная');
+    ck('в списках выбора нет пометки рекомендации (строки, паспорт)', !document.querySelector('#stop .optrow .recmark, #stop .eqopt.rec'));
     if (b && b.kind === 'decision' && b.ui !== 'passport') {
       const rows = document.querySelectorAll('#stop .optrow').length, cards = document.querySelectorAll('#stop .option').length;
       ck('выбор — списком строк, по строке на вариант', rows === st.options.length, `${rows} строк / ${st.options.length} вариантов`);
@@ -1139,7 +1143,9 @@
       ck('кнопка решения — одна, в карточке', document.querySelectorAll('#stop [data-act="vote"]').length === 1 && document.querySelectorAll('#stop .option [data-act="vote"]').length === 1);
       if (b.ui === 'agenda') {
         ck('голосование — по заявкам, без выбора звезды', st.options.every(o => C.requests.get(o.id)), st.options.map(o => o.id).join(', '));
-        ck('у голосования — архив Кольца (колонии и следы)', document.querySelectorAll('#stop .chart .colonies .colrow').length > 0);
+        const stars = new Set(st.options.map(o => C.requests.get(o.id).star)), doneStars = new Set((world.requestsDone || []).map(id => (C.requests.get(id) || {}).star));
+        const miss = M.knownAtStart().filter(o => M.reachable().some(x => x.name === o.star) && !stars.has(o.star) && !doneStars.has(o.star)).map(o => o.id);
+        ck('каждая цель архива — заявка в списке (отдельного архива нет)', !miss.length && !document.querySelector('#stop .colonies'), miss.join(', '));
         ck('в карточке заявки — справка о звезде', document.querySelectorAll('#stop .option .knownlabel').length >= 2);
         ck('строка заявки — звезда и расстояние', [...document.querySelectorAll('#stop .optrow i')].every(i => i.textContent.trim().length > 0));
       }
