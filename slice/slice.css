@@ -191,6 +191,7 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .action.ghost{border-color:rgba(175,213,189,.35);color:var(--muted,#9fb0b8);margin-left:8px}
 .sleepers .rsv{fill:none;stroke:rgba(175,213,189,.45);stroke-width:1}
 .sleepers .thaw{fill:#d9b26a}
+.sleepers .warm{fill:rgba(224,120,72,.08);stroke:rgba(224,120,72,.75);stroke-width:1.2}
 .summary.incidents li{display:block;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.5;color:var(--text)}
 .summary.worldafter li{display:block;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.45}
 .skip{margin:4px 0 12px;border-color:var(--gold)}

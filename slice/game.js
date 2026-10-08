@@ -7,7 +7,7 @@
   const $ = id => document.getElementById(id);
 
   function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed, agenda })); } catch (e) { /* без сохранения */ } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed, agenda, wear })); } catch (e) { /* без сохранения */ } }
   // сохранение, которое не удалось восстановить, не стираем молча — откладываем копию
   function backup(why) { try { localStorage.setItem(KEY + '-bak', localStorage.getItem(KEY) || ''); console.warn('Сохранение отложено:', why); } catch (e) { /* нет */ } }
 
@@ -39,11 +39,15 @@
   if (fromHash) { let sd = ''; try { sd = decodeURIComponent(hashArg('seed') || ''); } catch (e) { sd = ''; }
     const v = Number(hashArg('risk')) || 0; riskVersion = v >= 1 && seedOK(sd) ? v : 0; riskSeed = riskVersion ? sd : null;
     try { hashWorld = decodeURIComponent(hashArg('world') || '') || null; } catch (e) { hashWorld = null; } }   // сид мира партии из адреса: те же события Кольца
+  // модель износа закреплена за экспедицией: прежняя партия (с решениями, без отметки) доигрывается без неё — её ходы
+  // писались без карточек износа; новая экспедиция — с моделью. Отладка: #wear=0 — партия без модели
+  const wearNew = () => hashArg('wear') !== '0';                      // новая экспедиция — с моделью, кроме #wear=0
+  let wear = hashArg('wear') === '0' ? false : fromHash || fresh0 ? true : saved.wear === true;
   // повестка Совета — снимок мира на старт экспедиции: итог партии меняет мир, но не её собственное голосование
   let agenda = Array.isArray(saved.agenda) ? saved.agenda : null;      // снимок меняется только с новой экспедицией
-  if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); }
+  if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); }
   if (!agenda) agenda = C.requests.agenda(world);
-  const ctx = () => ({ riskVersion, riskSeed, agenda, worldSeed: hashWorld || world.seed });
+  const ctx = () => ({ riskVersion, riskSeed, agenda, worldSeed: hashWorld || world.seed, wear });
   C.setWorld(world);
   const cur = () => relief ? relief.tokens : tokens;                      // ходы текущей партии
   const story = () => relief ? C.relief(relief.incident, relief.world) : C;
@@ -428,14 +432,44 @@
   }
   const ORDER = shuffled();
 
+  // износ (правила v5 с моделью): зал — по реестру мест модели: кто спит, кто на вахте, кто погиб, отказавшие капсулы,
+  // обещанные места; группы без охлаждения — в рамке
+  function sleepersWear(result) {
+    const u = C.ui[lang], s = result.state, w = s.wear, Wm = window.M31Wear, ids = new Set(result.log.map(i => i.beat.id));
+    const na = namedAwake(result), occ = {}, broken = new Set(w.broken), o = Wm.observe(w);
+    for (let i = 0; i < w.crew; i++) if (w.ps[i] !== 'D') occ[Wm.seatOf(w, i)] = i;
+    const thaw = s.rescueOp === 'move' ? s.rescued : 0;
+    const pos = k => { const g = Math.floor(k / 25), j = k % 25, gx = g % 5, gy = Math.floor(g / 5); return [24 + gx * 84 + (j % 5) * 13, 58 + gy * 76 + Math.floor(j / 5) * 13]; };
+    // герои на ногах по сюжету, а в реестре спят, — на карте меняются местами с кем-то из вахты: число на ногах — как в реестре
+    const up = new Set(); for (let i = 0; i < w.crew; i++) if (w.ps[i] === 'A') up.add(i);
+    for (const n of NAMED) if (na[n.i] && w.ps[n.i] === 'S' && !up.has(n.i)) { const x = [...up].reverse().find(i => !NAMED.some(m => m.i === i)); if (x != null) { up.delete(x); up.add(n.i); } }
+    const awakeOf = i => up.has(i);
+    let dots = '', frames = '';
+    o.groups.forEach((g, gi) => { if (g.sleep && (g.heat || g.power)) { const [x, yy] = pos(gi * 25); frames += `<rect x="${x - 7}" y="${yy - 7}" width="66" height="66" rx="4" class="warm"/>`; } });
+    for (let k = 0; k < 500; k++) {
+      const [x, yy] = pos(k), i = occ[k];
+      dots += i != null ? `<circle cx="${x}" cy="${yy}" r="${awakeOf(i) ? 3.4 : 2.6}" class="${awakeOf(i) ? 'aw' : 'sl'}"/>`
+        : broken.has(k) || (k < w.crew && w.ps[k] === 'D' && w.moved[k] == null) ? `<circle cx="${x}" cy="${yy}" r="2.6" class="dead"/>`   // погибший или отказавшая капсула
+        : k >= w.crew && k - w.crew < thaw ? `<circle cx="${x}" cy="${yy}" r="2.6" class="thaw"/>` : `<circle cx="${x}" cy="${yy}" r="2.6" class="rsv"/>`;   // свободное или обещанное место
+    }
+    let labels = '';
+    NAMED.forEach((n, k) => { const [x, yy] = pos(Wm.seatOf(w, n.i)), lx = 452, ly = 70 + k * 26, on = awakeOf(n.i);
+      labels += `<path d="M${x + 4} ${yy} L${lx - 6} ${ly - 4}" class="lead"/><text x="${lx}" y="${ly}" class="${on ? 'aw' : 'sl'}t">${esc(n[lang])}</text>`; });
+    const dead = w.ps.split('').filter(c => c === 'D').length, aw = w.ps.split('').filter(c => c === 'A').length, sl = w.crew - dead - aw;
+    return `<svg viewBox="0 0 560 360" class="panel-svg sleepers"><text x="16" y="28" class="ttl">${esc(u.sleepers.toUpperCase())}</text>
+      <text x="16" y="44" class="sub">${sl} ${esc(u.asleep)} · ${aw} ${esc(u.onWatch)}${dead ? ` · ${dead} ${esc(u.lost)}` : ''}${w.crew < 500 ? ` · ${thaw ? `${thaw} ${esc(u.thawIn)}` : `${500 - w.crew} ${esc(u.thawBerths)}`}` : ''}</text>${frames}${dots}${labels}</svg>`;
+  }
   function sleepersSvg(result) {
+    const st = result.state;                                          // реестр модели — пока она ведёт людей (до прибытия, без сигнала бедствия)
+    if (st.wear && window.M31Wear && st.year < C.arriveView(st) && !st.sos && !st.lostShip && !st.dutchman) return sleepersWear(result);
     const u = C.ui[lang], y = result.state.year, ids = new Set(result.log.map(i => i.beat.id));
     const total = C.awakeOf(result.state, ids);                       // тот же счёт, что у прибора «на вахте» и в отчёте вахты
     const na = namedAwake(result);
     const awake = new Set(Object.keys(na).filter(k => na[k] || total >= (result.state.crew || 500)).map(Number));
     for (const i of ORDER) { if (awake.size >= total) break; awake.add(i); }
     // погибшие в пути — погасшие капсулы (медицинский журнал Акта III)
-    const lost = result.state.lost || 0, dead = new Set(), crew = result.state.crew || 500;
+    const crew = result.state.crew || 500, dead = new Set();
+    const lost = result.state.riskVersion >= 5 ? Math.max(0, crew - C.aliveOf(result.state)) : result.state.lost || 0;   // v5: нынешний счёт (поздние потери пути, у цели)
     const thaw = result.state.rescueOp === 'move' ? result.state.rescued : 0;   // спасённые Оттепели в спасательном секторе
     for (const i of [...awake]) if (i >= crew) awake.delete(i);
     for (const i of ORDER) { if (awake.size >= total) break; if (i < crew) awake.add(i); }
@@ -827,12 +861,14 @@
       beat = view.result.stop.beat;
     }
     if (!beat) beat = currentBeat(view.result);
+    const e3el = [...$('current').querySelectorAll('.item')].find(el => { const it = view.group[+el.dataset.g]; return it && it.beat.id === 'a3.epoch3'; });
+    const e3go = !e3el || atEnd || e3el.getBoundingClientRect().top < top + 40;   // показ вылета паруса — когда дочитали до сводки
     if (atStop('agenda') || atStop('passport')) beat = view.result.stop.beat;   // голосование с картой и паспорт — сцена решения
     const y2 = view.result.state.year;
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
       M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target),
-        burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0,
+        burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0, epoch3: null,
         relief: { P: R.P, sent: inc.sent, council: R.council.id, list: R.list.map(r => ({ id: r.id, colony: r.colony || null, hear: r.hear, launch: r.launch, complete: r.complete })),
           voyages: res ? res.voyages : [] }, legacy: { passTug: relief.world.passTug !== false, settled: relief.world.settled || [] } });
     } else if (window.M31Space && M31Space.ok) {
@@ -848,6 +884,7 @@
         target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
         // голосование по заявкам: курса ещё нет — звезда только осматривается; кольца у звёзд заявок повестки
         knee: st.route ? st.route.knee : null,                          // излом траектории после поворота (совет «Новые сведения»)
+        epoch3: ids.has('a3.epoch3') ? C.epoch3(st) : null, epoch3Go: e3go,   // парус эпохи III: на карте — со сводки о вылете
         preview: atStop('agenda') && !st.target, inspect: !!(atStop('agenda') && mapPick), requestStars: atStop('agenda') ? view.result.stop.options.map(o => (C.requests.get(o.id) || {}).star).filter(Boolean) : [],
         cargo: cargo3d(atStop('passport') && draft ? draft : st), cargoLabels: atStop('passport'), tMag: st.tMag,
         scout: st.scout, scoutV: st.scout === 6 ? st.beta * 0.75 + 0.085 : st.beta + 0.07,
@@ -935,7 +972,7 @@
       const fixed = relief ? null : E.migrate(C, tokens, C.INSERTED, ctx());
       if (fixed) tokens = fixed;
       // сброс основной партии — новая экспедиция целиком: новые правила и сид, а не прежние версии старого сохранения
-      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); mapPick = null; draft = null; votePick = null; } }
+      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); mapPick = null; draft = null; votePick = null; } }
       save(); result = E.run(story(), cur(), ctx());
     }
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии
@@ -1003,7 +1040,7 @@
     if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
     camView = null; sceneId = null; clearTimeout(viewTimer);
     world = { passTug: true, seed: newExp() }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
-    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); ffStop(); mapPick = null; draft = null; votePick = null;
+    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); ffStop(); mapPick = null; draft = null; votePick = null;
   }
 
   document.addEventListener('click', e => {

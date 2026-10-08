@@ -415,6 +415,14 @@
     streaks.f = Float32Array.from({ length: STREAK_N * 3 }, () => r());     // положения — доли куба по осям U, E2, E3
     streaks.mesh = m;
   }
+  // Показ перемотки: год идёт быстрее — пыль летит быстрее и тянется длиннее. Скорость года сглажена (часы интерфейса
+  // и кадры 3D идут в разных вызовах); вне показа (world.anim нет) — ноль: скачок года при смене экрана не в счёт.
+  const yRate = { y: NaN, v: 0 };
+  function stepTimeRate(dt) {
+    const y = world.year, v = world.anim && Number.isFinite(yRate.y) && dt > 0 ? Math.max(0, (y - yRate.y) / dt) : 0;
+    yRate.y = y; yRate.v += (v - yRate.v) * (1 - Math.exp(-dt * 4));
+  }
+  const timeBoost = () => 1 + Math.min(5, 1.1 * Math.log10(1 + yRate.v * 365.25));   // по дням в секунду: 30 — ×2,6, 2000 — ×4,6
   const camOff = new THREE.Vector3(), glareDirS = new THREE.Vector3(), glareDirT = new THREE.Vector3();
   function stepStreaks(dt, look, camPos, dS) {
     if (!streaks.mesh) return;
@@ -430,8 +438,9 @@
     if (!streaks.mesh.visible) return;
     const q = Math.min(1.2, beta / 0.1), sq = Math.sqrt(q);
     const S = streaks.S = streaks.S ? streaks.S + (3 * dS - streaks.S) * (1 - Math.exp(-dt * 3)) : 3 * dS;
-    const flow = (0.05 + 0.3 * sq) * dt;                                    // доля куба за кадр: на крейсерской — куб за ~3 с
-    const L = S * (0.006 + 0.11 * sq);                                      // длина штриха
+    const boost = timeBoost();
+    const flow = (0.05 + 0.3 * sq) * dt * boost;                            // доля куба за кадр: на крейсерской — куб за ~3 с, при перемотке — быстрее
+    const L = S * (0.006 + 0.11 * sq) * Math.sqrt(boost);                   // длина штриха
     const pos = streaks.mesh.geometry.attributes.position.array, col = streaks.mesh.geometry.attributes.color.array, f = streaks.f;
     const near = 0.08 * S, far = 0.55 * S;
     const front = shipAxisW.set(1, 0, 0).applyQuaternion(ship.quaternion).dot(U) >= 0 ? shipLocal(0) : shipLocal(SHIP_STERN);
@@ -1663,12 +1672,97 @@
       const u = m.userData; u.f = Math.min(1, u.f + u.v * dt);
       m.position.copy(u.to).multiplyScalar(u.f);
       const a = U_.local.value; line.material.visible = m.visible = a > 0.02;
-      m.material.opacity = a; line.material.opacity = (u.v === 0 && u.f === 1 ? 0.9 : 0.16) * a;
+      const q = 1 - 0.7 * ep3.dim;                                        // ракурс вылета паруса эпохи III — рейсы Кольца тише
+      m.material.opacity = a * q; line.material.opacity = (u.v === 0 && u.f === 1 ? 0.9 : 0.16) * a * q;
     });
     if (signal.visible) {
       const t = ((now / 1000) % 6) / 6;
       signal.position.copy(T).multiplyScalar(1 - t);
     }
+  }
+  // ---------------------------------------------------------------- парус эпохи III (сводка Кольца в начале Акта III)
+  // Уходит с Земли по лучу лазерных станций: разгон, крейсерская 0,2c, торможение плазменным магнитом — сроки из
+  // content (epoch3), те же, что у вести с Тёмной звезды. Корабль знает о вылете из сводки: раньше паруса на карте нет.
+  // Ракурс сводки — показ вылета: камера долетает до Солнца и ждёт, пока читатель дойдёт до сводки (world.epoch3Go);
+  // тогда парус уходит, камера идёт за ним, прочие рейсы Кольца приглушены. Время в кадре ускорено и к концу показа
+  // догоняет год экрана; вне показа положение — по году (при перемотке парус летит).
+  const ep3 = { g: null, mark: null, path: null, ahead: null, beam: null, D: 0, to: new THREE.Vector3(), key: '', show: null, x: 0, d: 0, dim: 0, lock: false };
+  const EP3_SHOW = 9000;                                                  // мс показа вылета
+  function buildEpoch3() {
+    ep3.g = new THREE.Group(); ep3.g.visible = false;
+    const line = mat => new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]), mat);
+    ep3.path = line(new THREE.LineBasicMaterial({ color: 0xd8f4ff, transparent: true, opacity: 0.5, depthTest: false }));
+    ep3.ahead = line(new THREE.LineDashedMaterial({ color: 0xd8f4ff, dashSize: 0.2, gapSize: 0.14, transparent: true, opacity: 0.35, depthTest: false }));
+    ep3.beam = line(new THREE.LineBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+    ep3.mark = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(true), color: 0xe8f8ff, sizeAttenuation: false, depthTest: false, transparent: true }));
+    ep3.mark.scale.set(0.026, 0.026, 1);
+    [ep3.path, ep3.ahead, ep3.beam].forEach(l => { l.frustumCulled = false; });
+    ep3.g.add(ep3.path, ep3.ahead, ep3.beam, ep3.mark);
+    starsGroup.add(ep3.g);
+  }
+  function ep3Sync() {                                                    // звезда назначения — при смене сводки
+    const e = world.epoch3, k = e ? `${e.star}|${e.launch}` : '';
+    if (k === ep3.key) return;
+    ep3.key = k; ep3.D = 0;
+    const st = e && stars.find(x => x.name === e.star);
+    if (st) { ep3.to.set(st.x, st.y, st.z); ep3.D = ep3.to.length(); }
+  }
+  // путь от Солнца за tau лет: разгон acc лет, крейсерская, торможение dec лет; дальше — у звезды
+  function ep3X(tau, e) {
+    const b = e.beta, a = e.acc, d = e.dec, D = ep3.D, xa = b * a / 2, xd = b * d / 2, tc = Math.max(0, (D - xa - xd) / b);
+    if (tau <= 0) return 0;
+    if (tau <= a) return Math.min(D, b * tau * tau / (2 * a));
+    if (tau <= a + tc) return xa + b * (tau - a);
+    const u = Math.min(d, tau - a - tc); return Math.min(D, xa + b * tc + b * u - b * u * u / (2 * d));
+  }
+  // годы от вылета в кадре: в показе отстают от года экрана на всю задержку сводки и догоняют его к концу показа
+  function ep3Tau(now) {
+    const e = world.epoch3, tau = world.year - e.launch, s = ep3.show, lagY = e.news - e.launch;
+    if (!s) return Math.max(0, tau);
+    if (s.t0 == null) return Math.max(0, tau - lagY);                    // камера ещё летит: парус у Земли
+    const p = Math.min(1, (now - s.t0) / EP3_SHOW);
+    return Math.max(0, tau - lagY * (1 - Math.sin(p * Math.PI / 2)));     // к концу — плавно, без остановки рывком
+  }
+  // ракурс показа: сбоку от луча, чуть сверху плоскости Галактики; Солнце справа (слева вверху — приборы), парус уходит влево.
+  // В кадре и Солнце, и парус: фокус ближе к парусу, дистанция растёт с его удалением
+  function ep3Frame(now) {
+    const p = PRESETS.epoch3, e = world.epoch3; ep3Sync();
+    if (!e || !ep3.D) return { F: new THREE.Vector3(), d: p.dist / LY, yaw: p.yaw, pitch: p.pitch, x: 0 };
+    const D = ep3.to.clone().normalize(), x = ep3X(ep3Tau(now), e), pitch = p.pitch;
+    let yaw = Math.atan2(D.y, D.x) + Math.PI / 2;
+    const dir = new THREE.Vector3(Math.cos(pitch) * Math.cos(yaw), Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch));
+    if (D.dot(new THREE.Vector3().crossVectors(dir.negate(), ZUP)) > 0) yaw += Math.PI;
+    return { F: D.multiplyScalar(0.55 * x), d: Math.max(p.dist / LY, 2.2 * x), yaw, pitch, x };
+  }
+  // камера идёт за парусом: фокус — по показу, дистанция — в той же пропорции (своё приближение колесом сохраняется).
+  // Только если перелёт дошёл до кадра (ep3.lock): прерванный колесом или мышью — камера у игрока, парус летит без неё.
+  // Сводки уже нет (вернулись назад, ракурс сменится с выдержкой) — камера стоит, без запасного кадра
+  function followEpoch3(now) {
+    if (!world.epoch3 || !ep3.D) return;
+    if (ep3.show && ep3.show.t0 == null && world.epoch3Go !== false) ep3.show.t0 = now;   // сводку читают — парус уходит
+    if (!ep3.lock) return;
+    const f = ep3Frame(now);
+    cam.F.copy(f.F);
+    if (ep3.d > 0) cam.dist *= f.d / ep3.d;
+    ep3.d = f.d;
+  }
+  function stepEpoch3(now, dly, dt) {
+    ep3.dim += ((cam.focus === 'epoch3' && world.epoch3 ? 1 : 0) - ep3.dim) * (1 - Math.exp(-dt * 1.5));   // прочие рейсы Кольца на ракурсе вылета — тише
+    const e = world.epoch3; ep3Sync();
+    if (!e || !ep3.D) { ep3.g.visible = false; ep3.show = null; return; }
+    if (ep3.show && cam.focus !== 'epoch3') ep3.show = null;             // камеру увели — показ кончился, парус по году
+    if (ep3.show && ep3.show.t0 != null && now - ep3.show.t0 >= EP3_SHOW) ep3.show = null;
+    const tau = ep3Tau(now), x = ep3.x = ep3X(tau, e), a = band(dly, 0.001, 0.005, 150, 300);
+    ep3.g.visible = a > 0.003;
+    if (!ep3.g.visible) return;
+    const P = ep3.mark.position.copy(ep3.to).multiplyScalar(x / ep3.D);
+    const set = (l, A, B) => { const g = l.geometry.attributes.position; g.setXYZ(0, A.x, A.y, A.z); g.setXYZ(1, B.x, B.y, B.z); g.needsUpdate = true; };
+    const O = new THREE.Vector3();
+    set(ep3.path, O, P); set(ep3.beam, O, P); set(ep3.ahead, P, ep3.to); ep3.ahead.computeLineDistances();
+    // луч светит, пока толкает: включается с вылетом, гаснет за полгода после разгона
+    const on = Math.min(1, tau / 0.05) * Math.max(0, Math.min(1, 1 - (tau - e.acc) / 0.6));
+    ep3.mark.material.opacity = a; ep3.path.material.opacity = 0.6 * a; ep3.beam.material.opacity = 0.9 * on * a;
+    ep3.beam.visible = on > 0.003; ep3.ahead.visible = x < ep3.D - 1e-6; ep3.ahead.material.opacity = 0.3 * a;
   }
   function ringTexture() {
     const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -1698,6 +1792,7 @@
     agenda: { focus: 'sun', dist: 46 * LY, yaw: 1.2, pitch: 0.95, pivot: -1400 },   // голосование Совета: все звёзды заявок вокруг Солнца
     sector: { focus: 'sector', dist: 33 * LY, yaw: 1.15, pitch: 0.32, pivot: -1400, frame: 'galactic' },   // сбоку от луча на сектор
     distress: { focus: 'distress', dist: 20 * LY, yaw: 1.3, pitch: 0.32, pivot: -1400, frame: 'galactic' },   // карта сигнала бедствия
+    epoch3: { focus: 'epoch3', dist: 0.02 * LY, yaw: 1.3, pitch: 0.3, pivot: -1400, frame: 'galactic' },   // вылет паруса эпохи III: от Солнца за парусом
     // плазменный магнит: камера медленно отъезжает, пока в кадр не войдёт весь пузырь (дистанция — по его размеру)
     sail: { focus: 'ship', dist: 1.2e7, yaw: 1.95, pitch: 0.38, pivot: -1400, move: 6000, fit: 'bubble' },
     flip: { focus: 'ship', dist: 3000, yaw: 0.45, pitch: 0.28, pivot: -314 },   // взгляд — в центр масс: разворот посреди кадра
@@ -1974,6 +2069,7 @@
   function focusPoint(kind) {
     if (kind === 'sector') return SECTOR_C.clone();
     if (kind === 'distress') return distressFrame().F;
+    if (kind === 'epoch3') return ep3Frame(performance.now()).F;
     if (kind === 'ship') return shipPos();
     if (kind === 'target') return T.clone();
     if (kind === 'route') return T.clone().multiplyScalar(0.5);
@@ -1987,6 +2083,7 @@
   function go(name, instant, dur) {
     const p = PRESETS[name]; if (!p) return;
     goLog.push([Math.round(performance.now()), name, !!instant]); if (goLog.length > 60) goLog.shift();   // отладка: журнал перелётов
+    if (name === 'epoch3') { ep3.show = world.epoch3 ? { t0: null } : null; ep3.d = 0; ep3.lock = !!instant; }   // показ вылета — с начала, когда камера долетит
     const d = offsetDir();
     cam.frame = p.frame || 'ship';
     const a = frameAngles(d); cam.yaw = a.yaw; cam.pitch = a.pitch;
@@ -1994,10 +2091,12 @@
     cam.focus = p.focus;
     // маршрут целиком: масштаб по расстоянию до цели
     const dist = name === 'route' || name === 'targetRoute' ? T.length() * 1.55 * LY : p.fit === 'bubble' ? 4.2 * bubbleR()
-      : name === 'target' && targetInfo.star === EIND.name ? 40 * AU_LY * LY : name === 'distress' ? distressFrame().d * LY : p.dist;
+      : name === 'target' && targetInfo.star === EIND.name ? 40 * AU_LY * LY : name === 'distress' ? distressFrame().d * LY
+      : name === 'epoch3' ? ep3Frame(performance.now()).d * LY : p.dist;
     const to = { F: focusPoint(p.focus), dist, yaw: p.yaw, pitch: p.pitch, pivot: p.pivot };
     if (p.fit === 'arrival' || p.fit === 'home') Object.assign(to, arrivalLook(p.fit));
     if (name === 'distress') { const f = distressFrame(); to.yaw = f.yaw; to.pitch = f.pitch; }
+    if (name === 'epoch3') { const f = ep3Frame(performance.now()); to.yaw = f.yaw; to.pitch = f.pitch; }
     shieldUI.on = p.aim === 'shield';                                     // осмотр — только в ракурсе щита
     if (p.aim === 'shield') { Object.assign(to, shieldAngles()); to.aim = 'shield'; }
     if (name === 'target' && tsysAx && targetInfo.star === EIND.name) Object.assign(to, frameAngles(tsysAx.n.clone().multiplyScalar(0.8).addScaledVector(tsysAx.p1, 0.6).normalize()));
@@ -2028,7 +2127,7 @@
   function pathLength(a, b) { return zoomPath(a.F, b.F, a.dist / LY, b.dist / LY).S; }
   const wrapPi = x => { while (x > Math.PI) x -= 2 * Math.PI; while (x < -Math.PI) x += 2 * Math.PI; return x; };
   function stepTween(now) {
-    if (!tween) { if (cam.focus === 'ship') cam.F.copy(shipPos()); return; }
+    if (!tween) { if (cam.focus === 'ship') cam.F.copy(shipPos()); else if (cam.focus === 'epoch3') followEpoch3(now); return; }
     const k = ease(Math.max(0, Math.min(1, (now - tween.t0) / tween.dur))), a = tween.from, b = tween.to;   // кадр мог начаться чуть раньше перелёта
     if (tween.fit) { const f = arrivalLook(tween.fit); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; tween.upTo = arrivalAxes().up; }   // звезда движется — ракурс вслед
     if (b.aim === 'shield') { const f = shieldAngles(); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; }   // корабль поворачивается — ракурс вслед
@@ -2044,7 +2143,7 @@
     cam.yaw = a.yaw + (b.yaw - a.yaw) * k; cam.pitch = a.pitch + (b.pitch - a.pitch) * k;
     cam.pivot = a.pivot + (b.pivot - a.pivot) * k;
     if (tween.upFrom) camUp.copy(tween.upFrom).lerp(tween.upTo, k).normalize();   // верх — по ходу перелёта
-    if (k >= 1) { cam.dist = b.dist; tween = null; }
+    if (k >= 1) { cam.dist = b.dist; tween = null; if (cam.focus === 'epoch3') ep3.lock = true; }   // долетели до вылета паруса — слежение
   }
   const ZUP = new THREE.Vector3(0, 0, 1);
   const camUp = E3.clone();
@@ -2142,11 +2241,11 @@
   const TXT = {
     ru: { ship: 'Корабль', route: 'Маршрут', target: 'Цель', sun: 'Солнце', map: 'Карта', hint: 'тянуть — вращать · колесо — масштаб',
       sunL: 'Солнце', gcL: 'центр Галактики', linkL: d => `${Math.round(d)} св. лет: вопрос идёт ${Math.round(d)} лет, ответ приходит через ${Math.round(2 * d)}`, targetL: 'цель', requestL: 'заявка', shipL: 'Сорок первая', scoutL: 'зонд', kits: { materials: 'материалы и запчасти', landing: 'расширенная посадка', probes: 'зонды-разведчики', ir: 'ИК-обсерватория', agro: 'второй агромодуль' }, cloudL: 'облако D2', scale: 'до камеры',
-      sosL: 'сорок первая · сигнал бедствия', hearL: y => `сигнал — год ${y}`, rescuerL: 'спасатель', earthL: 'Земля',
+      sosL: 'сорок первая · сигнал бедствия', hearL: y => `сигнал — год ${y}`, rescuerL: 'спасатель', earthL: 'Земля', epoch3L: 'парус эпохи III · 0,2c',
       legacyL: n => `спасённые прошлой экспедиции · ${n}` },
     en: { ship: 'Ship', route: 'Route', target: 'Target', sun: 'Sun', map: 'Map', hint: 'drag — rotate · wheel — zoom',
       sunL: 'Sun', gcL: 'Galactic centre', linkL: d => `${Math.round(d)} ly: a question takes ${Math.round(d)} years, the answer comes after ${Math.round(2 * d)}`, targetL: 'target', requestL: 'request', shipL: 'Forty-First', scoutL: 'probe', kits: { materials: 'materials and spares', landing: 'extended landing kit', probes: 'scout probes', ir: 'IR observatory', agro: 'second agro module' }, cloudL: 'D2 cloud', scale: 'to camera',
-      sosL: 'Forty-First · distress signal', hearL: y => `signal in year ${y}`, rescuerL: 'rescuer', earthL: 'Earth',
+      sosL: 'Forty-First · distress signal', hearL: y => `signal in year ${y}`, rescuerL: 'rescuer', earthL: 'Earth', epoch3L: 'epoch III sail · 0.2c',
       legacyL: n => `rescued by a past expedition · ${n}` }
   };
   function fmtDist(m) {
@@ -2194,6 +2293,7 @@
     if (reqMarks.visible) reqMarks.children.forEach(m => { const n = m.userData.name; if ((n !== targetInfo.star || tFree) && !(colonyMarks.visible && OBJ_STARS.has(n))) put(rel(m.position), `${MI ? MI.nameOf(n, lang) : n} · ${TXT[lang].requestL}`, 'star'); });
     if (legacyMarks.visible) legacyMarks.children.forEach(m => put(rel(m.position), TXT[lang].legacyL(m.userData.people), 'legacy'));   // ниже звезды — сдвиг в CSS
     if (!galactic && far && scoutMark.visible) put(rel(scoutMark.position), TXT[lang].scoutL, 'ship');
+    if (ep3.g && ep3.g.visible && ep3.x > 0.03 * dly) put(rel(ep3.mark.position), TXT[lang].epoch3L, 'ship');   // отошёл от Солнца — своя подпись
     if (galactic) { put(rel(GC), TXT[lang].gcL, 'star'); }
     if (hiLine && hiLine.visible) put(rel(hiLink.b.clone().multiplyScalar(0.5)), TXT[lang].linkL(hiLink.len), 'target');
     if (dly > 0.3 && dly < 150) LABELED.forEach(s => { if ((s.name !== targetInfo.star || tFree) && !sectorNames.has(s.name) && !(colonyMarks.visible && OBJ_STARS.has(s.name))) put(rel(new THREE.Vector3(s.x, s.y, s.z)), MI ? MI.nameOf(s.name, lang) : s.name, 'star'); });
@@ -2273,6 +2373,7 @@
     const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now;   // не отрицательный: часы отладочной прокрутки могут уйти вперёд
     if (shiftTween) { const k = Math.min(1, (now - shiftTween.t0) / 900), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(2 - 2 * k, 2) / 2;
       viewShift = shiftTween.from + (shiftTween.to - shiftTween.from) * e; if (k >= 1) shiftTween = null; applyShift(); }
+    stepTimeRate(dt);
     const turnK = 1 - Math.exp(-dt * 1.2);
     // Последние 4 года — кормой вперёд: двигатель ядра гасит остаток скорости. Порядок манёвра строгий:
     // магнит гаснет → корабль разворачивается → двигатель включается; назад — двигатель гаснет → разворот → магнит.
@@ -2339,6 +2440,7 @@
     const ringA = band(dly, 0.3, 2, 1e9, 1e9); distRings.forEach(r => fadeObj(r, ringA, 0.8));   // кольца расстояний — только на масштабе карты
     const secA = band(dly, 1.5, 4, 100, 200); sectorMarks.children.forEach(m => fadeObj(m, secA, 0.7)); sectorMarks.visible = secA > 0.003;
     stepDistress(dly);
+    stepEpoch3(now, dly, dt);
     updateLegacy();
     const colA = band(dly, 1.5, 4, 100, 200);
     colonyMarks.children.forEach(m => fadeObj(m, colA, 0.95)); colonyMarks.visible = colA > 0.003;
@@ -2497,7 +2599,7 @@
     starScene = new THREE.Scene(); shipScene = new THREE.Scene();
     starCam = new THREE.PerspectiveCamera(45, 1, 1e-9, 1e4);
     shipCam = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
-    mats(); buildStars(); buildGalaxy(); buildShip(); buildCargo(); buildEarth(); buildSolar(); buildStreaks();
+    mats(); buildStars(); buildGalaxy(); buildEpoch3(); buildShip(); buildCargo(); buildEarth(); buildSolar(); buildStreaks();
     starScene.traverse(o => { if (o.material) o.material.toneMapped = false; });
     E0.copy(helio(EARTH_PL, 0));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2581,7 +2683,9 @@
       glare: tglare ? [tglare.visible, tglare.material.opacity, tglare.scale.x] : null,
       shipAt: shipPos().toArray().map(v => +v.toFixed(6)), targetAt: T.toArray(),
       preview: !!world.preview, routeVis: !!(routeAhead && routeAhead.visible), reqMarks: reqMarks ? reqMarks.children.length : 0,
-      streaks: +streaks.a.toFixed(3), pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3),
+      streaks: +streaks.a.toFixed(3), boost: +timeBoost().toFixed(2), yRate: +yRate.v.toFixed(3),
+      ep3: world.epoch3 ? { x: +ep3.x.toFixed(4), show: ep3.show ? (ep3.show.t0 == null ? 'wait' : 'run') : null, vis: !!(ep3.g && ep3.g.visible), beam: ep3.beam ? +ep3.beam.material.opacity.toFixed(3) : 0 } : null,
+      pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3),
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,
       tw: tween ? { fromF: tween.from.F.toArray(), fromDist: tween.from.dist, fromFocus: tween.from.focus, toF: tween.to.F.toArray(), toDist: tween.to.dist, dur: tween.dur, age: performance.now() - tween.t0 } : null,
       planetNdc: arrival.eind && arrival.eind.tilt.visible ? (() => { const v = arrival.eind.tilt.position.clone().project(shipCam); return [v.x, v.y]; })() : null,
