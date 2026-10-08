@@ -744,7 +744,7 @@ There are no longer years of waiting between question and answer.`;
   // спасение людей и независимый путь берут и регламентных — регламент ждёт; плановые работы без техников — регламентными
   // в свободное время (jobs.js SLACK)
   const techs = s => Math.max(0, Math.floor(s.watch / 6) - 2);
-  const pools = s => ({ tech: techs(s), routine: Math.min(2, Math.floor(s.watch / 6)) });
+  const pools = s => ({ tech: techs(s), routine: Math.min(2, Math.floor(s.watch / 6)), shop: 1 });   // мастерская — один производственный слот (шаг 3b)
   const auralN = s => techs(s) + Math.min(2, Math.floor(s.watch / 6));
   const auralDays = s => { const n = auralN(s); return n ? WEAR_WORK.pump.work / n + WEAR_WORK.pump.hold : Infinity; };   // насос авралом, сутки
   function wearStart(s) {
@@ -808,7 +808,7 @@ There are no longer years of waiting between question and answer.`;
     const u = id.split('.')[0], NM = { pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
       control: [`замена управления группы ${u}`, `replacing group ${u}'s control`], move: [`перекладка группы ${u}`, `moving group ${u}`] }[kind];
     wearMove$(s, t, -cost, NM[0], NM[1]);
-    if (kind === 'pump') w.inv.pump--; else if (kind === 'cooler') w.inv.cooler--; else if (kind === 'control') w.inv.control--;
+    if (kind === 'pump' || kind === 'cooler') op.sn = W.reservePart(w, kind); else if (kind === 'control') w.inv.control--;   // насос, холодильник — экземпляр из запаса
     return op;
   }
   // изменение запаса работой износа — с причиной (отчёт вахты: «Материалы: −1% — замена насоса L2»)
@@ -841,16 +841,97 @@ There are no longer years of waiting between question and answer.`;
       if (!c[g].sleep.length || pendingFor(w, g)) continue;
       for (const part of ['cool', 'ctrl']) if (!w.nodes[`${g}.${part}`].ok && !pendingFor(w, `${g}.${part}`)) { wearUnit(s, g, part, t); break; }
     }
+    wearShop(s, t);
+  }
+  // ---- восстановление (шаг 3b; «Ревью Codex — износ, шаг 3», B1–B4). Снятый агрегат: годен к переборке — ждёт на складе
+  // снятых, иначе — разборка в лом. Мастерская: готовых агрегатов (с перебираемыми) меньше резерва совета — перебрать
+  // снятый (сначала реже перебранный); снятого нет, а отказавший стоит на месте без замены — снять его на переборку.
+  // Переборка — два специалиста и мастерская, приоритет запаса; затем партия переработки лома (один специалист и мастерская,
+  // приоритет 3). Перебранный насос встаёт на отказавший контур, если политика не «беречь запас»
+  const SHOP_RESERVE = { pump: 1, cooler: 1 };
+  const prodOf = s => eqOf(s).prod;
+  const PART_RU = { pump: 'Насос', cooler: 'Холодильник' }, PART_EN = { pump: 'Pump', cooler: 'Cooler' };
+  function wearDispose(s, sn, t) {
+    const w = s.wear;
+    if (!W.canRebuild(w, sn)) W.dismantle(w, sn, t);                    // переборки исчерпаны — в лом; годный ждёт мастерскую
+  }
+  function wearShop(s, t) {
+    const w = s.wear; if (!w || !s.jobs) return;
+    W.partsOf(w);
+    for (const fam of W.TRACK) {
+      const busy = w.ops.filter(o => !o.done && o.kind === 'rebuild' && o.fam === fam).length;
+      if (w.inv[fam] + busy >= SHOP_RESERVE[fam]) continue;
+      let sn = W.removedOf(w, fam).find(x => W.canRebuild(w, x));
+      if (sn == null) {                                                  // отказавший на месте, замены нет — снять на переборку
+        const id = Object.keys(w.nodes).find(id => { const n = w.nodes[id]; return n.fam === fam && !n.ok && n.sn != null && !pendingFor(w, id) && W.canRebuild(w, n.sn); });
+        if (id && wearRebuildable(s, w.nodes[id].sn)) sn = W.removePart(w, id, t);
+      }
+      if (sn != null) wearRebuild(s, sn, t);
+    }
+    if (!w.ops.some(o => !o.done && o.kind === 'recover') && w.scrap.v >= 1 - 1e-9) wearRecover(s, t);   // партия — от пункта лома
+  }
+  const wearRebuildable = (s, sn) => { const q = W.quoteRebuild(s.wear, sn, prodOf(s)); return !!(q && s.wear.inv.valve >= 1 && s.materials >= q.materials - 1e-9); };
+  function wearRebuild(s, sn, t) {
+    const w = s.wear, q = W.quoteRebuild(w, sn, prodOf(s));
+    if (!wearRebuildable(s, sn)) return null;
+    const op = { id: `op.rebuild.${sn}.${w.ops.length}`, kind: 'rebuild', fam: q.fam, sn, target: `part.${sn}`, at: t, eta: q.eta, cost: q.materials };
+    w.ops.push(op); s.materials -= q.materials; W.startRebuild(w, sn, t);
+    JB.enqueue(s.jobs, { owner: 'wear', ref: op.id, type: `wear.rebuild.${q.fam}`, prio: JB.PRIO.stock, pool: 'tech', minW: 1, maxW: 2, equip: 'shop', work: q.days * 2, hold: 0 }, t, pools(s));
+    const ru = q.fam === 'pump' ? 'насоса' : 'холодильника', en = q.fam === 'pump' ? 'pump' : 'cooler';
+    wearMove$(s, t, -q.materials, `переборка ${ru} № ${sn}`, `rebuilding ${en} no. ${sn}`);
+    wearNote(s, `${PART_RU[q.fam]} № ${sn} — на ${q.rg ? 'вторую ' : ''}переборку в мастерской: два специалиста, ${q.days} суток; материалы −${nf(q.materials, 2, 'ru')}%, клапанный комплект (осталось ${w.inv.valve}).`,
+      `${PART_EN[q.fam]} no. ${sn} goes for ${q.rg ? 'a second ' : ''}rebuild in the workshop: two specialists, ${q.days} days; materials −${nf(q.materials, 2, 'en')}%, one valve kit (${w.inv.valve} left).`);
+    return op;
+  }
+  function wearRebuilt(s, op, t) {
+    const w = s.wear;
+    W.completeRebuild(w, op.sn, t, op.eta);
+    W.addScrap(w, W.SCRAP_BACK * op.cost, `rebuild.${op.sn}`, t);       // обрезки и снятые детали переборки — в лом
+    wearNote(s, `${PART_RU[op.fam]} № ${op.sn} перебран: в запасе ${op.fam === 'pump' ? `насосов — ${w.inv.pump}` : `холодильников — ${w.inv.cooler}`}. Ресурс перебранного меньше заводского.`,
+      `${PART_EN[op.fam]} no. ${op.sn} rebuilt: ${op.fam === 'pump' ? `${w.inv.pump} pump${w.inv.pump === 1 ? '' : 's'}` : `${w.inv.cooler} cooler${w.inv.cooler === 1 ? '' : 's'}`} in stock. A rebuilt unit has less life than a factory one.`);
+    wearRefit(s, t);
+    wearCheckGroups(s, t);
+    return null;
+  }
+  // отказавшие насосы без работы — из запаса (перебранный встаёт так же, как заводской), если политика не «беречь запас»;
+  // на контуре остались спящие группы (они на тепловом резерве) — аврал при любой политике (ревью Codex 3b)
+  function wearRefit(s, t) {
+    const w = s.wear;
+    for (const L of W.LOOPS) { const id = L + '.pump';
+      if (w.nodes[id].ok || pendingFor(w, id) || !pumpSpare(s)) continue;
+      const urgent = W.GIDS.some(g => w.link.group[g] === L && W.groupPeople(w, g).sleep.length > 0);
+      if (s.wearPolicy === 'reroute' && !urgent) continue;
+      if (wearOp(s, 'pump', id, t, urgent)) wearNote(s, urgent ? `Насос ${L}: группы на тепловом резерве — ставят из запаса авралом.` : `Насос ${L}: ставят из запаса, неделя работы.`,
+        urgent ? `Pump ${L}: groups are on their thermal reserve — a unit from stock is being fitted all-hands.` : `Pump ${L}: a unit from stock is being fitted, a week of work.`); }
+  }
+  function wearRecover(s, t) {
+    const w = s.wear, batch = W.takeScrap(w, W.BATCH, 'recover', t); if (!(batch > 0)) return null;
+    const op = { id: `op.recover.${w.ops.length}`, kind: 'recover', target: 'scrap', at: t, batch };
+    w.ops.push(op);
+    JB.enqueue(s.jobs, { owner: 'wear', ref: op.id, type: 'wear.recover', prio: JB.PRIO.low, pool: 'tech', minW: 1, maxW: 1, equip: 'shop', work: W.BATCH_DAYS, hold: 0 }, t, pools(s));   // партия — 90 суток при любом объёме
+    return op;
+  }
+  function wearRecovered(s, op, t) {
+    const w = s.wear, k = W.YIELD[prodOf(s)] || W.YIELD.repair, gain = k * op.batch;
+    s.materials += gain; wearMove$(s, t, gain, 'переработка лома', 'scrap recovery');
+    wearNote(s, `Партия переработки лома: ${nf(op.batch, 2, 'ru')} пункта — в запас вернулось ${nf(gain, 2, 'ru')}% материалов (выход годного ${Math.round(k * 100)}%), остальное — в отходы.`,
+      `A scrap recovery batch: ${nf(op.batch, 2, 'en')} points — ${nf(gain, 2, 'en')}% of materials back in stock (${Math.round(k * 100)}% usable), the rest is waste.`);
+    wearRefit(s, t);                                                     // материалов хватило на монтаж ждущего агрегата:
+    wearCheckGroups(s, t);                                               // насосы, затем холодильники и управление групп (и мастерская)
+    return null;
   }
   function wearOpDone(s, id, t) {
     const w = s.wear, op = w.ops.find(o => o.id === id); if (!op || op.done) return null;
     op.done = true;
+    if (op.kind === 'rebuild') return wearRebuilt(s, op, t);
+    if (op.kind === 'recover') return wearRecovered(s, op, t);
     if (op.kind === 'move') { const n = W.moveSleepers(w, op.target, t, op.id);
       wearNote(s, n ? `Группа ${op.target} переложена: ${ppl(n)} в капсулах других групп.` : `Группу ${op.target} переложить не удалось: свободных капсул не осталось.`,
         n ? `Group ${op.target} moved: ${n} people in other groups' capsules.` : `Group ${op.target} could not be moved: no free capsules left.`);
       wearCheckGroups(s, t); return null; }
     const unit = op.target.split('.')[0];
-    W.install(w, op.target, t);
+    const old = W.install(w, op.target, t, op.sn);                      // снятый агрегат: переборка или лом
+    if (old != null) wearDispose(s, old, t); else if (op.kind === 'control') W.addScrap(w, W.SCRAP_OF.control, `${op.target}.${w.nodes[op.target].gen - 1}`, t);
     const home = op.kind === 'pump' ? W.rehome(w, t) : 0;                // восстановленный контур забирает свои группы; чужие — домой, где есть место
     wearNote(s, op.kind === 'pump' ? `Насос ${unit} заменён из запаса${home ? '; группы вернулись на свои контуры' : ''}. Схема ${layout(w)}.`
       : op.kind === 'cooler' ? `Холодильник группы ${unit} заменён из запаса.` : `Управление группы ${unit} заменено из запаса.`,
@@ -867,6 +948,13 @@ There are no longer years of waiting between question and answer.`;
       s.dead += rec.ids.length; incident(s, 'wearGroup', rec.ids.length, { ids: rec.ids, group: rec.group, kept }); }
   }
   const pumpSpare = s => s.wear.inv.pump > 0 && s.materials >= WEAR_OPS.pump - 1e-9;
+  // запас насосов восполним: идёт переборка, или есть клапанный комплект, годный к переборке насос (снятый или отказавший id)
+  // и материалы на его переборку после монтажа запасного (ревью Codex 3b)
+  const pumpProspect = (s, id) => { const w = s.wear; if (w.ops.some(o => !o.done && o.kind === 'rebuild' && o.fam === 'pump')) return true;
+    if (w.inv.valve < 1) return false;
+    const sn = W.removedOf(w, 'pump').find(x => W.canRebuild(w, x)) ?? (id && w.nodes[id].sn != null && W.canRebuild(w, w.nodes[id].sn) ? w.nodes[id].sn : null);
+    const q = sn != null && W.quoteRebuild(w, sn, prodOf(s));
+    return !!q && s.materials - WEAR_OPS.pump >= q.materials - 1e-9; };
   // отказ узла: обратимая автоматика сразу; карточка — когда есть настоящий выбор (перестановка покрыла все группы, а
   // это первый отказ контура или последний запасной насос); иначе — принятая политика или единственный путь, в ведомость
   function wearRespond(s, rec) {
@@ -879,7 +967,8 @@ There are no longer years of waiting between question and answer.`;
         else wearNote(s, `${pumpFail(w, unit, 'ru').slice(0, -1)}; групп на нём нет. Запасного насоса нет.`, `${pumpFail(w, unit, 'en').slice(0, -1)}; no groups on it. No spare pump.`);
         return null;
       }
-      if (spare && full && (!s.wearPolicy || w.inv.pump === 1)) { s.wearAsked = (s.wearAsked || 0) + 1; return { kind: 'wear', type: 'loop', loop: unit, plan: rr.plan, at: t }; }   // счёт карточек — для калибровки
+      // «последний насос» — когда переборкой его уже не восполнить (нет клапанных комплектов или годных к переборке)
+      if (spare && full && (!s.wearPolicy || (w.inv.pump === 1 && !pumpProspect(s, rec.id)))) { s.wearAsked = (s.wearAsked || 0) + 1; return { kind: 'wear', type: 'loop', loop: unit, plan: rr.plan, at: t }; }   // счёт карточек — для калибровки
       for (const g of rr.left) wearMove(s, g, t);                       // не поместились на контуры — в свободные капсулы, если есть
       // перестановка больше не покрывает отказ: политика «беречь запас» кончилась вместе с запасом мощности — сначала
       // аврал на этом контуре (все свободные бригады), затем, спокойно, насосы контуров, прежде оставленных выключенными
@@ -910,7 +999,7 @@ There are no longer years of waiting between question and answer.`;
     if (b.kind === 'med') { wearDeaths(s, W.bgDeath(w, b.id, t, wearRnd(s))); return null; }
     if (b.kind === 'buffer') { const r = W.bufferFail(w, b.id, t); wearDeaths(s, r);
       wearNote(s, `Группа ${r.group}: тепловой резерв исчерпан. Погибли ${ppl(r.ids.length)}.`, `Group ${r.group}: the thermal reserve ran out. ${r.ids.length} dead.`); return null; }
-    if (b.kind === 'fail') return wearRespond(s, W.fail(w, b.id, t));
+    if (b.kind === 'fail') { const r = wearRespond(s, W.fail(w, b.id, t)); wearShop(s, t); return r; }
     return null;
   }
   // граница модели износа в [t0, t1]: смена числа бодрствующих (годы 2, 8, прибытие — пока не применена, в том числе на
@@ -1313,11 +1402,19 @@ There are no longer years of waiting between question and answer.`;
   const wearPart = (id, lang) => { const [u, p] = id.split('.'), ru = lang === 'ru';
     return p === 'pump' ? (ru ? `отказ насоса контура ${u}` : `loop ${u} pump failure`) : p === 'cool' ? (ru ? `отказ холодильника группы ${u}` : `group ${u} cooler failure`)
       : p === 'ctrl' ? (ru ? `отказ управления группы ${u}` : `group ${u} control failure`) : (ru ? `отказ ${id}` : `${id} failure`); };
+  const shopRu = o => { const r = o.shop.removed, b = o.shop.rebuilding, x = [];
+    if (r.pump + b.pump) x.push(`снятых насосов ${r.pump + b.pump}${b.pump ? ` (на переборке ${b.pump})` : ''}`);
+    if (r.cooler + b.cooler) x.push(`снятых холодильников ${r.cooler + b.cooler}${b.cooler ? ` (на переборке ${b.cooler})` : ''}`);
+    return x.length ? '; ' + x.join(', ') : ''; };
+  const shopEn = o => { const r = o.shop.removed, b = o.shop.rebuilding, x = [];
+    if (r.pump + b.pump) x.push(`removed pumps ${r.pump + b.pump}${b.pump ? ` (${b.pump} in rebuild)` : ''}`);
+    if (r.cooler + b.cooler) x.push(`removed coolers ${r.cooler + b.cooler}${b.cooler ? ` (${b.cooler} in rebuild)` : ''}`);
+    return x.length ? '; ' + x.join(', ') : ''; };
   function coolLine(w, lang) {
     const o = W.observe(w), ru = lang === 'ru', loops = o.loops.map(l => l.runs ? `${l.id} ${l.load}/${l.max}` : `${l.id} ${ru ? 'стоит' : 'stopped'}`).join(' · ');
     const warm = o.groups.filter(g => g.sleep && g.heat), inv = o.inv;
-    return ru ? `Охлаждение: ${loops}; независимых контуров — ${o.independent}.${warm.length ? ` На тепловом резерве: ${warm.map(g => `${g.id} (${nf(g.heatH, 0, 'ru')} ч)`).join(', ')}.` : ''} Запас: насосы ${inv.pump}, холодильники ${inv.cooler}, управление ${inv.control}. Питание — ${o.power === 2 ? 'два независимых канала' : o.tie ? 'один канал, вторая шина — через перемычку' : 'один канал'}.`
-      : `Cooling: ${loops}; independent loops — ${o.independent}.${warm.length ? ` On thermal reserve: ${warm.map(g => `${g.id} (${nf(g.heatH, 0, 'en')} h)`).join(', ')}.` : ''} Stock: pumps ${inv.pump}, coolers ${inv.cooler}, controls ${inv.control}. Power — ${o.power === 2 ? 'two independent channels' : o.tie ? 'one channel, the second bus through the tie' : 'one channel'}.`;
+    return ru ? `Охлаждение: ${loops}; независимых контуров — ${o.independent}.${warm.length ? ` На тепловом резерве: ${warm.map(g => `${g.id} (${nf(g.heatH, 0, 'ru')} ч)`).join(', ')}.` : ''} Запас: насосы ${inv.pump}, холодильники ${inv.cooler}, управление ${inv.control}, клапанные комплекты ${inv.valve}${shopRu(o)}; лом ${nf(o.shop.scrap, 1, 'ru')}. Питание — ${o.power === 2 ? 'два независимых канала' : o.tie ? 'один канал, вторая шина — через перемычку' : 'один канал'}.`
+      : `Cooling: ${loops}; independent loops — ${o.independent}.${warm.length ? ` On thermal reserve: ${warm.map(g => `${g.id} (${nf(g.heatH, 0, 'en')} h)`).join(', ')}.` : ''} Stock: pumps ${inv.pump}, coolers ${inv.cooler}, controls ${inv.control}, valve kits ${inv.valve}${shopEn(o)}; scrap ${nf(o.shop.scrap, 1, 'en')}. Power — ${o.power === 2 ? 'two independent channels' : o.tie ? 'one channel, the second bus through the tie' : 'one channel'}.`;
   }
   function simReport(s, base, log, mark, folded, ev) {
     const now = observeShip(s, log);
@@ -1358,7 +1455,10 @@ There are no longer years of waiting between question and answer.`;
     lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n),
     book: (s, cause) => book(s, cause),                               // журнал — до снимка записи события
     // общая очередь работ (шаг 3a): события ставят работы в неё, когда она есть (модель износа включена)
-    jobs: s => s.jobs ? { enqueue: spec => JB.enqueue(s.jobs, spec, s.year, pools(s)), list: () => JB.active(s.jobs).filter(j => j.owner === 'ev'), eta: j => JB.eta(j, s.year) } : null });
+    jobs: s => s.jobs ? { enqueue: spec => JB.enqueue(s.jobs, spec, s.year, pools(s)), list: () => JB.active(s.jobs).filter(j => j.owner === 'ev'), eta: j => JB.eta(j, s.year) } : null,
+    // лом работ событий — в склад модели износа (четверть расхода, при завершении работы); переработка — работа мастерской
+    scrapAdd: (s, x, src) => { if (!s.wear) return false; W.addScrap(s.wear, W.SCRAP_BACK * x, `ev.${src}`, s.year); wearShop(s, s.year); return true; },
+    scrapOwned: s => !!s.wear });
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
   // Журнал: каждое изменение запасов и числа погибших — записью с причиной: решение (id/вариант), сцена (id), граница
   // модели (событие, удар, выход из ядра). Сумма записей сходится с состоянием — одно происшествие не считается дважды

@@ -10,7 +10,9 @@
    Ход — от опорной точки последней раздачи (t0): выполненное считается от неё, нарезка перемотки срок не меняет.
    Пулы людей: tech — техники сверх регламента, routine — те, кто ведёт регламент исправного корабля. Спасение людей и
    независимый путь (приоритеты 0–1) берут и регламентных (регламент ждёт); плановые ручные работы, если техников нет, —
-   регламентными в свободное время, с долей смены SLACK (вахта 13: сверх регламента никого, ремонт идёт вчетверо дольше). */
+   регламентными в свободное время, с долей смены SLACK (вахта 13: сверх регламента никого, ремонт идёт вчетверо дольше).
+   Оборудование (equip, шаг 3b): работа занимает единицу пула оборудования (мастерская — один производственный слот);
+   оборудование занято — работа ждёт, как без людей. */
 (function (root) {
   'use strict';
 
@@ -19,10 +21,11 @@
   const SLACK = 0.25;                                                    // доля смены регламентных на плановые работы
   const create = () => ({ seq: 0, list: [] });
 
-  // spec: { owner, ref, type, how, blocks, prio, deadline, pool: 'tech' | null, work — чел.-сут, minW, maxW, hold — сут }
+  // spec: { owner, ref, type, how, blocks, prio, deadline, pool: 'tech' | null, work — чел.-сут, minW, maxW, hold — сут,
+  //   equip — пул оборудования на время ручной части (мастерская) }
   function enqueue(Q, spec, t, pools) {
     const j = Object.assign({ owner: 'wear', ref: null, type: null, how: null, blocks: [], prio: PRIO.stock, deadline: Infinity, pool: 'tech',
-      work: 0, minW: 1, maxW: 2, hold: 0 }, spec);
+      work: 0, minW: 1, maxW: 2, hold: 0, equip: null }, spec);
     Object.assign(j, { id: `job.${Q.seq++}`, at: t, done: 0, held: 0, w: 0, t0: t, status: j.pool && j.work > 0 ? 'wait' : 'hold' });
     if (!(j.deadline < Infinity)) delete j.deadline;                    // JSON без Infinity
     if (!(j.maxW < Infinity)) j.maxW = 'all';
@@ -47,11 +50,13 @@
     const order = active(Q).slice().sort((a, b) => a.prio - b.prio || (a.deadline ?? Infinity) - (b.deadline ?? Infinity) || a.at - b.at || (+a.id.slice(4)) - (+b.id.slice(4)));
     for (const j of order) {
       if (j.done >= j.work - 1e-9) { j.w = 0; j.status = 'hold'; continue; }   // ручная часть сделана — выдержка без людей
+      if (j.equip && !((left[j.equip] || 0) >= 1)) { j.w = 0; j.eff = 1; j.status = 'wait'; continue; }   // оборудование занято
       let src = from(j), eff = 1;
       const cap = src => { const free = src.reduce((a, p) => a + (left[p] || 0), 0); return j.maxW === 'all' ? free : Math.min(j.maxW, free); };
       let max = cap(src);
       if (max < j.minW && j.pool === 'tech' && j.prio > PRIO.path && cap(['routine']) >= j.minW) { src = ['routine']; eff = SLACK; max = cap(src); }
-      if (max >= j.minW) { j.w = max; j.eff = eff; let need = max; for (const p of src) { const k = Math.min(need, left[p] || 0); left[p] = (left[p] || 0) - k; need -= k; } j.status = 'work'; }
+      if (max >= j.minW) { j.w = max; j.eff = eff; let need = max; for (const p of src) { const k = Math.min(need, left[p] || 0); left[p] = (left[p] || 0) - k; need -= k; } j.status = 'work';
+        if (j.equip) left[j.equip]--; }
       else { j.w = 0; j.eff = 1; j.status = 'wait'; }
     }
   }

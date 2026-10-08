@@ -670,16 +670,16 @@
     'Сатурн': 0xe3cf9c, 'Уран': 0xa7d9dd, 'Нептун': 0x5b7fd6, 'Плутон': 0xcdb8a4 };
   const EN = { 'Меркурий': 'Mercury', 'Венера': 'Venus', 'Земля': 'Earth', 'Марс': 'Mars', 'Юпитер': 'Jupiter', 'Сатурн': 'Saturn',
     'Уран': 'Uranus', 'Нептун': 'Neptune', 'Плутон': 'Pluto', 'Луна': 'Moon' };
-  let solar, solarBodies = [], solarOrbits = [], earthOrbit, beltMat, belts = [], sunGlow;
+  let solar, solarBodies = [], solarOrbits = [], earthOrbit, beltMat, belts = [];
+  // звёзды на видах систем и корабль вдали — блики объектива, без свечений: a — сила, s — размер (0…1)
+  const sysFlare = { sun: { a: 0, s: 0 }, tgt: { a: 0, s: 0 } };
   const KM_LY = 1000 / LY;
   function buildSolar() {
     solar = new THREE.Group();
     // свет Солнца — только в своей системе (0,02 св. года): почти без затухания внутри, ноль за границей
     const light = new THREE.PointLight(0xfff4e6, 1.6, 0.02, 1e-4); solar.add(light, new THREE.AmbientLight(0x8090a0, 0.12));
-    // Солнце: шар в настоящий размер и свечение, видимое с любого расстояния
+    // Солнце: шар в настоящий размер; издали его показывает блик объектива (sysFlare), свечения нет (автор, 08.10)
     solar.add(new THREE.Mesh(new THREE.SphereGeometry(696000 * KM_LY, 48, 32), new THREE.MeshBasicMaterial({ color: 0xfff2d6 })));
-    sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(true), color: 0xffe2a8, sizeAttenuation: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
-    sunGlow.scale.set(0.06, 0.06, 1); solar.add(sunGlow);
     const ecl = [...Array(257)].map((_, k) => k / 256 * Math.PI * 2);
     const ringLine = (r, color, op) => new THREE.Line(new THREE.BufferGeometry().setFromPoints(ecl.map(t => ecl2gal(r * Math.cos(t), r * Math.sin(t), 0))),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false }));
@@ -759,8 +759,7 @@
     const beltA = band(dly, 1e-6, 1e-5, 0.01, 0.03);
     belts.forEach(b => { b.visible = beltA > 0.003; }); beltMat.opacity = 0.55 * beltA;   // с корабля поясов так не видно
     const sunD = cam.F.clone().addScaledVector(offsetDir(), dly).length();
-    fadeObj(sunGlow, band(sunD, 3e-7, 3e-6, 1e9, 1e9), 1);
-    const sg = 0.006 + 0.054 * band(sunD, 3e-6, 3e-5, 3e-3, 0.05); sunGlow.scale.set(sg, sg, 1);
+    sysFlare.sun.a = band(sunD, 3e-7, 3e-6, 1e9, 1e9) * band(dly, 0, 0, 0.04, 0.078); sysFlare.sun.s = band(sunD, 3e-6, 3e-5, 3e-3, 0.05);   // к границе вида — гаснет
   }
   // ---------------------------------------------------------------- система ε Индейца (данные 2026 и гипотетическая c)
   // Плоскость орбит — по Ab: наклон 102° к картинной плоскости (узел условный); c — в той же плоскости, на 0,5 а.е.
@@ -779,8 +778,6 @@
     tsys = new THREE.Group(); tsys.position.copy(C0);
     const kcol = 0xffc27a;
     tsys.add(new THREE.Mesh(new THREE.SphereGeometry(EIND.R_km * KM_LY, 48, 32), new THREE.MeshBasicMaterial({ color: 0xffd9a8 })));
-    tsysParts.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(true), color: kcol, sizeAttenuation: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
-    tsysParts.glow.scale.set(0.06, 0.06, 1); tsys.add(tsysParts.glow);
     const inPlane = (r, t) => p1.clone().multiplyScalar(r * Math.cos(t)).addScaledVector(p2, r * Math.sin(t));
     const line = (pts, color, op) => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false })); l.userData.base = op; tsys.add(l); tsysParts.orbits.push(l); return l; };
@@ -837,8 +834,7 @@
     tsysParts.dots.forEach(d => fadeObj(d, band(dly, 1e-7, 5e-7, 0.01, 0.03) * nearT, 1));
     fadeObj(tsysParts.hz, band(dly, 1e-7, 1e-6, 2e-4, 1e-3) * nearT, 0.12);
     const tD = cam.F.clone().addScaledVector(offsetDir(), dly).distanceTo(tsysAx.C0);
-    fadeObj(tsysParts.glow, band(tD, 3e-7, 3e-6, 1e9, 1e9) * nearT, 1);
-    const tg = 0.006 + 0.054 * band(tD, 3e-6, 3e-5, 3e-3, 0.05); tsysParts.glow.scale.set(tg, tg, 1);
+    sysFlare.tgt.a = band(tD, 3e-7, 3e-6, 1e9, 1e9) * nearT; sysFlare.tgt.s = band(tD, 3e-6, 3e-5, 3e-3, 0.05);
     if (world.arrive) tsysParts.c.position.copy(cPos(world.year));
     const th = 2 * Math.PI * world.year / EIND.Ab.P_yr + 1.1, Ab = EIND.Ab, r = Ab.a * (1 - Ab.e * Ab.e) / (1 + Ab.e * Math.cos(th)) * AU_LY;
     tsysParts.Ab.position.copy(tsysAx.p1).multiplyScalar(r * Math.cos(th)).addScaledVector(tsysAx.p2, r * Math.sin(th));
@@ -864,18 +860,6 @@
     if (dly > 2e-5 && dly < 2e-3) put(rel(ecl2gal(0, -2.7 * AU_LY, 0)), lang === 'ru' ? 'пояс астероидов' : 'asteroid belt', 'star');
   }
 
-  // солнечный блик в кадре: гало и горизонтальная вспышка
-  let glare, streak, tglare, tstreak;
-  function glareTexture(streakMode) {
-    const c = document.createElement('canvas'); c.width = 256; c.height = streakMode ? 32 : 256;
-    const g = c.getContext('2d');
-    if (streakMode) {
-      const gr = g.createLinearGradient(0, 0, 256, 0);
-      gr.addColorStop(0, 'rgba(255,220,180,0)'); gr.addColorStop(0.5, 'rgba(255,240,220,0.5)'); gr.addColorStop(1, 'rgba(255,220,180,0)');
-      g.fillStyle = gr; g.fillRect(0, 15, 256, 2);
-    } else return new THREE.CanvasTexture(expGlowCanvas(256, 0.035, 0.2, 0.12, [255, 255, 250], [255, 200, 140]));
-    return new THREE.CanvasTexture(c);
-  }
   // ---------------------------------------------------------------- плазменный магнит (торможение)
   // Антенны на корме ядра (x = −365) гонят ток по впрыснутой плазме, поле раздувается в пузырь (calc_life.py §9).
   // Магнитопауза r = 2 584 км · (0,1c / v): чем медленнее поток, тем шире пузырь. У антенн — плотная плазма, светится
@@ -907,12 +891,10 @@
   }
   function buildPlasmaMagnet() {
     pm.near = add(ship, new THREE.TorusGeometry(58, 22, 24, 96), glowShader([0.72, 0.45, 1.0], 1.0, false), m => { m.rotation.y = Math.PI / 2; m.position.x = -365; });
-    pm.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glareTexture(false), color: 0xb98cff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
-    pm.halo.scale.set(320, 320, 1); pm.halo.position.x = -365; ship.add(pm.halo);
     // пузырь: нос — на r впереди антенн, хвост вдвое длиннее
     pm.shell = add(ship, new THREE.SphereGeometry(1, 64, 32), glowShader([1.0, 0.36, 0.46], 0.55, true));
     pm.light = new THREE.PointLight(0xb98cff, 0, 700, 1); pm.light.position.x = -365; ship.add(pm.light);
-    [pm.near, pm.halo, pm.shell].forEach(o => { o.visible = false; });
+    [pm.near, pm.shell].forEach(o => { o.visible = false; });
   }
   function bubbleR() {                       // магнитопауза, м: 2 584 км на 0,1c, растёт как 1/v
     const v = Math.max(0.005, MI && world.arrive ? MI.speedAt(world.year, world.beta || 0.1, world.arrive, world.tMag) : world.beta || 0.1);
@@ -922,22 +904,15 @@
     const A = world.arrive, y = world.year, on = !world.wreck && A > 0 && y >= A - brakeYears() - 1e-6 && y < A - 4 && ship.quaternion.angleTo(shipQBase) < 0.05;
     pm.a += ((on ? 1 : 0) - pm.a) * (1 - Math.exp(-dt * 0.6));                 // разгорается и гаснет за секунды
     const vis = pm.a > 0.003;
-    [pm.near, pm.halo, pm.shell].forEach(o => { o.visible = vis; });
+    [pm.near, pm.shell].forEach(o => { o.visible = vis; });
     pm.light.intensity = 0.5 * pm.a;
-    if (!vis) { pm.view = 0; return; }
+    if (!vis) return;
     const r = bubbleR();
     pm.shell.scale.set(1.5 * r, r, r); pm.shell.position.x = -365 - 0.5 * r;
-    // камера дальше радиуса пузыря — свечение у антенн тусклее (до трети): на виде сбоку оно не перекрывает блики звезды.
+    // камера дальше радиуса пузыря — плазма у антенн тусклее (до трети): на виде сбоку она не перекрывает блики звезды.
     // Оболочка (сам парус) — в полную силу на любом удалении: на виде сбоку её и показываем
     const far = Math.min(1, Math.max(0, (Math.log((dS || 0) / r) - Math.log(0.5)) / Math.log(8))), dim = 1 - 0.65 * far * far * (3 - 2 * far);
     pm.near.material.uniforms.a.value = pm.a * dim; pm.shell.material.uniforms.a.value = pm.a;
-    pm.halo.material.opacity = 0.28 * pm.a * dim;
-    // пузырь в кадре (камера ближе 20 радиусов, к 100 — уже точка): корабль показывает он, свечение-метка корабля уступает.
-    // Только на виде сбоку (до 100 тыс. км, к 200 тыс. — нет): маршрутные виды (0,2–2 млн км) — с полной меткой и на малой
-    // скорости, когда пузырь велик (ревью Codex)
-    const sm = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
-    const big = 1 - (Math.log((dS || Infinity) / r) - Math.log(20)) / Math.log(5), near = 1 - (Math.log((dS || Infinity) / 1e8)) / Math.log(2);
-    pm.view = pm.a * sm(big) * sm(near);
   }
 
   // ---------------------------------------------------------------- у цели: планета и находка (болванки без текстур)
@@ -1008,6 +983,31 @@
     arrival.debris.rotation.x = 1.25;
     arrival.planet.add(arrival.body, arrival.rim, arrival.debris);
     arrival.planet.visible = false; shipScene.add(arrival.planet);
+    // поле астероидов у цели без мира для колонии (база на астероидах): болванки-камни вокруг точки прибытия — от сотен
+    // метров до 60 км, размером 8–250 м и три глыбы по 1–2 км. Форма — сфера, вдавленная по направлению (без щелей)
+    const geo = new THREE.IcosahedronGeometry(1, 1), pos = geo.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).normalize();
+      const f = 0.78 + 0.22 * Math.sin(3.1 * v.x + 1.7) * Math.sin(4.3 * v.y + 0.3) + 0.12 * Math.sin(5.7 * v.z + 2.1);
+      pos.setXYZ(i, v.x * f, v.y * f * 0.8, v.z * f); }
+    geo.computeVertexNormals();
+    arrival.rockMat = new THREE.MeshStandardMaterial({ color: 0x6f665c, roughness: 1, metalness: 0, flatShading: true, transparent: true, opacity: 0 });
+    const N = 150, rocks = new THREE.InstancedMesh(geo, arrival.rockMat, N), rnd = mulberry(338), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    for (let i = 0; i < N; i++) {
+      const big = i < 3, r = big ? 2e4 + 4e4 * rnd() : 400 * Math.pow(150, rnd()), a = rnd() * Math.PI * 2;
+      const p = new THREE.Vector3(r * Math.cos(a), (rnd() - 0.5) * 0.3 * r, r * Math.sin(a)), sz = big ? 1000 + 1000 * rnd() : 8 * Math.pow(30, rnd() * rnd());
+      q.setFromEuler(e.set(rnd() * 6.3, rnd() * 6.3, rnd() * 6.3));
+      rocks.setMatrixAt(i, m.compose(p, q, new THREE.Vector3(sz, sz * (0.6 + 0.4 * rnd()), sz * (0.7 + 0.3 * rnd()))));
+    }
+    rocks.frustumCulled = false;
+    arrival.rocks = new THREE.Group(); arrival.rocks.add(rocks); arrival.rocks.visible = false; shipScene.add(arrival.rocks);
+  }
+  // планета каталога у цели без мира для колонии: подтверждённая, самая массивная. Радиус — по массе (Chen & Kipping:
+  // R ∝ M^0,28 до 2 масс Земли, дальше ∝ M^0,59); вид — сплошная облачная крыша от 4 масс Земли, иначе приливный мир
+  function catalogPlanet(name) {
+    const st = stars.find(x => x.name === name), ps = (st && st.planets || []).filter(p => p.status === 'confirmed' && p.massEarth > 0);
+    if (!ps.length) return null;
+    const p = ps.sort((a, b) => b.massEarth - a.massEarth)[0], M = p.massEarth;
+    return { name: p.name, mass: M, R: M < 2 ? Math.pow(M, 0.28) : Math.pow(2, 0.28) * Math.pow(M / 2, 0.59), look: M >= 4 ? 'hostile' : 'dome' };
   }
   // ---------------------------------------------------------------- склад Оттепели (спасатель v3) — болванка
   // Орбитальный склад: цилиндр 120 м, два радиатора, 40 огней капсул. До стыковки висит в полукилометре за кораблём
@@ -1189,10 +1189,17 @@
     const A = world.arrive, y = world.year;
     const pivot = shipLocal(-900);
     // планета
-    const cls = world.worldClass, pOn = A > 0 && cls && cls !== 'none' && y >= A - 2;
+    // мира для колонии нет (none): база — в поясе астероидов у точки прибытия, планета каталога (объект обследования) — в стороне
+    const cls = world.worldClass, cat = cls === 'none' ? catalogPlanet(targetInfo.star) : null, look = cls === 'none' ? cat && cat.look : cls;
+    const pOn = A > 0 && look && y >= A - 2;
     const eOn = pOn && targetInfo.star === 'Epsilon Indi' && cls === 'open';      // ε Индейца — по картам, остальные пока болванки
     arrival.eind.tilt.visible = !!eOn;
     arrival.planet.visible = !!pOn && !eOn;
+    const ps = cat ? cat.R : 1; arrival.planet.scale.setScalar(ps); arrival.planetR = 6.4e6 * ps;
+    // камни подходят из глубины последние 0,3 года и проявляются: ни скачка, ни внезапного появления
+    const kr = A > 0 && cls === 'none' ? Math.max(0, Math.min(1, (y - (A - 0.3)) / 0.3)) : 0;
+    arrival.rocks.visible = kr > 0.003; arrival.rockMat.opacity = kr;
+    if (arrival.rocks.visible) arrival.rocks.position.copy(pivot).addScaledVector(arrivalAxes().planet, 2.4e6 * (1 - kr) * (1 - kr));
     if (eOn) {
       const k = Math.max(0, Math.min(1, (A - y) / 2)), D = 3.0e7 * (1 + 120 * k * k);
       const ax = arrivalAxes();
@@ -1206,15 +1213,15 @@
       arrival.eind.surface.material.uniforms.cloudShift.value += 0.000004;
       arrival.planetD = D;
     } else if (pOn) {
-      if (arrivalClass !== cls) {
-        arrivalClass = cls; const c = PLANET[cls], k = PLANET_LOOK[cls] || PLANET_LOOK.dome;
+      if (arrivalClass !== look) {
+        arrivalClass = look; const c = PLANET[look], k = PLANET_LOOK[look] || PLANET_LOOK.dome;
         planetU.mode.value = k.mode; planetU.tint.value.set(k.tint); planetU.tint2.value.set(k.tint2); planetU.cloudMap.value = planetMaps[k.map];
         arrival.rim.material.uniforms.color.value.setRGB(...c.rim);
-        arrival.debris.visible = cls === 'ruined';
+        arrival.debris.visible = look === 'ruined';
       }
       planetU.sunDir.value.copy(lux.dirT); planetU.lightCol.value.set(starColor(targetInfo.sp));
-      planetU.shift.value += 0.000004; arrival.body.rotation.y += cls === 'dome' ? 0 : 0.00012;   // захваченный мир не вращается относительно звезды
-      const k = Math.max(0, Math.min(1, (A - y) / 2)), D = 2.4e7 * (1 + 150 * k * k);
+      planetU.shift.value += 0.000004; arrival.body.rotation.y += look === 'dome' ? 0 : 0.00012;   // захваченный мир не вращается относительно звезды
+      const k = Math.max(0, Math.min(1, (A - y) / 2)), D = 2.4e7 * ps * (1 + 150 * k * k);   // планета каталога — дальше по своему радиусу: в кадре того же размера
       arrival.planet.position.copy(pivot).addScaledVector(arrivalAxes().planet, D);
       arrival.rim.material.uniforms.a.value = 1;
       arrival.planetD = D;
@@ -1270,7 +1277,7 @@
     flareScene = new THREE.Scene(); flareCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
     flareTexs = { burst: flareTexture('burst'), hex: flareTexture('hex'), ring: flareTexture('ring'), disc: flareTexture('disc') };
     const quad = new THREE.PlaneGeometry(1, 1);
-    for (let i = 0; i < 6; i++) {                               // до шести источников в кадре
+    for (let i = 0; i < 8; i++) {                               // до восьми источников в кадре
       const f = { els: [], streak: null, occ: 1, occT: 1, tick: i };
       for (const e of FLARE_ELEMS) {
         const m = new THREE.Mesh(quad, new THREE.MeshBasicMaterial({ map: flareTexs[e.tex], transparent: true, depthTest: false, depthWrite: false,
@@ -1322,11 +1329,25 @@
     renderer.render(flareScene, flareCam);
   }
 
-  function buildGlare() {
-    const mk = (tex, k) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffffff, sizeAttenuation: false,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); sp.renderOrder = 3; shipScene.add(sp); return sp; };
-    glare = mk(glareTexture(false)); streak = mk(glareTexture(true));
-    tglare = mk(glareTexture(false)); tstreak = mk(glareTexture(true));
+  // корабль вдали: блик объектива — сила a, размер s (0…1)
+  const shipFlare = (ndc, a, s, color) => ({ ndc, k: 0.45 * a * (0.5 + 0.5 * s), color, size: 0.3 + 0.5 * s, ghosts: 0.45, streak: 0.6 });
+  // Солнце и цель на видах систем (вес w — доля, где блики с корабля уже погасли): ближе — ярче и крупнее, издали — малая звезда
+  // звезду системы закрывают её планеты (шары в настоящий размер) — блик гаснет, как у звёзд в кадре корабля
+  const sysOcc = { sun: null, tgt: null };
+  const bodiesOf = (group, star) => { const out = []; group.traverse(o => { if (o.isMesh && o !== star && !(o.material && o.material.transparent)) out.push(o); }); return out; };
+  function occludedSys(list, pos, R) {
+    const from = starCam.position, d = pos.clone().sub(from), L = d.length(); d.normalize();
+    rayc.set(from, d); rayc.near = 0; rayc.far = Math.max(0, L - 2 * R); rayc.camera = starCam;
+    return rayc.intersectObjects(list, false).some(h => h.object.visible);
+  }
+  function sysFlares(src, w) {
+    if (!(w > 0.01)) return;
+    const put = (f, pos, color, occ) => { const k = w * f.a; if (k < 0.01) return; const v = pos.clone().project(starCam); if (v.z >= 1) return;
+      src.push({ ndc: v, k: 0.8 * k * (0.35 + 0.65 * f.s), color, size: 0.35 + 0.65 * f.s, ghosts: 0.6 * f.s, streak: 0.5 + 0.5 * f.s, occluded: occ }); };
+    if (solar && solar.visible) { const p = starsGroup.localToWorld(new THREE.Vector3()); if (!sysOcc.sun) sysOcc.sun = bodiesOf(solar, solar.children.find(o => o.isMesh));
+      put(sysFlare.sun, p, 0xfff0d8, () => occludedSys(sysOcc.sun, p, 696000 * KM_LY)); }
+    if (tsys && tsys.visible) { const p = tsys.getWorldPosition(new THREE.Vector3()); if (!sysOcc.tgt) sysOcc.tgt = bodiesOf(tsys, tsys.children.find(o => o.isMesh));
+      put(sysFlare.tgt, p, starColor(targetInfo.sp), () => occludedSys(sysOcc.tgt, p, EIND.R_km * KM_LY)); }
   }
 
   // ---------------------------------------------------------------- звёзды и маршрут
@@ -2498,11 +2519,11 @@
     // свечение корабля вдали: вблизи его нет (виден сам корабль), с отъездом проявляется, дальше сжимается в точку
     const camLy = cam.F.clone().addScaledVector(dir, dly), shipM = camLy.distanceTo(shipPos()) * LY;
     shipFarM = shipM;
-    // на виде сбоку на пузырь магнита свечение слабее и меньше: не перекрывает пузырь и блики (pm.view)
-    const pmK = 1 - 0.65 * (pm.view || 0);
-    const mA = band(shipM, 4e4, 4e5, 1e30, 1e30) * pmK, mS = (0.005 + 0.085 * band(shipM, 4e5, 4e6, 3e7, 3e10)) * pmK;
-    marker.scale.set(mS, mS, 1); fadeObj(marker, mA, 1);
-    marker.material.color.set(engines.some(e => e.a > 0.2) ? 0x9cc8ff : 0xafd5bd);
+    // корабль вдали — блик объектива, без свечения (автор, 08.10: «тут должен быть лензфлайер, глоу не нужно нигде»):
+    // проявляется с 40 км, крупнее всего на 400 км – 30 тыс. км, на маршрутных масштабах — малая звезда. Метка не рисуется
+    const mA = band(shipM, 4e4, 4e5, 1e30, 1e30), mS = band(shipM, 4e5, 4e6, 3e7, 3e10);
+    marker.visible = false; marker.userData.a = mA; marker.userData.s = mS;
+    const shipCol = engines.some(e => e.a > 0.2) ? 0x9cc8ff : 0xafd5bd;
 
     renderer.clear(); shown = true;
     renderer.render(starScene, starCam);
@@ -2528,26 +2549,12 @@
       atmoMesh.material.uniforms.center.value.copy(earthTilt.position);
       const near = Math.min(1, (4.2e7 / earthD) ** 2);
       rim.intensity = 0.35 * near; rim.position.copy(earthTilt.position).normalize();
-      // блик Солнца: у Земли — слепящий, дальше — звезда среди звёзд
+      // блик Солнца: у Земли — слепящий, дальше — звезда среди звёзд. Ореолов (свечения) у звёзд нет — только блики (автор, 08.10)
       const glareA = band(dS, 0, 0, 2e10, 1.5e11);
-      // Ореол звезды — мягкий порог (soft knee), как у bloom: при экспоненциальном профиле I(r) = L·e^(−r/r0) видимый
-      // радиус там, где яркость выше порога, R = r0·ln(L/T); у порога рост сглажен коленом K. Порог — тот же, на котором
-      // гаснут блики (LUX_OFF): у оптики один порог. R нормирован на Солнце у Земли и ограничен вблизи звезды
-      const GLOW_LN = Math.log(LUX_1AU / LUX_OFF), GLOW_K = 1.5, GLOW_MAX = 0.5;
-      const glowR = E => { const x = Math.log(Math.max(E, 1e-30) / LUX_OFF), c = Math.max(0, Math.min(2 * GLOW_K, x + GLOW_K));
-        return Math.min(1.6, Math.max(c * c / (4 * GLOW_K), x) / GLOW_LN); };
-      const flare = (g, st, dir, E) => {
-        const R = Math.max(0, glowR(E)), w = Math.min(1, R * GLOW_LN / GLOW_K) * adapt(E), gpos = shipCam.position.clone().addScaledVector(dir, 1e9);
-        g.position.copy(gpos); st.position.copy(gpos);
-        g.scale.set(GLOW_MAX * R, GLOW_MAX * R, 1); st.scale.set(1.8 * GLOW_MAX * R, 0.12 * GLOW_MAX * R, 1);
-        fadeObj(g, glareA * w, 0.6); fadeObj(st, glareA * w, 0.45);         // та же адаптация, что у бликов: блики всегда ярче ореола
-      };
-      // направления бликов — от камеры (вне фокуса на корабле она смещена от него); освещение корабля — прежнее, от корабля
-      const sunC = cam.focus === 'ship' ? SUN : glareDirS.copy(camLy).negate().normalize();
-      const tgtC = cam.focus === 'ship' ? lux.dirT : glareDirT.copy(T).sub(camLy).normalize();
-      flare(glare, streak, sunC, lux.sun);
-      tglare.material.color.set(starColor(targetInfo.sp)); tstreak.material.color.copy(tglare.material.color);
-      flare(tglare, tstreak, tgtC, lux.tgt);
+      // направления бликов — от камеры (у корабля — то же, что от корабля; вдали камера смещена, и блик звезды совпадает с
+      // бликом звезды системы sysFlares — без параллакса при их смене); освещение корабля — прежнее, от корабля
+      const sunC = glareDirS.copy(camLy).negate().normalize();
+      const tgtC = glareDirT.copy(T).sub(camLy).normalize();
       shipCam.up.copy(vUp); shipCam.near = Math.max(1, dS * 1e-3); shipCam.far = Math.max(dS * 10 + 2e4, earthTilt.visible ? dS + earthD + 1e7 : 0, arrival.planetD ? dS + arrival.planetD + 1e7 : 0, 2e9);
       shipCam.lookAt(camOff.copy(shipCam.position).sub(dir)); shipCam.updateProjectionMatrix();   // взгляд — по направлению камеры
       stepStreaks(dt, pivot, shipCam.position, dS);
@@ -2557,8 +2564,8 @@
       spheresBlocking.length = 0;
       if (earthTilt.visible) spheresBlocking.push({ c: earthTilt.position, r: EARTH_R * 1.01 });
       if (arrival.eind.tilt.visible) spheresBlocking.push({ c: arrival.eind.tilt.position, r: 6.371e6 * 1.01 });
-      if (arrival.planet.visible) spheresBlocking.push({ c: arrival.planet.position, r: 6.4e6 });
-      const src = [], cen = shipLocal(cam.pivot).project(shipCam);
+      if (arrival.planet.visible) spheresBlocking.push({ c: arrival.planet.position, r: arrival.planetR || 6.4e6 });
+      const src = [], farCen = new THREE.Vector3(0, 0, 0).project(starCam), cen = farCen.clone().lerp(shipLocal(cam.pivot).project(shipCam), glareA);   // у корабля — от него, вдали — центр кадра
       const starSrc = (dirv, E, color) => {
         const k = adapt(E) * glareA; if (k < 0.01) return;
         const v = shipCam.position.clone().addScaledVector(dirv, 1e9).project(shipCam); if (v.z > 1) return;
@@ -2571,17 +2578,18 @@
         const wp = e.core.getWorldPosition(new THREE.Vector3()), v = wp.clone().project(shipCam); if (v.z > 1) continue;
         const toE = wp.clone().sub(shipCam.position), dE = toE.length(); toE.normalize();
         const far = band(dS, 0, 0, 3e4, 3e7);                                // вдали — меньше и тусклее
-        src.push({ ndc: v, k: 0.75 * e.a * (0.35 + 0.65 * far), color: 0x7fb6ff, size: 0.45 + 0.55 * far, ghosts: 0.8,
+        src.push({ ndc: v, k: 0.75 * e.a * (0.35 + 0.65 * far) * glareA, color: 0x7fb6ff, size: 0.45 + 0.55 * far, ghosts: 0.8,   // вдали — блик корабля его цвета
           occluded: () => occludedShip(shipCam.position, toE, dE - e.r * 1.6) });
       }
+      if (mA > 0.01) { const v = shipLocal(-900).project(shipCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }   // корабль вдали
+      sysFlares(src, 1 - glareA);                                         // звёзды систем — когда блики с корабля погасли
       drawFlares(src, cen);
-    } else if (marker.visible) {
-      // корабль вдали — мягкая звезда без призраков
-      const v = relGroup.position.clone().add(marker.position).project(starCam);
-      if (v.z < 1) drawFlares([{ ndc: v, k: 0.3 * marker.material.opacity, color: marker.material.color.getHex(), size: 0.35, ghosts: 0.25, streak: 0.4 }],
-        new THREE.Vector3(0, 0, 0).project(starCam));
-      else drawFlares([], new THREE.Vector3());
-    } else drawFlares([], new THREE.Vector3());
+    } else {
+      const src = [];
+      if (mA > 0.01) { const v = relGroup.position.clone().add(marker.position).project(starCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }
+      sysFlares(src, 1);
+      drawFlares(src, new THREE.Vector3(0, 0, 0).project(starCam));       // центр кадра — как у ближней ветки вдали
+    }
     drawLabels();
   }
 
@@ -2637,7 +2645,6 @@
     buildArrival(); buildThawStore(); buildOutpost();
     buildTargetSystem();
     buildEind();
-    buildGlare();
     buildFlares();
     SUN.copy(sunDirNow()); aimLights();
     bindInput(renderer.domElement);
@@ -2700,15 +2707,16 @@
     const d = offsetDir();
     return { dist: cam.dist, dir: [d.x, d.y, d.z], up: [camUp.x, camUp.y, camUp.z], viewUp: [viewUp.x, viewUp.y, viewUp.z], F: [cam.F.x, cam.F.y, cam.F.z], frame: cam.frame, focus: cam.focus, shift: viewShift, tween: !!tween,
       starNdc: (() => { const v = shipCam.position.clone().addScaledVector(lux.dirT, 1e9).project(shipCam); return [v.x, v.y, v.z]; })(),
-      glare: tglare ? [tglare.visible, tglare.material.opacity, tglare.scale.x] : null,
       shipAt: shipPos().toArray().map(v => +v.toFixed(6)), targetAt: T.toArray(),
       preview: !!world.preview, routeVis: !!(routeAhead && routeAhead.visible), reqMarks: reqMarks ? reqMarks.children.length : 0,
       streaks: +streaks.a.toFixed(3), boost: +timeBoost().toFixed(2), yRate: +yRate.v.toFixed(3),
       ep3: world.epoch3 ? { x: +ep3.x.toFixed(4), show: ep3.show ? (ep3.show.t0 == null ? 'wait' : 'run') : null, vis: !!(ep3.g && ep3.g.visible), beam: ep3.beam ? +ep3.beam.material.opacity.toFixed(3) : 0 } : null,
-      pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3), pmView: +(pm.view || 0).toFixed(3), markerA: +marker.material.opacity.toFixed(3),
+      pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3), shipFlareA: +(marker.userData.a || 0).toFixed(3),
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,
       tw: tween ? { fromF: tween.from.F.toArray(), fromDist: tween.from.dist, fromFocus: tween.from.focus, toF: tween.to.F.toArray(), toDist: tween.to.dist, dur: tween.dur, age: performance.now() - tween.t0 } : null,
       planetNdc: arrival.eind && arrival.eind.tilt.visible ? (() => { const v = arrival.eind.tilt.position.clone().project(shipCam); return [v.x, v.y]; })() : null,
+      arrivalPlanet: arrival.planet && arrival.planet.visible ? (() => { const v = arrival.planet.position.clone().project(shipCam); return { ndc: [+v.x.toFixed(3), +v.y.toFixed(3), +v.z.toFixed(4)], D: arrival.planetD, R: arrival.planetR, cls: arrivalClass }; })() : null,
+      rocks: arrival.rocks ? { vis: arrival.rocks.visible, a: +arrival.rockMat.opacity.toFixed(3) } : null,
       light: { auSun: lux.auSun, sunLux: lux.sun, auT: lux.auT, tgtLux: lux.tgt, key: sunLight.intensity, own: lux.own, toTargetLy: T.distanceTo(shipPos()) } };
   };
   api.debugLook = function (what, dist) {

@@ -14,7 +14,11 @@
    Шаг 2: случайные отказы включены у насосов, холодильников и управления групп; коллекторы, радиаторы, шины и блоки
    стареют и измеряются, их собственные отказы — вместе с обслуживанием (шаг 3).
    Люди — по номерам мест экспедиции (тот же реестр, что у victims в content.js): человек i живёт в месте i, пока его
-   не переложили (moved). ps — статус по номеру: S спит, A на вахте, D погиб. */
+   не переложили (moved). ps — статус по номеру: S спит, A на вахте, D погиб.
+   Шаг 3b («Ревью Codex — износ, шаг 3», B1–B4): узел — место установки, в нём — конкретный агрегат (sn). Насосы и
+   холодильники учитываются экземплярами: на местах, в запасе, снятые, на переборке, в ломе. Снятый агрегат — ещё не лом:
+   переборка (насос — до двух раз, холодильник — один; клапанный комплект, материалы, мастерская) даёт агрегат с меньшим
+   ресурсом η, разборка — пункты лома. Склад стареет медленнее (0,2 года за год). Лом — единый склад модели. */
 (function (root) {
   'use strict';
 
@@ -34,6 +38,19 @@
   const LOOPS = ['L1', 'L2', 'L3', 'L4'], BUSES = ['BUS1', 'BUS2'], BLOCKS = ['PB1', 'PB2'], RADS = ['R1', 'R2', 'R3', 'R4'];
   const GIDS = Array.from({ length: NG }, (_, i) => 'G' + String(i + 1).padStart(2, '0'));
   const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1 };
+  // агрегаты-экземпляры и восстановление (шаг 3b). Материалы — пункты бюджета; сутки — работа двух специалистов
+  const TRACK = ['pump', 'cooler'];
+  const REBUILD = {
+    pump: { max: 2, materials: { repair: 4, tools: 3, printQC: 2.4 }, days: { repair: [90, 120], tools: [60, 90], printQC: [45, 60] },
+      eta: { repair: [117, 81], tools: [135, 99], printQC: [153, 117] } },
+    cooler: { max: 1, materials: { repair: 3, tools: 2.25, printQC: 1.8 }, days: { repair: [120], tools: [90], printQC: [60] },
+      eta: { repair: [360], tools: [420], printQC: [480] } }
+  };
+  const SCRAP_OF = { pump: 2, cooler: 1.5, control: 0.25 };            // разборка снятого агрегата, пунктов лома
+  const STORE_AGE = 0.2;                                                 // склад: эквивалентных лет старения за календарный год
+  const SCRAP_BACK = 0.25;                                               // в лом — четверть расхода материалов рецепта
+  const YIELD = { repair: 0.15, tools: 0.25, printQC: 0.35 };            // выход годного при переработке лома
+  const BATCH = 4, BATCH_DAYS = 90;                                      // партия переработки: до 4 пунктов, 90 суток одним специалистом
   const BUF = { std: 72, safe: 168 }, RECHARGE = 24;                     // часы аварийного запаса группы; полное восстановление
   const CAPS_RATE = { std: 2e-4, safe: 1e-4 };                          // одиночные отказы капсул на занятое капсуло-лето
   // Фон пути (коэффициенты прежней модели M.losses, calc_life.py §5, §10) — по фактической экспозиции людей:
@@ -67,8 +84,22 @@
     for (const cat of BG) w.bg[cat] = { x0: 0, t0: t, r: 0, n: 0 };
     w.bg.later = { x0: 0, t0: t, r: 0, h: [] };                          // поздние раки — оценка; h — опоры (t, x, r) для истории
     for (const g of GIDS) { const cap = bufCap(w); w.buf[g] = { heat: { v: cap, t0: t, d: 0 }, power: { v: cap, t0: t, d: 0 } }; w.med[g] = { x0: 0, t0: t, n: 0, k: 0 }; }
+    partsOf(w);
     setAwake(w, o.watch || 0, t);
     return w;
+  }
+  // реестр экземпляров (и у модели, созданной до шага 3b): заводские агрегаты на местах и в запасе, склад лома
+  function partsOf(w) {
+    if (w.parts) return w.parts;
+    w.parts = {}; w.sn = 0; w.scrap = { v: 0, log: [] };
+    const t = w.nodes.PB1 ? w.nodes.PB1.at : 0;
+    for (const id of Object.keys(w.nodes)) { const n = w.nodes[id]; if (TRACK.includes(n.fam)) n.sn = newPart(w, n.fam, 'installed', id, n.at).sn; }
+    for (const fam of TRACK) for (let i = 0; i < w.inv[fam]; i++) newPart(w, fam, 'stock', null, t);
+    return w.parts;
+  }
+  function newPart(w, fam, state, at, t) {
+    const p = { sn: ++w.sn, fam, origin: 'factory', rg: 0, state, at, since: t, age: 0 };
+    w.parts[p.sn] = p; return p;
   }
   const bufCap = w => w.safe ? BUF.safe : BUF.std;
   const seatOf = (w, i) => w.moved[i] != null ? w.moved[i] : i;
@@ -140,8 +171,8 @@
   }
   const ageAt = (n, t) => n.a0 + n.r * (t - n.t0);
   function hazardAt(n, t) {
-    const F = FAM[n.fam], a1 = ageAt(n, t);
-    return n.h0 + F.l0 * (t - n.t0) + (Math.pow(a1 / F.eta, F.k) - Math.pow(n.a0 / F.eta, F.k));
+    const F = FAM[n.fam], a1 = ageAt(n, t), eta = n.eta || F.eta;          // перебранный агрегат — свой ресурс η
+    return n.h0 + F.l0 * (t - n.t0) + (Math.pow(a1 / eta, F.k) - Math.pow(n.a0 / eta, F.k));
   }
   // буфер группы на дату: часы запаса (линейно от опорной точки, в пределах ёмкости)
   const bufAt = (w, b, t) => Math.max(0, Math.min(bufCap(w), b.v + b.d * (t - b.t0) / YH));
@@ -346,12 +377,55 @@
     return sl.length;
   }
   function relink(w, plan, t) { for (const g of Object.keys(plan)) w.link.group[g] = plan[g]; recompute(w, t); }
-  // новый экземпляр узла: возраст и интенсивность с нуля, поколение +1 (новый порог); основание (коллектор, шина) не молодеет
-  function install(w, id, t) {
-    const n = w.nodes[id];
-    Object.assign(n, { gen: n.gen + 1, at: t, ok: true, t0: t, a0: 0, h0: 0, r: 1 }); delete n.failedAt;
-    w.log.push({ at: t, kind: 'install', id, gen: n.gen }); recompute(w, t);
+  // установка агрегата sn (из запаса, зарезервированного работой): поколение +1 (новый порог), интенсивность с нуля, возраст —
+  // складской (0,2 года за год хранения), ресурс η — свой у перебранного; стоявший агрегат снят (возвращается его sn).
+  // Без sn — новый заводской экземпляр (проверки). Основание (коллектор, шина) не молодеет
+  function install(w, id, t, sn) {
+    const n = w.nodes[id], P = partsOf(w), track = TRACK.includes(n.fam);
+    const old = track && n.sn != null ? P[n.sn] : null, p = track ? (sn != null ? P[sn] : newPart(w, n.fam, 'reserved', null, t)) : null;
+    if (old) Object.assign(old, { state: 'removed', at: null, since: t });
+    const a0 = p ? p.age + STORE_AGE * Math.max(0, t - p.since) : 0;
+    if (p) Object.assign(p, { state: 'installed', at: id, since: t });
+    Object.assign(n, { gen: n.gen + 1, at: t, ok: true, t0: t, a0, h0: 0, r: 1 }); delete n.failedAt;
+    if (track) { n.sn = p.sn; if (p.eta) n.eta = p.eta; else delete n.eta; }
+    w.log.push({ at: t, kind: 'install', id, gen: n.gen, sn: track ? n.sn : undefined }); recompute(w, t);
+    return old ? old.sn : null;
   }
+  // запас: зарезервировать готовый агрегат под работу (сначала заводские, затем по номеру) — счётчик запаса уменьшается сразу
+  function reservePart(w, fam) {
+    const P = partsOf(w), p = Object.values(P).filter(x => x.fam === fam && x.state === 'stock').sort((a, b) => a.rg - b.rg || a.sn - b.sn)[0];
+    if (!p) return null;
+    p.state = 'reserved'; w.inv[fam]--; return p.sn;
+  }
+  // снять отказавший агрегат без замены (на переборку): место пустое, узел остаётся неисправным
+  function removePart(w, id, t) {
+    const n = w.nodes[id], p = n.sn != null ? partsOf(w)[n.sn] : null; if (!p || n.ok) return null;
+    Object.assign(p, { state: 'removed', at: null, since: t }); n.sn = null;
+    w.log.push({ at: t, kind: 'remove', id, sn: p.sn });
+    return p.sn;
+  }
+  const removedOf = (w, fam) => Object.values(partsOf(w)).filter(p => p.fam === fam && p.state === 'removed').sort((a, b) => a.rg - b.rg || a.sn - b.sn).map(p => p.sn);
+  const canRebuild = (w, sn) => { const p = partsOf(w)[sn]; return !!(p && REBUILD[p.fam] && p.rg < REBUILD[p.fam].max); };
+  // цена переборки по оснащению — ничего не расходует: материалы, сутки двух специалистов, ресурс после, один клапанный комплект
+  function quoteRebuild(w, sn, prod) {
+    const p = partsOf(w)[sn]; if (!canRebuild(w, sn)) return null;
+    const R = REBUILD[p.fam], k = R.materials[prod] != null ? prod : 'repair';
+    return { fam: p.fam, rg: p.rg, materials: R.materials[k], days: R.days[k][p.rg], eta: R.eta[k][p.rg], valve: 1 };
+  }
+  function startRebuild(w, sn, t) { const p = partsOf(w)[sn]; p.state = 'rebuilding'; p.since = t; w.inv.valve--; }
+  function completeRebuild(w, sn, t, eta) {
+    const p = partsOf(w)[sn];
+    Object.assign(p, { state: 'stock', origin: 'rebuilt', rg: p.rg + 1, eta, since: t, age: 0 }); w.inv[p.fam]++;
+    w.log.push({ at: t, kind: 'rebuilt', sn, fam: p.fam, rg: p.rg });
+  }
+  // разборка снятого агрегата в лом (переборка исчерпана или не нужна)
+  function dismantle(w, sn, t) {
+    const p = partsOf(w)[sn]; if (!p || p.state !== 'removed') return 0;
+    p.state = 'scrap'; addScrap(w, SCRAP_OF[p.fam], `part.${sn}`, t); return SCRAP_OF[p.fam];
+  }
+  // склад лома: приход — при снятии, разборке и завершении работ, с источником; расход — партией переработки
+  function addScrap(w, x, src, t) { if (!(x > 0)) return; partsOf(w); w.scrap.v += x; w.scrap.log.push({ at: t, d: x, src }); }
+  function takeScrap(w, x, src, t) { partsOf(w); const d = Math.min(x, w.scrap.v); w.scrap.v -= d; w.scrap.log.push({ at: t, d: -d, src }); return d; }
 
   // ---------------------------------------------------------------- наблюдение (то, что видят приборы и ведомость)
   function observe(w, t) {
@@ -362,7 +436,10 @@
       return { id: g, loop: w.link.group[g], sleep: p.sleep.length, awake: p.awake.length, free: p.free.length, reserved: p.reserved, broken: p.broken,
         cooler: ok(w, g + '.cool'), control: ok(w, g + '.ctrl'), heat: D.heat, power: D.power,
         heatH: +bufAt(w, w.buf[g].heat, t).toFixed(1), powerH: +bufAt(w, w.buf[g].power, t).toFixed(1) }; });
-    return { t, loops, groups, inv: Object.assign({}, w.inv), independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
+    const P = Object.values(partsOf(w)), cnt = (fam, st) => P.filter(p => p.fam === fam && p.state === st).length;
+    const shop = { removed: { pump: cnt('pump', 'removed'), cooler: cnt('cooler', 'removed') }, rebuilding: { pump: cnt('pump', 'rebuilding'), cooler: cnt('cooler', 'rebuilding') },
+      rebuilt: P.filter(p => p.origin === 'rebuilt').length, scrap: +w.scrap.v.toFixed(2) };
+    return { t, loops, groups, inv: Object.assign({}, w.inv), shop, independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
       alive: w.ps.split('').filter(c => c !== 'D').length, asleep: w.ps.split('').filter(c => c === 'S').length, dead: w.ps.split('').filter(c => c === 'D').length };
   }
   // публичная проекция: пороги не хранятся (считаются по ключам), накопленная интенсивность — скрытая величина
@@ -375,6 +452,8 @@
   const take = w => { const out = w.notes; w.notes = []; return out; };
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
+    TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS,
+    partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,
     independentLoops, powerChannels, observe, publicOf, take };

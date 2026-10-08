@@ -40,7 +40,7 @@
             label: L('Заменить сорбент', 'Replace the sorbent'),
             known: lang => lang === 'ru' ? [`Материалы для высадки −${H.nf(T.cost(s), 1, 'ru')}%${H.prod(s) !== 'repair' ? ' (вставки режут из запаса на станках)' : ''}; ${dd(dur(s, 'lifeSupport', 10), 'ru')} работы${qualNote(s, 'lifeSupport', 'ru')}.`, 'Канал возвращается к паспортной производительности.']
               : [`Landing materials −${H.nf(T.cost(s), 1, 'en')}%${H.prod(s) !== 'repair' ? ' (the inserts are cut from stock on the machine tools)' : ''}; ${dd(dur(s, 'lifeSupport', 10), 'en')} of work${qualNote(s, 'lifeSupport', 'en')}.`, 'The channel returns to its rated output.'],
-            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c); job(x, e, 'replace', dur(x, 'lifeSupport', 10) * DAY); },
+            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c, e); job(x, e, 'replace', dur(x, 'lifeSupport', 10) * DAY); },
             record: L(`Сорбент канала ${e.ch} заменяют. Старые картриджи — в мастерскую: корпуса пойдут во вторсырьё.`, `The sorbent of channel ${e.ch} is replaced. The old cartridges go to the workshop: their housings will go to scrap.`)
           }, {
             id: 'regen',
@@ -93,7 +93,7 @@
       // 11 «Что удалось вернуть в запас» — только из реального вторсырья прошлых ремонтов
       recovery: {
         kind: 'N', family: 'workshop', lam: 0.014, lamMax: 0.014, cooldown: 12, cap: 4,
-        rate: s => (s.ev.scrap || 0) >= 0.5 && (s.ev.recovered || 0) < 6 ? 1 : 0,
+        rate: s => H.scrapOwned && H.scrapOwned(s) ? 0 : (s.ev.scrap || 0) >= 0.5 && (s.ev.recovered || 0) < 6 ? 1 : 0,   // с моделью износа — работа мастерской
         name: L('вторсырьё', 'scrap recovery'),
         apply: (s, e) => {
           const k = { repair: 0.15, tools: 0.25, printQC: 0.35 }[H.prod(s)] || 0.15;
@@ -126,7 +126,7 @@
             label: L('Заменить вставку шва', 'Replace the seam insert'),
             known: lang => lang === 'ru' ? [`Материалы для высадки −${H.nf(T.cost(s), 0, 'ru')}%${H.prod(s) !== 'repair' ? ' (вставку режут из запаса на станках)' : ''}; ${dd(dur(s, 'cooling', 14), 'ru')} работы${qualNote(s, 'cooling', 'ru')}.`, 'Приборный блок возвращается к штатному режиму.']
               : [`Landing materials −${H.nf(T.cost(s), 0, 'en')}%${H.prod(s) !== 'repair' ? ' (the insert is cut from stock on the machine tools)' : ''}; ${dd(dur(s, 'cooling', 14), 'en')} of work${qualNote(s, 'cooling', 'en')}.`, 'The instrument block returns to normal running.'],
-            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c); job(x, e, 'insert', dur(x, 'cooling', 14) * DAY); },
+            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c, e); job(x, e, 'insert', dur(x, 'cooling', 14) * DAY); },
             record: L(`Вставку шва блока ${e.block} меняют; старую — в лом.`, `The seam insert of block ${e.block} is replaced; the old one goes to scrap.`)
           }, {
             id: 'load',
@@ -162,7 +162,7 @@
             label: L('Заменить разъём и датчик, проверить канал', 'Replace the connector and sensor, then test the channel'),
             known: lang => lang === 'ru' ? [`Материалы −${H.nf(T.cost(s), 1, 'ru')}%${H.caps(s) === 'capsSafe' ? ' (у надёжных капсул деталь проще)' : ''}; двенадцать суток.`, 'Обе возможные причины устранены.']
               : [`Materials −${H.nf(T.cost(s), 1, 'en')}%${H.caps(s) === 'capsSafe' ? ' (the reliable capsules take a simpler part)' : ''}; twelve days.`, 'Both possible causes are removed.'],
-            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c); job(x, e, 'replace', 12 * DAY); },
+            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c, e); job(x, e, 'replace', 12 * DAY); },
             record: L(`Разъём и датчик капсулы ${e.grp}-${e.cap} меняют; канал проверяют целиком.`, `The connector and sensor of capsule ${e.grp}-${e.cap} are replaced; the entire channel is tested.`)
           }, {
             id: 'measure',
@@ -246,7 +246,7 @@
             label: L('Заменить соединитель', 'Replace the connector'),
             known: lang => lang === 'ru' ? [`Материалы −${H.nf(T.cost(s), 1, 'ru')}%; неделя работы.`, 'Узел готов к работе у цели.']
               : [`Materials −${H.nf(T.cost(s), 1, 'en')}%; a week of work.`, 'The node is ready to work at the target.'],
-            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c); job(x, e, 'replace', 7 * DAY); },
+            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c, e); job(x, e, 'replace', 7 * DAY); },
             record: L('Соединитель меняют; старый — в лом.', 'The connector is replaced; the old one goes to scrap.')
           }, {
             id: 'reaccept',
@@ -430,7 +430,7 @@
             label: L('Применить исправление', 'Apply the fix'),
             known: lang => lang === 'ru' ? [`Материалы −${H.nf(T.cost(s), 1, 'ru')}%; шестьдесят суток.`, 'Дефект уплотнения будет устранён на всех клапанах этой серии на борту.']
               : [`Materials −${H.nf(T.cost(s), 1, 'en')}%; sixty days.`, 'The seal defect will be eliminated in all valves of this series aboard.'],
-            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c); job(x, e, 'fix', 60 * DAY); },
+            effect: x => { const c = T.cost(x); x.materials -= c; scrap(x, c, e); job(x, e, 'fix', 60 * DAY); },
             record: L(`Уплотнения клапанов серии ${e.series} меняют по бюллетеню.`, `The seals of the series ${e.series} valves are replaced per the bulletin.`)
           }, {
             id: 'check',
@@ -505,7 +505,12 @@
         if (at <= t1 && (!best || at < best.at)) best = { at, council: true }; }
       return best;
     }
-    const scrap = (s, x) => { init(s); s.ev.scrap += x; };
+    // лом работы: с моделью износа — в её склад при завершении работы события (e — экземпляр; ревью Codex 3b, B4), без неё — сразу
+    const scrap = (s, x, e) => {
+      init(s);
+      if (e && H.scrapOwned && H.scrapOwned(s)) { const i = s.ev.log.find(y => y.id === e.id); if (i) { i.scrapDue = (i.scrapDue || 0) + x; return; } }
+      s.ev.scrap += x;
+    };
     function decided(s) {
       if (!s.eq || !s.riskSeed || s.evOff) return;
       init(s);
@@ -532,12 +537,17 @@
     function fixStage(s, e, how, cost, years) {
       const Q = H.jobs && H.jobs(s);
       if (Q && s.materials < cost - 1e-9) return 'short';
-      s.materials -= cost; move(s, e, 'materials', -cost); scrap(s, cost);
+      s.materials -= cost; move(s, e, 'materials', -cost); scrap(s, cost, e);
       if (!Q) return 'now';
       job(s, e, how, years); return 'queued';
     }
     // работа события из общей очереди кончилась: итог — как у прежнего срока
-    function jobDone(s, j) { const e = s.ev && s.ev.log.find(x => x.id === j.ref), T = e && TYPES[e.type]; if (T && T.done) T.done(s, e, { id: j.ref, type: j.type, how: j.how, dur: j.dur }); return null; }
+    function jobDone(s, j) {
+      const e = s.ev && s.ev.log.find(x => x.id === j.ref), T = e && TYPES[e.type];
+      if (e && e.scrapDue && H.scrapAdd) { const x = e.scrapDue; e.scrapDue = 0; H.scrapAdd(s, x, e.id); }   // лом работы — по её завершении
+      if (T && T.done) T.done(s, e, { id: j.ref, type: j.type, how: j.how, dur: j.dur });
+      return null;
+    }
     // навык семьи работ (событие «навык в инструкции»): курс — вдвое быстрее, сверка по архиву — нестандартное с проверкой (+30 суток)
     const qual = (s, fam) => s.ev && s.ev.qual ? s.ev.qual[fam] : undefined;
     const dur = (s, fam, days) => qual(s, fam) === 'skilled' ? Math.round(days / 2) : qual(s, fam) === 'checked' ? days + 30 : days;
