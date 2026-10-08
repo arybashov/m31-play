@@ -32,8 +32,14 @@
     collector: { eta: 500, k: 4, l0: 0.0001, live: false },
     radiator: { eta: 350, k: 3, l0: 0.0001, live: false },
     power: { eta: 600, k: 3, l0: 0.0001, live: false },
-    bus: { eta: 600, k: 3, l0: 0.0001, live: false }
+    bus: { eta: 600, k: 3, l0: 0.0001, live: false },
+    // мастерская (шаг 3c, план B6): привод станков стареет только в работе — ресурс 3 000 станко-суток; управляющая база
+    // (электроника, её не изготовить из обычных материалов) — по календарю, 700 лет
+    shopDrive: { eta: 3000 / 365.25, k: 3, l0: 0, live: true },
+    shopBase: { eta: 700, k: 4, l0: 0, live: true }
   };
+  // ремонт привода — ручным набором (станок не чинит сам себя): первый и второй; третий отказ — машин больше нет
+  const DRIVE_FIX = [{ materials: 2, work: 28, hold: 7 }, { materials: 3, work: 56, hold: 14 }];
   const NG = 20, SEATS = 25, NOM = 5, MAX = 7;
   const LOOPS = ['L1', 'L2', 'L3', 'L4'], BUSES = ['BUS1', 'BUS2'], BLOCKS = ['PB1', 'PB2'], RADS = ['R1', 'R2', 'R3', 'R4'];
   const GIDS = Array.from({ length: NG }, (_, i) => 'G' + String(i + 1).padStart(2, '0'));
@@ -75,12 +81,13 @@
     for (const L of LOOPS) { nodes[L + '.pump'] = node(L + '.pump', 'pump', t); nodes[L + '.coll'] = node(L + '.coll', 'collector', t); }
     for (const id of RADS) nodes[id] = node(id, 'radiator', t);
     for (const g of GIDS) { nodes[g + '.cool'] = node(g + '.cool', 'cooler', t); nodes[g + '.ctrl'] = node(g + '.ctrl', 'control', t); }
+    if (o.machine) { nodes['SHOP.drive'] = node('SHOP.drive', 'shopDrive', t); nodes['SHOP.base'] = node('SHOP.base', 'shopBase', t); }   // машинное производство
     const link = { group: {}, loop: { L1: 'BUS1', L2: 'BUS1', L3: 'BUS2', L4: 'BUS2' }, bus: { BUS1: 'PB1', BUS2: 'PB2' }, rad: { L1: 'R1', L2: 'R2', L3: 'R3', L4: 'R4' }, tie: false };
     GIDS.forEach((g, i) => { link.group[g] = LOOPS[Math.floor(i / NOM)]; });
     const crew = Math.min(o.crew || 500, NG * SEATS), reserved = Math.max(0, Math.min(o.reserved || 0, NG * SEATS - crew));
     const w = { schema: 1, params: PARAMS, t, safe: !!o.safe, nodes, link, inv: Object.assign({}, SPARES), protect: (o.protect || []).slice(),
       crew, reserved, ps: 'S'.repeat(crew), moved: {}, broken: [], buf: {}, med: {}, ops: [], log: [], notes: [], causes: {},
-      road: true, bg: {} };
+      road: true, bg: {}, shop: { machine: !!o.machine, busy: false, fixes: 0, lost: false }, agro: o.agro ? 'ok' : null };
     for (const cat of BG) w.bg[cat] = { x0: 0, t0: t, r: 0, n: 0 };
     w.bg.later = { x0: 0, t0: t, r: 0, h: [] };                          // поздние раки — оценка; h — опоры (t, x, r) для истории
     for (const g of GIDS) { const cap = bufCap(w); w.buf[g] = { heat: { v: cap, t0: t, d: 0 }, power: { v: cap, t0: t, d: 0 } }; w.med[g] = { x0: 0, t0: t, n: 0, k: 0 }; }
@@ -167,6 +174,7 @@
       return loopRuns(w, L) ? Math.max(0.2, Math.pow(load[L] / NOM, 3)) : 0.2;
     }
     if (n.fam === 'cooler' || n.fam === 'control') { const g = id.split('.')[0]; return act[g] ? 1 : 0.2; }
+    if (n.fam === 'shopDrive') return w.shop && w.shop.busy ? 1 : 0;   // привод — только в работе
     return 1;
   }
   const ageAt = (n, t) => n.a0 + n.r * (t - n.t0);
@@ -204,6 +212,19 @@
       if (r !== b.r) { b.x0 = b.x0 + b.r * (t - b.t0); b.t0 = t; b.r = r; if (b.h) b.h.push([t, b.x0, r]); }
     }
     w.t = Math.max(w.t, t);
+  }
+  // мастерская: станки заняты работой с оборудованием — привод стареет (переключение — с даты t)
+  function setShop(w, busy, t) { if (!w.shop || w.shop.busy === !!busy) return; w.shop.busy = !!busy; recompute(w, t); }
+  // машинное производство: есть станки, они не потеряны, привод и база исправны (ручной набор — всегда)
+  const shopMachine = w => !!(w.shop && w.shop.machine && !w.shop.lost && w.nodes['SHOP.drive'] && w.nodes['SHOP.drive'].ok && w.nodes['SHOP.base'].ok);
+  // производственный слот доступен: станки работают, или их нет (ручной набор), или они потеряны (ручной набор)
+  const shopOpen = w => !w.shop || !w.shop.machine || w.shop.lost || shopMachine(w);
+  // насос второго агромодуля — донор (план D): один раз, с собственным номером; его возраст — складской с отлёта
+  function agroDonor(w, t) {
+    if (w.agro !== 'ok') return null;
+    const P = partsOf(w), p = newPart(w, 'pump', 'stock', null, w.nodes.PB1 ? w.nodes.PB1.at : 0); p.origin = 'agro';
+    w.agro = 'donor'; w.inv.pump++; w.log.push({ at: t, kind: 'donor', sn: p.sn });
+    return p.sn;
   }
   // время модели дошло до t без событий: состояние — от опор, меняется только отметка хода
   const touch = (w, t) => { w.t = Math.max(w.t, t); };
@@ -452,7 +473,7 @@
   const take = w => { const out = w.notes; w.notes = []; return out; };
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
-    TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS,
+    TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor,
     partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,
