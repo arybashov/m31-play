@@ -924,13 +924,20 @@
     const vis = pm.a > 0.003;
     [pm.near, pm.halo, pm.shell].forEach(o => { o.visible = vis; });
     pm.light.intensity = 0.5 * pm.a;
-    if (!vis) return;
+    if (!vis) { pm.view = 0; return; }
     const r = bubbleR();
     pm.shell.scale.set(1.5 * r, r, r); pm.shell.position.x = -365 - 0.5 * r;
-    // камера дальше радиуса пузыря — оболочка тусклее (до трети): на виде сбоку свечение не перекрывает блики звезды
+    // камера дальше радиуса пузыря — свечение у антенн тусклее (до трети): на виде сбоку оно не перекрывает блики звезды.
+    // Оболочка (сам парус) — в полную силу на любом удалении: на виде сбоку её и показываем
     const far = Math.min(1, Math.max(0, (Math.log((dS || 0) / r) - Math.log(0.5)) / Math.log(8))), dim = 1 - 0.65 * far * far * (3 - 2 * far);
-    pm.near.material.uniforms.a.value = pm.a; pm.shell.material.uniforms.a.value = pm.a * dim;
-    pm.halo.material.opacity = 0.28 * pm.a;
+    pm.near.material.uniforms.a.value = pm.a * dim; pm.shell.material.uniforms.a.value = pm.a;
+    pm.halo.material.opacity = 0.28 * pm.a * dim;
+    // пузырь в кадре (камера ближе 20 радиусов, к 100 — уже точка): корабль показывает он, свечение-метка корабля уступает.
+    // Только на виде сбоку (до 100 тыс. км, к 200 тыс. — нет): маршрутные виды (0,2–2 млн км) — с полной меткой и на малой
+    // скорости, когда пузырь велик (ревью Codex)
+    const sm = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+    const big = 1 - (Math.log((dS || Infinity) / r) - Math.log(20)) / Math.log(5), near = 1 - (Math.log((dS || Infinity) / 1e8)) / Math.log(2);
+    pm.view = pm.a * sm(big) * sm(near);
   }
 
   // ---------------------------------------------------------------- у цели: планета и находка (болванки без текстур)
@@ -1424,21 +1431,27 @@
     scoutMark.scale.set(0.018, 0.018, 1); scoutMark.visible = false; starsGroup.add(scoutMark);
     starScene.add(relGroup);
 
-    // облако класса D2 на курсе: край пересекается около года 4,6
+    // облако класса D2 на курсе к любой цели: частицы — вокруг центра группы, центр ставит cloudCenter по курсу
     const cloud = cloudGroup = new THREE.Group(), soft = dotTexture(true), rnd = mulberry(7);
-    const cpos = U.clone().multiplyScalar(distLy(4.6) + 0.012).add(E2.clone().multiplyScalar(0.006));
     for (let i = 0; i < 90; i++) {
       // облако в кадре — как его восстанавливают приборы: плотный оранжевый газ и пыль
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: new THREE.Color().setHSL(0.05 + rnd() * 0.035, 0.85, 0.3 + rnd() * 0.1),
         transparent: true, opacity: 0, depthTest: false, depthWrite: false }));   // обычное смешивание: густеет, не выгорая в жёлтый
       s.renderOrder = 5; s.userData.base = 0.14 + rnd() * 0.12;
       const r = 0.012 * Math.cbrt(rnd());
-      s.position.copy(cpos).add(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(r));
+      s.position.copy(new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(r));
       const sz = 0.004 + rnd() * 0.008; s.scale.set(sz, sz, 1);
       cloud.add(s);
     }
-    cloud.userData.abs = true; cloud.userData.a = 0; cloud.visible = false;
+    cloud.userData.a = 0; cloud.visible = false;
     starsGroup.add(cloud);
+  }
+  // Край облака — место на пути, не год (правила v5, content CLOUD_X): вход в 0,1058 св. года от Солнца, на пути к любой
+  // цели. Ядро — на 0,012 дальше края и на 0,006 в сторону от курса: корабль идёт через край. Курс — с поворотом, если он был
+  const CLOUD_EDGE = 0.1058;
+  function cloudCenter() {
+    const x = CLOUD_EDGE + 0.012, p = pathPoint(x), d = pathPoint(x + 0.001).sub(p).normalize();
+    return p.addScaledVector(new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 0, 1)).normalize(), 0.006);
   }
   // ---------------------------------------------------------------- Галактика, Кольцо, экспедиции
   // Координаты галактические, св. годы: +X к центру Галактики (~26 000 св. лет), +Z к северному полюсу.
@@ -2412,12 +2425,17 @@
     stepPlasmaMagnet(dt, Number.isFinite(shipFarM) ? shipFarM : cam.dist);   // фактическая дальность камеры до корабля (прошлый кадр): тускнеет плавно при любом перелёте
     stepArrival();
     stepThaw(dt); stepOutpost(dt);
-    // Облако на пути к ε Индейца: с Земли его не видно — маленькое и ничем не освещено. Появляется, когда его находят
-    // приборы корабля на подлёте (год 4, world.cloudSeen), и проявляется плавно.
-    const cOn = world.cloudSeen && targetInfo.star === 'Epsilon Indi', cg = cloudGroup;
+    // Облако на курсе: с Земли его не видно — маленькое и ничем не освещено. Появляется, когда его находят приборы
+    // корабля на подлёте (год 4, world.cloudSeen), и проявляется плавно. Курс сменился (цель, поворот) — облако
+    // переходит на новый курс плавно, без скачка; невидимое — сразу
+    const cOn = world.cloudSeen, cg = cloudGroup, cWas = cg.visible;
     cg.userData.a += ((cOn ? 1 : 0) - cg.userData.a) * (1 - Math.exp(-dt * 0.5));
     cg.visible = cg.userData.a > 0.003;
-    if (cg.visible) cg.children.forEach(sp => { sp.material.opacity = sp.userData.base * cg.userData.a; });
+    if (cg.visible) {
+      const cc = cloudCenter();
+      if (cWas) cg.position.lerp(cc, 1 - Math.exp(-dt * 0.8)); else cg.position.copy(cc);
+      cg.children.forEach(sp => { sp.material.opacity = sp.userData.base * cg.userData.a; });
+    }
     applyCargo();
     radMat.emissiveIntensity += ((world.separated ? 0.08 : 0.35) - radMat.emissiveIntensity) * (1 - Math.exp(-dt * 0.8));
 
@@ -2480,7 +2498,9 @@
     // свечение корабля вдали: вблизи его нет (виден сам корабль), с отъездом проявляется, дальше сжимается в точку
     const camLy = cam.F.clone().addScaledVector(dir, dly), shipM = camLy.distanceTo(shipPos()) * LY;
     shipFarM = shipM;
-    const mA = band(shipM, 4e4, 4e5, 1e30, 1e30), mS = 0.005 + 0.085 * band(shipM, 4e5, 4e6, 3e7, 3e10);
+    // на виде сбоку на пузырь магнита свечение слабее и меньше: не перекрывает пузырь и блики (pm.view)
+    const pmK = 1 - 0.65 * (pm.view || 0);
+    const mA = band(shipM, 4e4, 4e5, 1e30, 1e30) * pmK, mS = (0.005 + 0.085 * band(shipM, 4e5, 4e6, 3e7, 3e10)) * pmK;
     marker.scale.set(mS, mS, 1); fadeObj(marker, mA, 1);
     marker.material.color.set(engines.some(e => e.a > 0.2) ? 0x9cc8ff : 0xafd5bd);
 
@@ -2685,7 +2705,7 @@
       preview: !!world.preview, routeVis: !!(routeAhead && routeAhead.visible), reqMarks: reqMarks ? reqMarks.children.length : 0,
       streaks: +streaks.a.toFixed(3), boost: +timeBoost().toFixed(2), yRate: +yRate.v.toFixed(3),
       ep3: world.epoch3 ? { x: +ep3.x.toFixed(4), show: ep3.show ? (ep3.show.t0 == null ? 'wait' : 'run') : null, vis: !!(ep3.g && ep3.g.visible), beam: ep3.beam ? +ep3.beam.material.opacity.toFixed(3) : 0 } : null,
-      pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3),
+      pmShell: pm.shell ? +pm.shell.material.uniforms.a.value.toFixed(3) : null, pmA: +pm.a.toFixed(3), pmView: +(pm.view || 0).toFixed(3), markerA: +marker.material.opacity.toFixed(3),
       fit: cam.fit, yawPitch: [cam.yaw, cam.pitch], fitTo: cam.fit ? arrivalLook(cam.fit) : null, tweenOn: !!tween,
       tw: tween ? { fromF: tween.from.F.toArray(), fromDist: tween.from.dist, fromFocus: tween.from.focus, toF: tween.to.F.toArray(), toDist: tween.to.dist, dur: tween.dur, age: performance.now() - tween.t0 } : null,
       planetNdc: arrival.eind && arrival.eind.tilt.visible ? (() => { const v = arrival.eind.tilt.position.clone().project(shipCam); return [v.x, v.y]; })() : null,

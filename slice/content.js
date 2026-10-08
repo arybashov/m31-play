@@ -19,6 +19,8 @@
   const EVM = root.M31Events || require('./events.js');
   // Износ корабля (DOC «Долгий рейс — износ и смена курса», шаг 2): граф узлов, отказы, буферы групп — wear.js (браузер: M31Wear)
   const W = root.M31Wear || require('./wear.js');
+  // Единая очередь работ (шаг 3a): люди делятся между ремонтами износа и работами событий — jobs.js (браузер: M31Jobs)
+  const JB = root.M31Jobs || require('./jobs.js');
   const R = root.M31Requests || require('./requests.js'), RQ = R;   // RQ — там, где R занято локально (досье: признаки маршрута)
   const nm = (s, lang) => M.nameOf(s.target || M.DECLARED, lang);
   // «звезда Барнарда» склоняется: у звезды, к звезде; остальные названия каталога — нет
@@ -736,12 +738,25 @@ There are no longer years of waiting between question and answer.`;
   const CAST_SEATS = [0, 1, 50, 162, 282];
   // ложатся в капсулы на году 2: живые сверх шестидесяти на вахте (с моделью — по реестру)
   const sleepersAt2 = s => (s.wear ? s.wear.ps.split('').filter(c => c !== 'D').length : crewOf(s)) - 60;
-  const WEAR_DAYS = { pump: 7, cooler: 0.5, control: 0.25, move: 0.5 };                 // сутки работы бригады
-  // ремонтные бригады по двое: технических специалистов — вахта/6, двое из них заняты регламентом (ревью Codex, A5)
-  const crews = s => Math.max(1, Math.floor((Math.floor(s.watch / 6) - 2) / 2));
+  // трудоёмкость работ износа: ручная часть (человеко-сутки) и непараллелимая выдержка (сутки) — ревью Codex, шаг 3, C
+  const WEAR_WORK = { pump: { work: 13, hold: 0.5 }, cooler: { work: 0.75, hold: 0.125 }, control: { work: 0.375, hold: 0.0625 }, move: { work: 1, hold: 0 } };
+  // техников для работ сверх регламента: вахта/6, двое из них заняты регламентом исправного корабля (вахта 13 — никого);
+  // спасение людей и независимый путь берут и регламентных — регламент ждёт; плановые работы без техников — регламентными
+  // в свободное время (jobs.js SLACK)
+  const techs = s => Math.max(0, Math.floor(s.watch / 6) - 2);
+  const pools = s => ({ tech: techs(s), routine: Math.min(2, Math.floor(s.watch / 6)) });
+  const auralN = s => techs(s) + Math.min(2, Math.floor(s.watch / 6));
+  const auralDays = s => { const n = auralN(s); return n ? WEAR_WORK.pump.work / n + WEAR_WORK.pump.hold : Infinity; };   // насос авралом, сутки
   function wearStart(s) {
     if (!wearOn(s) || s.wear || !s.eq) return;
     s.wear = W.create({ crew: crewOf(s), watch: awakeNow(s), reserved: Math.max(0, M.CREW - crewOf(s)), safe: capsSafe(s), at: s.year, protect: CAST_SEATS });
+    if (!s.jobs) s.jobs = JB.create();
+  }
+  // конец работы очереди: владелец оформляет результат (износ — установка детали или перекладка, событие — его итог)
+  function jobDone(s, j, t) {
+    if (j.owner === 'wear') return wearOpDone(s, j.ref, t);
+    if (j.owner === 'ev') return EV.jobDone(s, j);
+    return null;
   }
   // люди: погибшие сюжета и происшествий — в реестр модели, погибшие модели — в реестр сюжета (deadIds): никто не
   // погибает дважды (полный единый учёт людей — подшаг 2d)
@@ -761,6 +776,7 @@ There are no longer years of waiting between question and answer.`;
     const n = awakeNow(s), t = Math.max(w.t, s.year);
     W.setRoad(w, !(s.arrive && s.year >= arriveView(s)), t);             // фон пути — до прибытия
     if (n !== w.watchN) { W.setAwake(w, n, t); wearCheckGroups(s, t); }
+    if (s.jobs) JB.dispatch(s.jobs, Math.max(t, s.simYear || 0), pools(s));   // вахта могла смениться — люди раздаются заново
     // снабженец: резервный блок сгорел под вспышками — блок PB2 выбыл, перемычка держит шину (причина — в журнале модели)
     if (s.gridBlocks < 2 && w.nodes.PB2.ok) { W.fail(w, 'PB2', t, 'supply.flares'); w.link.tie = true; W.recompute(w, t); }
   }
@@ -777,20 +793,18 @@ There are no longer years of waiting between question and answer.`;
       if (d) wearMove$(s, t, -d, `перестановка групп контура ${L}`, `rerouting loop ${L}'s groups`); }
     return r;
   }
-  // операция: материалы и деталь — при запуске, исправность — при завершении (календарь модели). Бригада одна на работу:
-  // свободной нет — работа ждёт ту, что освободится раньше. Аврал (urgent: группы без охлаждения) — все свободные сейчас
-  // бригады разом: трудоёмкость делится на их число (14 человеко-суток насоса при трёх бригадах — 2,3 суток).
+  // операция: материалы и деталь — при запуске, исправность — когда работа очереди кончится (jobs.js). Двое техников на
+  // работу; аврал (urgent: группы без охлаждения) — все свободные техники, приоритет спасения (насос: 13 человеко-суток на
+  // шестерых и полсуток опрессовки — 64 часа). Холодильник, управление и перекладка группы на резерве — тоже спасение.
   // Материалов не хватает — работы нет (null)
   function wearOp(s, kind, id, t, urgent) {
-    const w = s.wear, cost = WEAR_OPS[kind], n = crews(s);
+    const w = s.wear, cost = WEAR_OPS[kind];
     if (s.materials < cost - 1e-9) return null;
-    const busy = (o, k) => !o.done && (o.crews ? o.crews.includes(k) : o.crew === k);
-    const free = Array.from({ length: n }, (_, k) => w.ops.reduce((a, o) => busy(o, k) ? Math.max(a, o.until) : a, t));
-    const idle = urgent ? free.map((f, k) => f <= t + 1e-12 ? k : -1).filter(k => k >= 0) : [];
-    const crew = idle.length ? idle[0] : free.indexOf(Math.min(...free)), start = idle.length ? t : free[crew], team = idle.length > 1 ? idle : null;
-    const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t, start, until: start + WEAR_DAYS[kind] / (team ? team.length : 1) / 365.25, crew };
-    if (team) op.crews = team;
+    const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t };
     w.ops.push(op); s.materials -= cost;
+    const rescue = urgent || kind !== 'pump', deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
+    JB.enqueue(s.jobs, Object.assign({ owner: 'wear', ref: op.id, type: `wear.${kind}`, prio: rescue ? JB.PRIO.rescue : JB.PRIO.path, deadline: rescue ? deadline : Infinity,
+      pool: 'tech', minW: 1, maxW: urgent ? Infinity : 2 }, WEAR_WORK[kind]), t, pools(s));
     const u = id.split('.')[0], NM = { pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
       control: [`замена управления группы ${u}`, `replacing group ${u}'s control`], move: [`перекладка группы ${u}`, `moving group ${u}`] }[kind];
     wearMove$(s, t, -cost, NM[0], NM[1]);
@@ -803,7 +817,9 @@ There are no longer years of waiting between question and answer.`;
   // спящих группы — в свободные исправные капсулы охлаждаемых групп (двое за 12 часов, 0,25% материалов); мест мало — никого
   function wearMove(s, g, t) {
     const w = s.wear, n = W.groupPeople(w, g).sleep.length, seats = W.freeSeats(w, g);
-    if (!n || seats.length < n || pendingFor(w, g) || !wearOp(s, 'move', g, t)) return false;
+    if (!n || seats.length < n || pendingFor(w, g)) return false;
+    const op = wearOp(s, 'move', g, t); if (!op) return false;
+    W.holdSeats(w, op.id, seats.slice(0, n));                          // места обещаны этой перекладке — другой не достанутся
     wearNote(s, `Группу ${g} переводят в свободные капсулы других групп: ${ppl(n)}, двенадцать часов работы.`, `Group ${g} is being moved into free capsules of other groups: ${n} people, twelve hours of work.`);
     return true;
   }
@@ -829,7 +845,7 @@ There are no longer years of waiting between question and answer.`;
   function wearOpDone(s, id, t) {
     const w = s.wear, op = w.ops.find(o => o.id === id); if (!op || op.done) return null;
     op.done = true;
-    if (op.kind === 'move') { const n = W.moveSleepers(w, op.target, t);
+    if (op.kind === 'move') { const n = W.moveSleepers(w, op.target, t, op.id);
       wearNote(s, n ? `Группа ${op.target} переложена: ${ppl(n)} в капсулах других групп.` : `Группу ${op.target} переложить не удалось: свободных капсул не осталось.`,
         n ? `Group ${op.target} moved: ${n} people in other groups' capsules.` : `Group ${op.target} could not be moved: no free capsules left.`);
       wearCheckGroups(s, t); return null; }
@@ -871,9 +887,10 @@ There are no longer years of waiting between question and answer.`;
       if (ended) { s.wearPolicy = 'replace'; s.wearKept = Object.assign(s.wearKept || {}, Object.fromEntries(rr.left.map(g => [g, t]))); }   // их гибель — цена «беречь запас»
       if (spare && (s.wearPolicy === 'replace' || !full) && pumpSpare(s) && wearOp(s, 'pump', rec.id, t, !full)) {   // группы без охлаждения — аврал
         if (ended) for (const L2 of W.LOOPS) if (L2 !== unit && !w.nodes[L2 + '.pump'].ok && !pendingFor(w, L2 + '.pump') && w.inv.pump > 0 && pumpSpare(s)) wearOp(s, 'pump', L2 + '.pump', t);
-        const op = w.ops.find(o => !o.done && o.target === rec.id), days = nf((op.until - op.start) * 365.25, 1, 'ru'), daysEn = nf((op.until - op.start) * 365.25, 1, 'en');
-        wearNote(s, `${pumpFail(w, unit, 'ru')} ${full ? 'Группы переведены на другие контуры' : `Перестановкой всех групп не покрыть — насос меняют авралом: ${op.crews ? `${op.crews.length} бригады` : 'одна бригада'}, ${days} сут.`}${full ? '; насос меняют из запаса (неделя).' : ''}`,
-          `${pumpFail(w, unit, 'en')} ${full ? 'The groups moved to other loops; the pump is being replaced from stock (a week).' : `Rerouting cannot cover every group — an all-hands pump replacement: ${op.crews ? `${op.crews.length} crews` : 'one crew'}, ${daysEn} days.`}`);
+        const op = w.ops.find(o => !o.done && o.target === rec.id), j = op && s.jobs.list.find(x => x.ref === op.id), n = j ? j.w : 0;
+        const days = j && n ? nf((JB.eta(j, t) - t) * 365.25, 1, 'ru') : null, daysEn = j && n ? nf((JB.eta(j, t) - t) * 365.25, 1, 'en') : null;
+        wearNote(s, `${pumpFail(w, unit, 'ru')} ${full ? 'Группы переведены на другие контуры; насос меняют из запаса (неделя).' : n ? `Перестановкой всех групп не покрыть — насос меняют авралом: ${n} ${plural(n, ['техник', 'техника', 'техников'])}, ${days} сут.` : 'Перестановкой всех групп не покрыть, а свободных техников нет — работа ждёт.'}`,
+          `${pumpFail(w, unit, 'en')} ${full ? 'The groups moved to other loops; the pump is being replaced from stock (a week).' : n ? `Rerouting cannot cover every group — an all-hands pump replacement: ${n} technician${n === 1 ? '' : 's'}, ${daysEn} days.` : 'Rerouting cannot cover every group, and no technician is free — the work waits.'}`);
         return null;
       }
       wearNote(s, full ? `${pumpFail(w, unit, 'ru')} Группы переведены на другие контуры: схема ${layout(w)}.${w.inv.pump ? '' : ' Запасных насосов нет.'}`
@@ -936,9 +953,9 @@ There are no longer years of waiting between question and answer.`;
         label: { ru: 'Оставить перестановку', en: 'Keep the rerouting' },
         known: {
           ru: y => ['Насос остаётся в запасе.', `Схема ${layout(y.wear)}: перегруженные насосы стареют в ${nf(Math.pow(W.MAX / W.NOM, 3), 1, 'ru')} раза быстрее.`,
-            `Следующий отказ контура перестановкой не покрыть: насос будут менять авралом, всеми бригадами вахты (${nf(WEAR_DAYS.pump / crews(y), 1, 'ru')} сут. при нынешней вахте), а теплового резерва у групп — ${W.BUF[y.wear.safe ? 'safe' : 'std']} часов.`],
+            `Следующий отказ контура перестановкой не покрыть: насос будут менять авралом, всеми техниками вахты (${auralDays(y) < Infinity ? `${nf(auralDays(y), 1, 'ru')} сут. при нынешней вахте` : 'техников сверх регламента нет'}), а теплового резерва у групп — ${W.BUF[y.wear.safe ? 'safe' : 'std']} часов.`],
           en: y => ['The pump stays in stock.', `Layout ${layout(y.wear)}: the overloaded pumps age ${nf(Math.pow(W.MAX / W.NOM, 3), 1, 'en')} times faster.`,
-            `The next loop failure cannot be covered by rerouting: the pump will be replaced all-hands, by every crew of the watch (${nf(WEAR_DAYS.pump / crews(y), 1, 'en')} days with today's watch), and the groups' thermal reserve is ${W.BUF[y.wear.safe ? 'safe' : 'std']} hours.`]
+            `The next loop failure cannot be covered by rerouting: the pump will be replaced all-hands, by every technician of the watch (${auralDays(y) < Infinity ? `${nf(auralDays(y), 1, 'en')} days with today's watch` : 'no technician is free of routine'}), and the groups' thermal reserve is ${W.BUF[y.wear.safe ? 'safe' : 'std']} hours.`]
         },
         effect: y => { y.wearPolicy = 'reroute'; },
         record: { ru: `Контур ${L} остаётся выключенным; группы работают на трёх контурах.`, en: `Loop ${L} stays off; the groups run on three loops.` }
@@ -968,14 +985,17 @@ There are no longer years of waiting between question and answer.`;
     // границы среды: только смена множителя пыли (строго после t0 — граница, на которой стоим, пройдена)
     { id: 'env', next: (s, t0, t1) => { let m = null; for (const t of envMarks(s)) if (t > t0 && t <= t1 && (m == null || t < m)) m = t;
       return m != null && { at: m, cause: null, go: () => null }; } },
-    // износ корабля: смена бодрствующих, завершение операций, отказы узлов, одиночные капсулы, исчерпание буферов
+    // работы очереди (шаг 3a): конец ручной части или выдержки; завершение — у владельца (износ, событие)
+    { id: 'jobs', next: (s, t0, t1) => { if (!s.jobs) return null; const b = JB.nextBoundary(s.jobs, t0, t1);
+      return b && { at: b.at, cause: `job.${b.job.type || b.job.owner}`, go: () => { s.year = Math.max(s.year, b.at); const j = JB.step(s.jobs, b.job.id, b.at, pools(s)); return j ? jobDone(s, j, b.at) : null; } }; } },
+    // износ корабля: смена бодрствующих, отказы узлов, одиночные капсулы, исчерпание буферов
     { id: 'wear', next: wearNext }
   ];
-  function calNext(s, t0, t1) {
-    let nx = null;
-    for (const src of CAL) { const c = src.next(s, t0, t1); if (c && (!nx || c.at < nx.at)) nx = c; }   // при равенстве — раньше по порядку
-    return nx;
-  }
+  // ближайшая граница; при равенстве — раньше по порядку календаря. Равенство с допуском (миллиардная года, ~0,03 с):
+  // насос, законченный «ровно к исчерпанию буфера», не должен проигрывать ему на ошибке округления (ревью Codex 3a)
+  const CAL_EPS = 1e-9;
+  const calPick = cs => { let nx = null; for (const c of cs) if (c && (!nx || c.at < nx.at - CAL_EPS)) nx = c; return nx; };
+  const calNext = (s, t0, t1) => calPick(CAL.map(src => src.next(s, t0, t1)));
   function simAdvance(s, target) {
     if (!s.shield && s.eq) { s.shield = SH.create(s.eq.shield); s.simYear = s.year; SH.note(s.shield, { kind: 'accept' }); }
     wearStart(s);
@@ -1336,7 +1356,9 @@ There are no longer years of waiting between question and answer.`;
     erosion: (s, a, b, k) => SH.erode(SH.create('dust20'), a, b, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k).dSigma,   // прогноз на свежей копии
     shieldMin: s => s.shield ? SH.observe(s.shield).min : 0, service: () => SH.RULES.service, eroded: s => s.shield ? s.shield.erodedKg / SH.AREA : 0,
     lag: s => lag(s, s.year), yrs: (n, lang) => lang === 'ru' ? yrs(n) : yrsEn(n),
-    book: (s, cause) => book(s, cause) });                             // журнал — до снимка записи события
+    book: (s, cause) => book(s, cause),                               // журнал — до снимка записи события
+    // общая очередь работ (шаг 3a): события ставят работы в неё, когда она есть (модель износа включена)
+    jobs: s => s.jobs ? { enqueue: spec => JB.enqueue(s.jobs, spec, s.year, pools(s)), list: () => JB.active(s.jobs).filter(j => j.owner === 'ev'), eta: j => JB.eta(j, s.year) } : null });
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
   // Журнал: каждое изменение запасов и числа погибших — записью с причиной: решение (id/вариант), сцена (id), граница
   // модели (событие, удар, выход из ядра). Сумма записей сходится с состоянием — одно происшествие не считается дважды
@@ -6980,7 +7002,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, events: EV, navDeparture, epoch3, lossFuture: () => LOSS_FUTURE, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, calPick, events: EV, navDeparture, epoch3, lossFuture: () => LOSS_FUTURE, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

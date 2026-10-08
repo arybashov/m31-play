@@ -287,12 +287,16 @@
   function recordDeaths(w, ids, t) { const live = ids.filter(i => i < w.crew && w.ps[i] !== 'D'); kill(w, live, t); recompute(w, t); return live; }
 
   // ---------------------------------------------------------------- перестановка и замена
-  // свободная мощность контура: предел 7 минус активные группы (контур должен работать)
-  function loopRoom(w, L) { return loopRuns(w, L) ? MAX - loopLoad(w, L) : 0; }
+  // мощность под обещанное: пустая группа, куда обещаны люди начатой перекладки (кроме работы except), место на своём
+  // контуре уже заняла — для перестановки, перекладки и возврата домой она как занятая (ревью Codex 3a). Старение и буферы
+  // считают по фактическим спящим (activeMap)
+  const capMap = (w, c, except) => { const a = activeMap(w, c); for (const k of heldSeats(w, except)) a[groupOfSeat(k)] = true; return a; };
+  // свободная мощность контура: предел 7 минус занятые группы (контур должен работать)
+  function loopRoom(w, L, except) { return loopRuns(w, L) ? MAX - loopLoad(w, L, capMap(w, null, except)) : 0; }
   // раскладка групп остановленного контура по работающим: по одной туда, где свободнее (при равенстве — по номеру).
   // Мест не хватает — переводится сколько помещается (по номерам групп), остальные — в left
   function reroutePlan(w, from) {
-    const act = activeMap(w), gs = GIDS.filter(g => w.link.group[g] === from && act[g]), room = {}, plan = {}, left = [];
+    const act = capMap(w), gs = GIDS.filter(g => w.link.group[g] === from && act[g]), room = {}, plan = {}, left = [];   // с обещанными местами — вместе с обещанием
     for (const L of LOOPS) if (L !== from) room[L] = loopRoom(w, L);
     for (const g of gs) {
       const L = Object.keys(room).filter(x => room[x] > 0).sort((a, b) => room[b] - room[a] || (a < b ? -1 : 1))[0];
@@ -301,15 +305,20 @@
     }
     return { plan, left };
   }
+  // места, обещанные начатым перекладкам (кроме работы except): другим не выдаются, пока работа не кончилась
+  const heldSeats = (w, except) => { const h = new Set(); for (const [op, ks] of Object.entries(w.hold || {})) if (op !== except) for (const k of ks) h.add(k); return h; };
+  const holdSeats = (w, op, ks) => { (w.hold = w.hold || {})[op] = ks.slice(); };
   // свободные исправные места в группах с охлаждением и питанием (кроме группы from) — по номеру места. Пустая группа
-  // после заселения станет нагрузкой своего контура: её места — только если у контура есть мощность (предел 7)
-  function freeSeats(w, from) {
-    const c = census(w), act = activeMap(w, c), room = {}, out = [];
-    for (const L of LOOPS) room[L] = loopRoom(w, L);
+  // после заселения станет нагрузкой своего контура: её места — только если у контура есть мощность (предел 7); пустая
+  // группа, куда уже обещаны люди, нагрузку уже заняла
+  function freeSeats(w, from, except) {
+    const c = census(w), act = capMap(w, c, except), room = {}, out = [], held = heldSeats(w, except);
+    for (const L of LOOPS) room[L] = loopRoom(w, L, except);
     for (const g of GIDS) {
       if (g === from) continue; const D = deficit(w, g); if (D.heat || D.power) continue;
-      if (!act[g]) { if (!c[g].free.length) continue; const L = w.link.group[g]; if (!(room[L] > 0)) continue; room[L]--; }   // мощность — только под группу, где есть места
-      out.push(...c[g].free);
+      const free = c[g].free.filter(k => !held.has(k));
+      if (!act[g]) { if (!free.length) continue; const L = w.link.group[g]; if (!(room[L] > 0)) continue; room[L]--; }   // мощность — только под группу, где есть места
+      out.push(...free);
     }
     return out.sort((a, b) => a - b);
   }
@@ -319,15 +328,17 @@
     let moved = 0;
     for (const g of GIDS) {
       const h = homeLoop(g); if (w.link.group[g] === h || !loopRuns(w, h)) continue;
-      const act = activeMap(w); if (act[g] && loopLoad(w, h, act) >= MAX) continue;
+      const act = capMap(w); if (act[g] && loopLoad(w, h, act) >= MAX) continue;
       w.link.group[g] = h; moved++;
     }
     if (moved) recompute(w, t);
     return moved;
   }
-  // переложить спящих группы g в свободные капсулы охлаждаемых групп; мест мало — не перекладывается никто
-  function moveSleepers(w, g, t) {
-    const sl = census(w)[g].sleep, seats = freeSeats(w, g);
+  // переложить спящих группы g в свободные капсулы охлаждаемых групп — сначала в места, обещанные работе op (если они
+  // ещё годны); мест мало — не перекладывается никто. Обещание снимается в любом случае
+  function moveSleepers(w, g, t, op) {
+    const own = new Set(op && w.hold && w.hold[op] || []), sl = census(w)[g].sleep, seats = freeSeats(w, g, op).sort((a, b) => own.has(b) - own.has(a) || a - b);
+    if (op && w.hold) delete w.hold[op];
     if (!sl.length || seats.length < sl.length) return null;
     sl.forEach((i, j) => { w.moved[i] = seats[j]; });
     w.log.push({ at: t, kind: 'move', group: g, ids: sl.slice(), seats: seats.slice(0, sl.length) });
@@ -364,7 +375,7 @@
   const take = w => { const out = w.notes; w.notes = []; return out; };
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
-    create, setAwake, census, groupPeople, seatOf, freeSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
+    create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,
     independentLoops, powerChannels, observe, publicOf, take };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

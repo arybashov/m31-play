@@ -175,7 +175,13 @@
           }]
         }),
         done: (s, e, j) => {
-          if (j.how === 'measure' && e.h.defect) { s.materials -= 0.75; move(s, e, 'materials', -0.75); scrap(s, 0.75); }
+          const r = j.how === 'measure' && e.h.defect ? fixStage(s, e, 'measure.fix', 0.75, 6 * DAY) : null;
+          if (r === 'queued') return note(s, e, L('Медицинский журнал', 'Medical log'), L(`Капсула ${e.grp}-${e.cap}: серия подтвердила дефект разъёма. Разъём меняют: −0,75% материалов, шесть суток.`,
+            `Capsule ${e.grp}-${e.cap}: the series confirmed the connector defect. The connector is being replaced: −0.75% of materials, six days.`), 'found');
+          if (r === 'short') return note(s, e, L('Медицинский журнал', 'Medical log'), L(`Капсула ${e.grp}-${e.cap}: серия подтвердила дефект разъёма, но материалов на замену нет. Капсулу ведут по независимому датчику.`,
+            `Capsule ${e.grp}-${e.cap}: the series confirmed the connector defect, but there are no materials for the replacement. The capsule is monitored by the independent sensor.`), 'done');
+          if (j.how === 'measure.fix') return note(s, e, L('Медицинский журнал', 'Medical log'), L(`Капсула ${e.grp}-${e.cap}: разъём заменён, показания канала совпадают с независимым датчиком.`,
+            `Capsule ${e.grp}-${e.cap}: connector replaced; the channel readings agree with the independent sensor.`), 'done');
           note(s, e, L('Медицинский журнал', 'Medical log'), j.how === 'replace'
             ? L(`Капсула ${e.grp}-${e.cap}: разъём и датчик заменены, показания канала совпадают с независимым датчиком.`, `Capsule ${e.grp}-${e.cap}: connector and sensor replaced; the channel readings agree with the independent sensor.`)
             : e.h.defect ? L(`Капсула ${e.grp}-${e.cap}: серия подтвердила дефект разъёма — его заменили (−0,75% материалов). Показания канала совпадают с независимым датчиком.`, `Capsule ${e.grp}-${e.cap}: the series confirmed the connector defect — it was replaced (−0.75% of materials). The channel readings now agree with the independent sensor.`)
@@ -253,8 +259,12 @@
           }]
         }),
         done: (s, e, j) => {
-          if (j.how === 'reaccept' && e.h.defect) { s.materials -= 0.75; move(s, e, 'materials', -0.75); scrap(s, 0.75); }
-          note(s, e, L('Грузовой журнал', 'Cargo log'), j.how === 'replace' ? L('Соединитель заменён; узел прошёл приёмочное испытание.', 'The connector has been replaced; the unit has passed the acceptance test.')
+          const r = j.how === 'reaccept' && e.h.defect ? fixStage(s, e, 'reaccept.fix', 0.75, 7 * DAY) : null;
+          if (r === 'queued') return note(s, e, L('Грузовой журнал', 'Cargo log'), L('Испытание нашло дефект контакта. Соединитель меняют: −0,75% материалов, неделя работы.',
+            'The acceptance test found a contact defect. The connector is being replaced: −0.75% of materials, a week of work.'), 'found');
+          if (r === 'short') return note(s, e, L('Грузовой журнал', 'Cargo log'), L('Испытание нашло дефект контакта, но материалов на замену нет. Узел не принят; дефект записан.',
+            'The acceptance test found a contact defect, but there are no materials for the replacement. The unit is not accepted; the defect is on record.'), 'done');
+          note(s, e, L('Грузовой журнал', 'Cargo log'), j.how === 'replace' || j.how === 'reaccept.fix' ? L('Соединитель заменён; узел прошёл приёмочное испытание.', 'The connector has been replaced; the unit has passed the acceptance test.')
             : e.h.defect ? L('Испытание нашло дефект контакта — соединитель заменён (−0,75% материалов). Узел принят.', 'The acceptance test found a contact defect — the connector was replaced (−0.75% of materials). The unit is accepted.')
             : L('Испытание: дрейф сопротивления измерительного контакта, сам узел исправен. Принят без замены.', 'Acceptance test: the measurement contact\'s resistance had drifted; the unit itself is sound. It passed without replacement.'), 'done');
         }
@@ -433,8 +443,12 @@
           }]
         }),
         done: (s, e, j) => {
-          if (j.how === 'check' && e.h.defect) { const c = TYPES.recall.cost(s); s.materials -= c; move(s, e, 'materials', -c); scrap(s, c); }
-          note(s, e, L('Журнал теплообменника', 'Heat-exchanger log'), j.how === 'fix'
+          const c = TYPES.recall.cost(s), r = j.how === 'check' && e.h.defect ? fixStage(s, e, 'check.fix', c, 60 * DAY) : null;
+          if (r === 'queued') return note(s, e, L('Журнал теплообменника', 'Heat-exchanger log'), L(`Проверка подтвердила дефект на наших клапанах серии ${e.series}. Уплотнения меняют: −${H.nf(c, 1, 'ru')}% материалов, шестьдесят суток. Ответ Кольцу ушёл.`,
+            `The check confirmed the defect on our series ${e.series} valves. The seals are being replaced: −${H.nf(c, 1, 'en')}% of materials, sixty days. A reply has gone to the Ring.`), 'found');
+          if (r === 'short') return note(s, e, L('Журнал теплообменника', 'Heat-exchanger log'), L(`Проверка подтвердила дефект на наших клапанах серии ${e.series}, но материалов на замену уплотнений нет. Дефект записан, ответ Кольцу ушёл.`,
+            `The check confirmed the defect on our series ${e.series} valves, but there are no materials to replace the seals. The defect is on record; a reply has gone to the Ring.`), 'done');
+          note(s, e, L('Журнал теплообменника', 'Heat-exchanger log'), j.how === 'fix' || j.how === 'check.fix'
             ? L(`Уплотнения серии ${e.series} заменены: дефект, описанный в бюллетене, устранён.`, `The series ${e.series} seals are replaced: the defect described in the bulletin has been eliminated.`)
             : e.h.defect ? L(`Проверка подтвердила дефект на наших клапанах серии ${e.series} — уплотнения заменены. Ответ Кольцу ушёл.`, `The check confirmed the defect on our series ${e.series} valves — the seals are replaced. A reply has gone to the Ring.`)
             : L(`Проверка: наши клапаны серии ${e.series} исправны — дефект их экземпляров не коснулся. Ответ Кольцу ушёл.`, `The check: our series ${e.series} valves are sound — the defect did not touch these units. A reply has gone to the Ring.`), 'done');
@@ -501,7 +515,29 @@
       for (let x = at; x > t0 + P.g; x -= 0.25) if (H.window(s, x, 'council')) { at = x; break; }
       s.ev.councilAt = at;
     }
-    function job(s, e, how, years, blocks) { init(s); s.ev.jobs.push({ id: e.id, type: e.type, how, until: s.year + years, dur: years, blocks: blocks || [] }); }
+    // работы событий: с общей очередью (H.jobs) — ручные работы техников делят людей с ремонтами износа (трудоёмкость
+    // = дни × работников; не хватает людей — работа ждёт и сдвигает срок), остальные — выдержка без людей (наблюдения,
+    // сниженная нагрузка, обучение, ротация). Без очереди — прежний срок
+    const TECH = { 'airFilter.replace': 2, 'airFilter.regen': 2, 'radiatorSeam.insert': 2, 'capsulePulse.replace': 1, 'cargoAcceptance.replace': 2,
+      'cargoAcceptance.reaccept': 1, 'recall.fix': 2, 'capsulePulse.measure.fix': 1, 'cargoAcceptance.reaccept.fix': 2, 'recall.check.fix': 2 };
+    function job(s, e, how, years, blocks) {
+      init(s);
+      const Q = H.jobs && H.jobs(s), n = TECH[`${e.type}.${how}`], days = years / DAY;
+      if (Q) { Q.enqueue(n ? { owner: 'ev', ref: e.id, type: e.type, how, blocks: blocks || [], prio: 2, pool: 'tech', work: days * n, minW: 1, maxW: n, hold: 0, dur: years }
+        : { owner: 'ev', ref: e.id, type: e.type, how, blocks: blocks || [], prio: 3, pool: null, work: 0, hold: days, dur: years }); return; }
+      s.ev.jobs.push({ id: e.id, type: e.type, how, until: s.year + years, dur: years, blocks: blocks || [] });
+    }
+    // диагностика подтвердила дефект: с общей очередью — отдельный этап ремонта (материалы — при начале, техники — из
+    // очереди; материалов нет — дефект остаётся в журнале, ремонта нет); без очереди — замена сразу, как прежде
+    function fixStage(s, e, how, cost, years) {
+      const Q = H.jobs && H.jobs(s);
+      if (Q && s.materials < cost - 1e-9) return 'short';
+      s.materials -= cost; move(s, e, 'materials', -cost); scrap(s, cost);
+      if (!Q) return 'now';
+      job(s, e, how, years); return 'queued';
+    }
+    // работа события из общей очереди кончилась: итог — как у прежнего срока
+    function jobDone(s, j) { const e = s.ev && s.ev.log.find(x => x.id === j.ref), T = e && TYPES[e.type]; if (T && T.done) T.done(s, e, { id: j.ref, type: j.type, how: j.how, dur: j.dur }); return null; }
     // навык семьи работ (событие «навык в инструкции»): курс — вдвое быстрее, сверка по архиву — нестандартное с проверкой (+30 суток)
     const qual = (s, fam) => s.ev && s.ev.qual ? s.ev.qual[fam] : undefined;
     const dur = (s, fam, days) => qual(s, fam) === 'skilled' ? Math.round(days / 2) : qual(s, fam) === 'checked' ? days + 30 : days;
@@ -561,8 +597,9 @@
     function freeAt(s, type, council, t) {
       const ev = s.ev, T = TYPES[type], g = profile(s).g;
       const beforeCouncil = !council && ev.councilAt != null && t != null && ev.councilAt >= t - 1e-9 && ev.councilAt - t < g ? ev.councilAt + g : -Infinity;
+      const Q = H.jobs && H.jobs(s), qj = Q ? Q.list().filter(j => j.type === type || (j.blocks || []).includes(T.family)).map(j => Q.eta(j)) : [];   // работы очереди — по оценке срока
       return Math.max(council ? -Infinity : ev.root + g, beforeCouncil, (ev.last[type] ?? -Infinity) + coolOf(s, T),
-        ...ev.jobs.filter(j => j.type === type || j.blocks.includes(T.family)).map(j => j.until));
+        ...ev.jobs.filter(j => j.type === type || j.blocks.includes(T.family)).map(j => j.until), ...qj);
     }
     // экземпляр события: участник, параметры, учёт; N — сразу запись, D — вставка-решение
     function admit(s, type, k, t, council) {
@@ -592,7 +629,7 @@
     // для интерфейса: будущие кандидаты — скрытое состояние
     const strip = p => { if (p && p.ev) { delete p.ev.clock; p.ev.log.forEach(x => { delete x.h; });
       p.ev.media = (p.ev.media || []).map(({ id, a, b }) => ({ id, a, b })); } return p; };
-    return { TYPES, next, fire, decision, decided, take, since, movesIn, strip, scrap, rhoK, marks, profile };
+    return { TYPES, next, fire, decision, decided, take, since, movesIn, strip, scrap, rhoK, marks, profile, jobDone };
   }
 
   const api = { create };
