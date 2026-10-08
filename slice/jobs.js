@@ -5,20 +5,18 @@
    которая идёт без работников. Работа без пула людей (pool: null) — только выдержка: наблюдения, сниженная нагрузка,
    обучение. Техников делят все владельцы (модель износа, события v1) — одних людей нельзя занять дважды.
    Раздача — заново на каждой границе (новая работа, конец этапа, смена вахты): по приоритету (0 — спасение людей до
-   исчерпания буфера, 1 — независимый путь, 2 — запас и плановый ремонт, 3 — переработка, наука), затем по сроку, затем
+   исчерпания буфера, 1 — независимый путь, 1,5 — регламент, 2 — запас и плановый ремонт, 3 — переработка, наука), затем по сроку, затем
    по номеру. Менее важная работа уступает людей более важной и сохраняет выполненный объём.
    Ход — от опорной точки последней раздачи (t0): выполненное считается от неё, нарезка перемотки срок не меняет.
-   Пулы людей: tech — техники сверх регламента, routine — те, кто ведёт регламент исправного корабля. Спасение людей и
-   независимый путь (приоритеты 0–1) берут и регламентных (регламент ждёт); плановые ручные работы, если техников нет, —
-   регламентными в свободное время, с долей смены SLACK (вахта 13: сверх регламента никого, ремонт идёт вчетверо дольше).
+   Пул людей tech — все специалисты вахты (шаг «хрупкость»: регламент — сама работа очереди, бесконечная, приоритет 1,5;
+   спасение и путь забирают у него людей, запас ждёт, пока регламент не получит своё; свободного времени «даром» нет).
    Оборудование (equip, шаг 3b): работа занимает единицу пула оборудования (мастерская — один производственный слот);
    оборудование занято — работа ждёт, как без людей. */
 (function (root) {
   'use strict';
 
   const DAY = 1 / 365.25;
-  const PRIO = { rescue: 0, path: 1, stock: 2, low: 3 };
-  const SLACK = 0.25;                                                    // доля смены регламентных на плановые работы
+  const PRIO = { rescue: 0, path: 1, reg: 1.5, stock: 2, low: 3 };     // регламент — после спасения и пути, до запаса
   const create = () => ({ seq: 0, list: [] });
 
   // spec: { owner, ref, type, how, blocks, prio, deadline, pool: 'tech' | null, work — чел.-сут, minW, maxW, hold — сут,
@@ -35,29 +33,24 @@
   }
   const active = Q => Q.list.filter(j => j.status !== 'done');
   // выполненное к дате t — от опорной точки (без изменения состояния)
-  const rate = j => j.w * (j.eff || 1);                                   // чел.-сут в сутки
+  const rate = j => j.w;                                                 // чел.-сут в сутки
   const doneAt = (j, t) => j.status === 'work' ? j.done + rate(j) * (t - j.t0) / DAY : j.done;
   const heldAt = (j, t) => j.status === 'hold' ? j.held + (t - j.t0) / DAY : j.held;
   function sync(Q, t) {
     for (const j of active(Q)) { const d = doneAt(j, t), h = heldAt(j, t); j.done = Math.min(j.work, d); j.held = Math.min(j.hold, h); j.t0 = t; }
   }
-  // раздача людей: заново, по приоритету, сроку, номеру; не хватает минимума — работа ждёт. Спасение людей и путь
-  // (приоритеты 0–1) берут и регламентных (пул routine): регламент ждёт; плановая без техников — регламентными в свободное время
+  // раздача людей: заново, по приоритету, сроку, номеру; не хватает минимума — работа ждёт
   function dispatch(Q, t, pools) {
     sync(Q, t);
     const left = Object.assign({}, pools || {});
-    const from = j => j.prio <= PRIO.path && j.pool === 'tech' ? ['tech', 'routine'] : [j.pool];
     const order = active(Q).slice().sort((a, b) => a.prio - b.prio || (a.deadline ?? Infinity) - (b.deadline ?? Infinity) || a.at - b.at || (+a.id.slice(4)) - (+b.id.slice(4)));
     for (const j of order) {
       if (j.done >= j.work - 1e-9) { j.w = 0; j.status = 'hold'; continue; }   // ручная часть сделана — выдержка без людей
-      if (j.equip && !((left[j.equip] || 0) >= 1)) { j.w = 0; j.eff = 1; j.status = 'wait'; continue; }   // оборудование занято
-      let src = from(j), eff = 1;
-      const cap = src => { const free = src.reduce((a, p) => a + (left[p] || 0), 0); return j.maxW === 'all' ? free : Math.min(j.maxW, free); };
-      let max = cap(src);
-      if (max < j.minW && j.pool === 'tech' && j.prio > PRIO.path && cap(['routine']) >= j.minW) { src = ['routine']; eff = SLACK; max = cap(src); }
-      if (max >= j.minW) { j.w = max; j.eff = eff; let need = max; for (const p of src) { const k = Math.min(need, left[p] || 0); left[p] = (left[p] || 0) - k; need -= k; } j.status = 'work';
+      if (j.equip && !((left[j.equip] || 0) >= 1)) { j.w = 0; j.status = 'wait'; continue; }   // оборудование занято
+      const free = left[j.pool] || 0, max = j.maxW === 'all' ? free : Math.min(j.maxW, free);
+      if (max >= j.minW) { j.w = max; left[j.pool] = free - max; j.status = 'work';
         if (j.equip) left[j.equip]--; }
-      else { j.w = 0; j.eff = 1; j.status = 'wait'; }
+      else { j.w = 0; j.status = 'wait'; }
     }
   }
   // конец этапа (ручная часть или выдержка) ближайшей работы в [t0, t1]
@@ -88,10 +81,10 @@
     return t + Math.max(0, j.work - d) / w * DAY + Math.max(0, j.hold - h) * DAY;
   }
   // людей занято пулом сейчас
-  const busy = (Q, pool) => active(Q).filter(j => j.pool === pool && j.status === 'work').reduce((a, j) => a + j.w, 0);   // людей, и регламентных
+  const busy = (Q, pool) => active(Q).filter(j => j.pool === pool && j.status === 'work').reduce((a, j) => a + j.w, 0);
   const publicOf = Q => Q && JSON.parse(JSON.stringify(Q));
 
-  const api = { DAY, PRIO, SLACK, create, enqueue, dispatch, nextBoundary, step, eta, busy, active, sync, publicOf };
+  const api = { DAY, PRIO, create, enqueue, dispatch, nextBoundary, step, eta, busy, active, sync, publicOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Jobs = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

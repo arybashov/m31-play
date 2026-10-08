@@ -26,11 +26,11 @@
   const YH = 1 / 8766;                                                   // год в часах (365,25 × 24)
   // семейства: η — ресурс, лет нормальной эксплуатации; k — рост интенсивности; l0 — фон, 1/год; live — отказы включены
   const FAM = {
-    pump: { eta: 180, k: 3, l0: 0.0005, live: true },
+    pump: { eta: 180, k: 3, l0: 0.0005, live: true, over: 6 },          // шаг «хрупкость» 2: выше номинала старение (load/nom)^6 — перестановка дорога
     cooler: { eta: 600, k: 3, l0: 0.0001, live: true },
     control: { eta: 650, k: 3, l0: 0.0001, live: true },
     collector: { eta: 500, k: 4, l0: 0.0001, live: true },              // шаг 3e: отказывают, ремонт — вставка (COLL)
-    radiator: { eta: 350, k: 3, l0: 0.0001, live: false },
+    radiator: { eta: 350, k: 3, l0: 0.0001, live: true, danger: true }, // шаг «хрупкость» 3б: порог — обнаруженный дефект, не отказ
     power: { eta: 600, k: 3, l0: 0.0001, live: false },
     bus: { eta: 600, k: 3, l0: 0.0001, live: false },
     // мастерская (шаг 3c, план B6): привод станков стареет только в работе — ресурс 3 000 станко-суток; управляющая база
@@ -49,10 +49,26 @@
   // основание контура (коллектор, шаг 3e; план B5): ремонт — вставка: клапанный комплект, материалы по оснащению, 28 чел.-сут
   // и 48 ч опрессовки; не больше двух, после второй предел контура −1 единица; возраст основания сохраняется
   const COLL = { inserts: 2, materials: { repair: 2, tools: 1.5, printQC: 1.2 }, work: 28, hold: 2 };
+  // регламент («Ревью Codex — хрупкость корабля и регламент», п. 0; автор: «МКС ремонтируют постоянно — а такой корабль?»):
+  // спрос — чел.-сут (8-часовых) в год, по целым годам рейса D0 × (1 + 0,0015 × лет), не больше +50%; выполненное — специалисты,
+  // которых очередь отдала регламенту, по 250 полезных суток в год; отставание B копится, когда выполненного меньше спроса,
+  // и тает при избытке (не ниже нуля); старение всех узлов ×(1 + min(3; 0,35 × B/D0)) — пересчёт на сетке в четверть года
+  // (нарезка перемотки множитель не меняет). Погашенный долг возраст узлов не откатывает. mat — пунктов материалов на D0;
+  // shop — станко-суток в год (привод мастерской стареет и вне производственных работ, пока регламент идёт); train — сутки
+  // обучения разбуженных специалистов (конец — на узле сетки)
+  // labor — доля регламента, которую делают без материалов (осмотр, регулировка, смазка из оборотного запаса; шаг 2)
+  // mat 0,08 (шаг 3б: при 0,12 совет на Gl 338 исчерпывал материалы к 230–240 году; у Codex 0,12 — стартовая заглушка)
+  const REG = { D0: 1200, age: 0.0015, ageMax: 0.5, perYear: 250, k: 0.35, kMax: 3, step: 0.25, mat: 0.08, shop: 20, train: 180, labor: 0.6 };
   const limitOf = (w, L) => PWR.max - ((w.nodes[L + '.coll'].inserts || 0) >= COLL.inserts ? 1 : 0);
   const LOOPS = ['L1', 'L2', 'L3', 'L4'], BUSES = ['BUS1', 'BUS2'], BLOCKS = ['PB1', 'PB2'], RADS = ['R1', 'R2', 'R3', 'R4'];
   const GIDS = Array.from({ length: NG }, (_, i) => 'G' + String(i + 1).padStart(2, '0'));
-  const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1 };
+  const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1, radKit: 6 };   // секционных комплектов 6 (у Codex 4: совет на Gl 338 — 92%)
+  // опасный дефект (шаг «хрупкость» 3; «Ревью Codex — хрупкость корабля и регламент», шаг 3): порог Вейбулла узла семейства
+  // danger — обнаруженное повреждение (течь секции радиатора): узел ещё работает, но дефект развивается — допуск tol
+  // эквивалентных суток под нагрузкой (темп — как старение узла, с долгом регламента); 75% допуска — предупреждение, 100% —
+  // тяжёлый отказ (узел выключен, ремонт дороже). Изоляция останавливает развитие. Ремонт — комплекты секции, материалы,
+  // чел.-сут и выдержка; возраст основания сохраняется, поколение +1 (новый порог)
+  const DANGER = { radiator: { tol: 30, warn: 0.75, kit: 'radKit', repair: { kits: 1, materials: 2, work: 24, hold: 2 }, heavy: { kits: 2, materials: 4, work: 48, hold: 2 } } };
   // агрегаты-экземпляры и восстановление (шаг 3b). Материалы — пункты бюджета; сутки — работа двух специалистов
   const TRACK = ['pump', 'cooler'];
   const REBUILD = {
@@ -181,7 +197,7 @@
     const fixed = PWR.core + awake / PWR.ring, run = LOOPS.filter(L => loopRuns(w, L)), share = run.length ? fixed / run.length : Infinity;
     const gcap = run.length ? Math.max(0, Math.floor(PWR.max - share + 1e-9)) : 0, rank = {}, gcapL = {};
     for (const L of LOOPS) { let k = 0; for (const g of GIDS) if (w.link.group[g] === L && act[g]) rank[g] = k++;
-      gcapL[L] = run.length ? Math.max(0, Math.floor(limitOf(w, L) - share + 1e-9)) : 0; }   // после двух вставок — на единицу меньше
+      gcapL[L] = run.length && loopRuns(w, L) ? Math.max(0, Math.floor(limitOf(w, L) - share + 1e-9)) : 0; }   // после двух вставок — на единицу меньше; стоящий — 0
     const capSum = run.reduce((a, L) => a + limitOf(w, L), 0);
     return { fixed, share, gcap, gcapL, capSum, run: run.length, rank, awake };
   }
@@ -195,18 +211,23 @@
   }
   // тепловая нагрузка контура в единицах: охлаждаемые группы + доля ядра и колец
   const loopPower = (w, L, B, act) => loopRuns(w, L) ? Math.min(loopLoad(w, L, act), B.gcapL[L]) + B.share : 0;
+  // старение от нагрузки: куб; насос выше номинала — степень over (6: перестановка дорога годами, шаг «хрупкость» 2)
+  const overRate = (fam, x) => Math.pow(x, x > 1 && FAM[fam].over ? FAM[fam].over : 3);
   // темп старения узла при текущей схеме
   function rateOf(w, id, act, load) {
     const n = w.nodes[id];
     if (!n.ok) return 0;
     if (n.fam === 'pump' || n.fam === 'collector' || n.fam === 'radiator') {
       const L = n.fam === 'radiator' ? LOOPS.find(x => w.link.rad[x] === id) : id.split('.')[0];
-      return loopRuns(w, L) ? Math.max(0.2, Math.pow(load[L] / PWR.nom, 3)) : 0.2;   // load — единицы бюджета (группы + доля ядра)
+      return loopRuns(w, L) ? Math.max(0.2, overRate(n.fam, load[L] / PWR.nom)) : 0.2;   // load — единицы бюджета (группы + доля ядра)
     }
     if (n.fam === 'cooler' || n.fam === 'control') { const g = id.split('.')[0]; return act[g] ? 1 : 0.2; }
-    if (n.fam === 'shopDrive') return w.shop && w.shop.busy ? 1 : 0;   // привод — только в работе
+    if (n.fam === 'shopDrive') return w.shop && w.shop.busy ? 1 : w.reg && w.reg.S > 0 ? REG.shop / 365.25 : 0;   // привод — в работе; регламент — 20 станко-суток в год
     return 1;
   }
+  const regMult = w => w.reg ? w.reg.m : 1;                             // отставание регламента ускоряет старение всего
+  // израсходованный допуск открытого дефекта, эквивалентных суток (выключенный узел дефект не развивает)
+  const defectAt = (n, t) => n.defect ? n.defect.u0 + (n.ok && n.defect.stage === 'open' ? n.r * 365.25 * Math.max(0, t - n.defect.t0) : 0) : 0;
   const ageAt = (n, t) => n.a0 + n.r * (t - n.t0);
   function hazardAt(n, t) {
     const F = FAM[n.fam], a1 = ageAt(n, t), eta = n.eta || F.eta;          // перебранный агрегат — свой ресурс η
@@ -219,8 +240,9 @@
     const c = census(w), act = activeMap(w, c), load = {}, B = budget(w, act);
     for (const L of LOOPS) load[L] = loopPower(w, L, B, act);
     for (const id of Object.keys(w.nodes)) {
-      const n = w.nodes[id], r = rateOf(w, id, act, load);
-      if (r !== n.r && n.ok) { const a = ageAt(n, t), h = hazardAt(n, t); n.a0 = a; n.h0 = h; n.t0 = t; n.r = r; }   // оба — от прежней опоры
+      const n = w.nodes[id], r = rateOf(w, id, act, load) * regMult(w);
+      if (r !== n.r && n.ok) { if (n.defect) { n.defect.u0 = defectAt(n, t); n.defect.t0 = t; }   // допуск — от прежней опоры
+        const a = ageAt(n, t), h = hazardAt(n, t); n.a0 = a; n.h0 = h; n.t0 = t; n.r = r; }   // оба — от прежней опоры
     }
     const cap = bufCap(w);
     for (const g of GIDS) {
@@ -261,6 +283,27 @@
     w.agro = 'donor'; w.inv.pump++; w.log.push({ at: t, kind: 'donor', sn: p.sn });
     return p.sn;
   }
+  // регламент: опора (B к дате t0, выполненное S чел.-сут/год), спрос — по году рейса (граница года — на сетке)
+  const regOf = (w, t) => w.reg || (w.reg = { B: 0, t0: t != null ? t : w.t, S: 0, start: t != null ? t : w.t, m: 1 });
+  const regDemand = (w, t) => { const r = regOf(w); return REG.D0 * (1 + Math.min(REG.ageMax, REG.age * Math.floor(Math.max(0, t - r.start) + 1e-9))); };
+  function regAt(w, t) { const r = regOf(w); return Math.max(0, r.B + (regDemand(w, r.t0) - r.S) * (t - r.t0)); }
+  const onRegGrid = (w, t) => { const r = regOf(w), x = (t - r.start) / REG.step; return Math.abs(x - Math.round(x)) < 1e-6; };
+  // новая опора с даты t: отставание — точно к t; множитель старения — только на сетке (по отставанию в узле сетки)
+  function regSet(w, t, S) {
+    const r = regOf(w, t), on = r.S > 0; r.B = regAt(w, t); r.t0 = t; r.S = S; let re = on !== S > 0;   // регламент встал или пошёл — привод мастерской
+    if (onRegGrid(w, t)) { const m = 1 + Math.min(REG.kMax, REG.k * r.B / REG.D0); if (Math.abs(m - r.m) > 1e-12) { r.m = m; re = true; } }
+    if (re) recompute(w, t);
+  }
+  // следующая граница года рейса после t0 (не позже t1) — узел сетки
+  function regNextYear(w, t0, t1) { const r = regOf(w), at = r.start + Math.floor(t0 - r.start + 1e-6) + 1; return at <= t1 + 1e-12 ? at : null; }
+  // материалы на регламент от t до T: спрос по годам рейса плюс накопленное отставание (прогноз для честного совета)
+  function regMatTo(w, t, T) {
+    const r = regOf(w); let d = regAt(w, t);
+    for (let a = t; a < T - 1e-9;) { const b = Math.min(T, r.start + Math.floor(a - r.start + 1e-9) + 1); d += regDemand(w, a) * (b - a); a = b; }
+    return REG.mat * d / REG.D0;
+  }
+  // следующий узел сетки регламента после t0 (не позже t1)
+  function regNext(w, t0, t1) { const r = regOf(w), k = Math.floor((t0 - r.start) / REG.step + 1e-6) + 1, at = r.start + k * REG.step; return at <= t1 + 1e-12 ? at : null; }
   // время модели дошло до t без событий: состояние — от опор, меняется только отметка хода
   const touch = (w, t) => { w.t = Math.max(w.t, t); };
   const independentLoops = w => LOOPS.filter(L => loopRuns(w, L)).length;
@@ -271,7 +314,7 @@
   // порядок при равной дате: завершение операции → отказ узла → одиночная капсула → исчерпание буфера (затем решение)
   const threshold = (n, rnd) => -Math.log(uOpen(rnd(`wear.${n.id}.gen.${n.gen}.threshold`)));
   function failureAt(n, t0, t1, rnd) {
-    const F = FAM[n.fam]; if (!F.live || !n.ok) return null;
+    const F = FAM[n.fam]; if (!F.live || !n.ok || n.defect) return null;
     const E = threshold(n, rnd), from = Math.max(t0, n.t0);
     if (hazardAt(n, t1) < E) return null;
     if (hazardAt(n, from) >= E) return from;
@@ -307,7 +350,10 @@
     let best = null;
     const take = (at, kind, id, ord) => { if (at == null) return; if (!best || at < best.at - 1e-12 || (Math.abs(at - best.at) <= 1e-12 && (ord < best.ord || (ord === best.ord && id < best.id)))) best = { at, kind, id, ord }; };
     for (const op of w.ops) if (!op.done && op.until >= t0 - 1e-12 && op.until <= t1) take(Math.max(t0, op.until), 'op', op.id, 0);
-    for (const id of Object.keys(w.nodes).sort()) take(failureAt(w.nodes[id], t0, t1, rnd), 'fail', id, 1);
+    for (const id of Object.keys(w.nodes).sort()) { const n = w.nodes[id]; take(failureAt(n, t0, t1, rnd), FAM[n.fam].danger ? 'defect' : 'fail', id, 1);
+      if (n.defect && n.ok && n.defect.stage === 'open' && n.r > 0) {    // развитие дефекта: предупреждение и тяжёлый отказ
+        const Dg = DANGER[n.fam], d = n.defect, mark = d.warned ? Dg.tol : Dg.tol * Dg.warn, at = d.t0 + (mark - d.u0) / (n.r * 365.25);
+        if (at <= t1) take(Math.max(t0, at), d.warned ? 'heavy' : 'warn', id, 1); } }   // прошедшая (слияние дат календаря) — сразу
     const act = activeMap(w);
     for (const g of GIDS) take(medAt(w, g, t0, t1, rnd), 'capsule', g, 2);
     for (const cat of BG) take(bgAt(w, cat, t0, t1), 'med', cat, 3);
@@ -325,6 +371,31 @@
     w.log.push(rec); recompute(w, t);
     return rec;
   }
+  // дефект обнаружен: узел работает, допуск начинает расходоваться (от этой даты)
+  function detect(w, id, t) {
+    const n = w.nodes[id]; if (!n.ok || n.defect) return null;
+    n.defect = { at: t, u0: 0, t0: t, stage: 'open', warned: false };
+    const rec = { at: t, kind: 'defect', id, fam: n.fam, gen: n.gen }; w.log.push(rec); return rec;
+  }
+  // 75% допуска: отметка (дальше граница — полный допуск)
+  function warnDefect(w, id, t) { const n = w.nodes[id]; if (!n.defect || n.defect.warned) return null; n.defect.u0 = defectAt(n, t); n.defect.t0 = t; n.defect.warned = true;
+    const rec = { at: t, kind: 'warn', id }; w.log.push(rec); return rec; }
+  // выключить узел с дефектом: изоляция (развитие останавливается) или тяжёлый отказ (допуск исчерпан)
+  function isolate(w, id, t, heavy) {
+    const n = w.nodes[id]; if (!n.ok) return null;
+    if (n.defect) { n.defect.u0 = defectAt(n, t); n.defect.t0 = t; if (heavy) n.defect.stage = 'heavy'; else if (n.defect.stage === 'open') n.defect.stage = 'isolated'; }
+    const a = ageAt(n, t), h = hazardAt(n, t); n.a0 = a; n.h0 = h; n.t0 = t; n.ok = false; n.failedAt = t;
+    const rec = { at: t, kind: heavy ? 'fail' : 'isolate', id, fam: n.fam, gen: n.gen, cause: heavy ? 'defect' : 'isolate' };
+    w.log.push(rec); recompute(w, t); return rec;
+  }
+  // ремонт секции: исправна, поколение +1 (новый порог), возраст основания сохраняется (как вставка коллектора)
+  function repairDefect(w, id, t) {
+    const n = w.nodes[id], a = n.ok ? ageAt(n, t) : n.a0;
+    Object.assign(n, { ok: true, gen: n.gen + 1, t0: t, a0: a, h0: 0, r: 1 }); delete n.failedAt; delete n.defect;
+    w.log.push({ at: t, kind: 'repair', id, gen: n.gen }); recompute(w, t);
+  }
+  const dangerRecipe = (w, id) => { const n = w.nodes[id], Dg = DANGER[n.fam]; return n.defect && n.defect.stage === 'heavy' ? Dg.heavy : Dg.repair; };
+  const canRepairDefect = (w, id, materials) => { const n = w.nodes[id], Dg = DANGER[n.fam], R = dangerRecipe(w, id); return (w.inv[Dg.kit] || 0) >= R.kits && materials >= R.materials - 1e-9; };
   // одиночный отказ капсулы: погибает спящий этой группы (выбор — по ключу события), капсула отмечена отказавшей
   function capsuleFail(w, g, t, rnd) {
     const m = w.med[g]; recompute(w, t);
@@ -508,8 +579,11 @@
     const P = Object.values(partsOf(w)), cnt = (fam, st) => P.filter(p => p.fam === fam && p.state === st).length;
     const shop = { removed: { pump: cnt('pump', 'removed'), cooler: cnt('cooler', 'removed') }, rebuilding: { pump: cnt('pump', 'rebuilding'), cooler: cnt('cooler', 'rebuilding') },
       rebuilt: P.filter(p => p.origin === 'rebuilt').length, scrap: +w.scrap.v.toFixed(2) };
+    const rads = RADS.map(id => { const n = w.nodes[id], d = n.defect;
+      return { id, ok: n.ok, defect: d ? d.stage : null, used: d ? +defectAt(n, t).toFixed(1) : 0, tol: DANGER.radiator.tol, gen: n.gen, age: +ageAt(n, t).toFixed(1) }; });
+    const rg = w.reg ? { B: +regAt(w, t).toFixed(1), D: +regDemand(w, t).toFixed(0), S: +w.reg.S.toFixed(0), m: +w.reg.m.toFixed(3) } : null;
     const core = { cooled: B.capSum >= B.fixed - 1e-9, heatH: +coreAt(w, t).toFixed(1), cap: CORE_BUF, fixed: +B.fixed.toFixed(2), share: B.run ? +B.share.toFixed(2) : null };   // охлаждено — постоянная нагрузка покрыта
-    return { t, loops, groups, inv: Object.assign({}, w.inv), shop, core, independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
+    return { t, loops, groups, rads, inv: Object.assign({}, w.inv), shop, core, reg: rg, independent: independentLoops(w), power: powerChannels(w), tie: w.link.tie,
       alive: w.ps.split('').filter(c => c !== 'D').length, asleep: w.ps.split('').filter(c => c === 'S').length, dead: w.ps.split('').filter(c => c === 'D').length };
   }
   // публичная проекция: пороги не хранятся (считаются по ключам), накопленная интенсивность — скрытая величина
@@ -523,8 +597,8 @@
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
     TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor, CORE_BUF, coreAt, PWR, budget,
-    COLL, limitOf, canInsert, insertColl,
-    overAge: w => { const B = budget(w); return Math.max(0, ...LOOPS.filter(L => loopRuns(w, L)).map(L => Math.pow(loopPower(w, L, B) / PWR.nom, 3))); },
+    COLL, limitOf, canInsert, insertColl, REG, regOf, regDemand, regAt, regSet, regNext, regNextYear, onRegGrid, regMatTo, DANGER, defectAt, detect, warnDefect, isolate, repairDefect, dangerRecipe, canRepairDefect,
+    overAge: w => { const B = budget(w); return Math.max(0, ...LOOPS.filter(L => loopRuns(w, L)).map(L => overRate('pump', loopPower(w, L, B) / PWR.nom))); },
     partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,
