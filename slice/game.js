@@ -7,7 +7,7 @@
   const $ = id => document.getElementById(id);
 
   function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed, agenda, wear })); } catch (e) { /* без сохранения */ } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ tokens, lang, world, relief, exp, riskVersion, riskSeed, agenda, wear })); return true; } catch (e) { return false; /* без сохранения */ } }
   // сохранение, которое не удалось восстановить, не стираем молча — откладываем копию
   function backup(why) { try { localStorage.setItem(KEY + '-bak', localStorage.getItem(KEY) || ''); console.warn('Сохранение отложено:', why); } catch (e) { /* нет */ } }
 
@@ -1030,7 +1030,8 @@
     return sec(u.setLang, `<div class="set-row">${[['ru', 'Русский'], ['en', 'English']].map(([k, n]) => `<button class="pill" data-setlang="${k}" aria-pressed="${lang === k}">${n}</button>`).join('')}</div>`)
       + sec(u.setSound, `<p class="set-note">${esc(u.soundNone)}</p>`)
       + sec(u.setProgress, `<div class="set-item"><button class="pill" data-act="newWorld">${esc(u.newWorld)}</button><p class="set-note">${esc(u.newWorldHint)}</p></div>
-        <div class="set-item"><button class="pill danger" data-act="wipe">${esc(u.wipe)}</button><p class="set-note">${esc(u.wipeHint)}</p></div>`);
+        <div class="set-item"><button class="pill danger" data-act="wipe">${esc(u.wipe)}</button><p class="set-note">${esc(u.wipeHint)}</p></div>`)
+      + `<p class="set-note">${lang === 'ru' ? 'Сборка' : 'Build'}: ${esc(window.M31_BUILD || (lang === 'ru' ? 'локальная' : 'local'))}</p>`;   // какая версия игры открыта
   }
   const openSettings = () => { $('settings').hidden = false; $('closeSettings').focus(); };
   const closeSettings = () => { if ($('settings').hidden) return; $('settings').hidden = true; $('settingsBtn').focus(); };
@@ -1108,4 +1109,43 @@
   }
   render(false);
   if (window.__look) { window.__look(); setTimeout(window.__look, 300); }
+
+  // Сборка: страница могла остаться из кэша браузера (вкладка с прошлого дня, кэш сайта). Если на сайте новая сборка —
+  // перейти на неё: адрес с ?b=<сборка> минует кэш страницы. Уже перешли, а сеть отдаёт старое — не зацикливаемся.
+  // Отладочные ссылки (#tokens) не переходят: их ходы заменили бы сохранённую партию. Переход — только после
+  // подтверждённого сохранения: иначе прогресс в памяти потерялся бы
+  function buildCheck() {
+    if (!window.M31_BUILD || !window.fetch || fromHash) return;
+    fetch('version.json?ts=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
+      if (!v || !v.build || v.build === window.M31_BUILD) return;
+      const p = new URLSearchParams(location.search); if (p.get('b') === v.build) return;
+      if (!save()) return;
+      p.set('b', v.build); location.replace(location.pathname + '?' + p + location.hash);
+    }).catch(() => {});
+  }
+  buildCheck();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') buildCheck(); });   // вернулись во вкладку
+
+  // Самопроверка интерфейса (DOC «Интерфейс — принятые решения»): window.M31SelfTest() — что есть на текущем экране;
+  // прогоняется перед публикацией на ключевых экранах. Возвращает { ok, checks: [[название, да/нет, подробность]] }
+  window.M31SelfTest = function () {
+    const out = [], ck = (name, ok, info) => out.push([name, !!ok, info || '']), st = view && view.result && view.result.stop;
+    const b = st && st.beat;
+    ck('сборка', true, window.M31_BUILD || 'локальная');
+    if (b && b.kind === 'decision' && b.ui !== 'passport') {
+      const rows = document.querySelectorAll('#stop .optrow').length, cards = document.querySelectorAll('#stop .option').length;
+      ck('выбор — списком строк, по строке на вариант', rows === st.options.length, `${rows} строк / ${st.options.length} вариантов`);
+      ck('одна карточка выбранного варианта', cards === 1, `${cards} карточек`);
+      ck('кнопка решения — одна, в карточке', document.querySelectorAll('#stop [data-act="vote"]').length === 1 && document.querySelectorAll('#stop .option [data-act="vote"]').length === 1);
+      if (b.ui === 'agenda') {
+        ck('голосование — по заявкам, без выбора звезды', st.options.every(o => C.requests.get(o.id)), st.options.map(o => o.id).join(', '));
+        ck('у голосования — архив Кольца (колонии и следы)', document.querySelectorAll('#stop .chart .colonies .colrow').length > 0);
+        ck('в карточке заявки — справка о звезде', document.querySelectorAll('#stop .option .knownlabel').length >= 2);
+        ck('строка заявки — звезда и расстояние', [...document.querySelectorAll('#stop .optrow i')].every(i => i.textContent.trim().length > 0));
+      }
+    }
+    ck('приборы на месте', !!document.getElementById('hud') && document.getElementById('hud').textContent.trim().length > 0);
+    ck('3D запущено', !!(window.M31Space && M31Space.ok));
+    return { ok: out.every(c => c[1]), checks: out };
+  };
 })();
