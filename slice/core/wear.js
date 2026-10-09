@@ -4,8 +4,8 @@
   'use strict';
   const wear = __core => {
     let CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, capsSafe, cloudBand, crewOf, edgeIn, edgeOut,
-    energyOK, eqOf, hidden, incident, nf, plural, ppl, src, streamPlan, txt, yrs, yrsEn;
-    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, hidden, incident, nf, plural, ppl, src, streamPlan, txt, yrs, yrsEn } = __core); };
+    energyOK, eqOf, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn;
+    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn } = __core); };
     __link();
 
   // ---- модель времени (DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
@@ -150,7 +150,8 @@
   function wearStart(s) {
     if (!wearOn(s) || s.wear || !s.eq) return;
     s.wear = W.create({ crew: crewOf(s), watch: awakeNow(s), reserved: Math.max(0, M.CREW - crewOf(s)), safe: capsSafe(s), at: s.year, protect: CAST_SEATS,
-      machine: eqOf(s).prod !== 'repair', agro: (s.kits || []).includes('agro') });   // станки (не ремкомплект) и второй агромодуль
+      machine: eqOf(s).prod !== 'repair', agro: (s.kits || []).includes('agro'),   // станки (не ремкомплект) и второй агромодуль
+      tanks: !!s.fuel, tankEta: (hidden(s, 'tanks.series.defect') ?? 1) < TANK_SERIES ? W.FAM.brakeTank.eta / 2 : null });   // 4в: баки; дефектная серия — скрытое
     if (!s.jobs) s.jobs = JB.create();
     regJob(s, s.year);
   }
@@ -275,20 +276,20 @@
   // шестерых и полсуток опрессовки — 64 часа). Холодильник, управление и перекладка группы на резерве — тоже спасение.
   // Материалов не хватает — работы нет (null)
   function wearOp(s, kind, id, t, urgent, paid) {                       // paid — материалы оплачены заранее (донор агромодуля)
-    const w = s.wear, R = kind === 'rad' || kind === 'ring' ? W.dangerRecipe(w, id) : null;   // ремонт секции радиатора или опоры кольца — по стадии дефекта (шаг «хрупкость» 3)
+    const w = s.wear, R = kind === 'rad' || kind === 'ring' || kind === 'tank' ? W.dangerRecipe(w, id) : null;   // ремонт секции радиатора или опоры кольца — по стадии дефекта (шаг «хрупкость» 3)
     const cost = paid ? 0 : kind === 'coll' ? W.COLL.materials[prodOf(s)] || W.COLL.materials.repair : R ? R.materials : WEAR_OPS[kind];
     if (s.materials < cost - 1e-9) return null;
     if (kind === 'coll' && !(w.inv.valve >= 1)) return null;             // вставка — клапанный комплект из общих восьми
-    if ((kind === 'rad' || kind === 'ring') && !(R && W.canRepairDefect(w, id, s.materials))) return null;   // комплекты; разрушенное не чинится
+    if ((kind === 'rad' || kind === 'ring' || kind === 'tank') && !(R && W.canRepairDefect(w, id, s.materials))) return null;   // комплекты; разрушенное не чинится
     const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t };
     if (R) op.heavy = R === W.DANGER.bearing.alt;                         // опора: дорожка вместо роликов
     w.ops.push(op); s.materials -= cost;
-    const rescue = urgent || (kind !== 'pump' && kind !== 'coll' && kind !== 'rad' && kind !== 'ring'), deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
+    const rescue = urgent || (kind !== 'pump' && kind !== 'coll' && kind !== 'rad' && kind !== 'ring' && kind !== 'tank'), deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
     JB.enqueue(s.jobs, Object.assign({ owner: 'wear', ref: op.id, type: `wear.${kind}`, prio: rescue ? JB.PRIO.rescue : JB.PRIO.path, deadline: rescue ? deadline : Infinity,
       pool: 'tech', minW: 1, maxW: urgent ? Infinity : kind === 'ring' ? 4 : 2 }, R ? { work: R.work, hold: R.hold } : WEAR_WORK[kind]), t, pools(s));   // опору — до четырёх
     if (kind === 'coll') w.inv.valve--;
     if (R) w.inv[R.kit] -= R.kits;
-    const u = id.split('.')[0], NM = { ring: [`ремонт опоры кольца ${u}`, `repairing ring ${u}'s bearing`], rad: [`ремонт секции радиатора ${u}`, `repairing radiator section ${u}`], coll: [`вставка коллектора ${u}`, `an insert for the ${u} collector`], pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
+    const u = id.split('.')[0], NM = { tank: [`ремонт арматуры бака ${u}`, `repairing tank ${u}'s fittings`], ring: [`ремонт опоры кольца ${u}`, `repairing ring ${u}'s bearing`], rad: [`ремонт секции радиатора ${u}`, `repairing radiator section ${u}`], coll: [`вставка коллектора ${u}`, `an insert for the ${u} collector`], pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
       control: [`замена управления группы ${u}`, `replacing group ${u}'s control`], move: [`перекладка группы ${u}`, `moving group ${u}`] }[kind];
     if (cost) wearMove$(s, t, -cost, NM[0], NM[1]);
     if (kind === 'pump' || kind === 'cooler') op.sn = W.reservePart(w, kind); else if (kind === 'control') w.inv.control--;   // насос, холодильник — экземпляр из запаса
@@ -429,6 +430,7 @@
     const aboard = aliveOf(s), w = s.wear;
     const pumps = w ? w.log.filter(x => x.kind === 'fail' && /\.(pump|coll)$/.test(x.id)).map(x => ({ id: x.id.split('.')[0], part: x.id.split('.')[1], at: x.at })) : [];
     s.terminalAt = t; s.terminalReason = reason; s.year = Math.max(s.year, t);
+    if (reason === 'braking') { incident(s, 'brakeLost', 0, { reason, aboard, year: t, short: s.fuel ? s.fuel.short : 0 }); s.adrift = true; return; }   // 4в: люди живы, корабль не останавливается
     incident(s, 'wearLost', 0, { reason, aboard, year: t, pumps });
     s.lostShip = true;
   }
@@ -445,6 +447,7 @@
   }
   // финал «рейс окончен» — сцена конца по причине (движок показывает её вместо оставшегося пути)
   function terminalBeat(s) {
+    if (s.terminalReason === 'braking') return brakeBeat(s);
     const inc = (s.incidents || []).find(x => x.kind === 'wearLost') || {}, d = Math.round(M.star(s.target).d);
     const chain = (lang) => { const p = inc.pumps || [], ru = lang === 'ru';
       return p.length ? (ru ? 'Отказы контуров: ' : 'Loop failures: ') + p.map(x => `${x.id} ${x.part === 'coll' ? (ru ? 'коллектор' : 'collector') : (ru ? 'насос' : 'pump')} — ${ru ? 'год' : 'year'} ${Math.floor(x.at)}`).join(', ') + '.' : ''; };
@@ -462,6 +465,26 @@
 The last transmission went to Earth and the Ring: the failure log, the work ledger, the names. It will arrive in ${yrsEn(d)}. There were ${inc.aboard || 0} people aboard.
 
 The expedition is over. The next one will receive the log — which failure was not closed in time and what could have closed it.`
+      }
+    };
+  }
+  // финал «принятый график торможения невыполним» (4в): топлива на двигательный участок 0,01c → 0 нет — корабль проходит систему цели
+  function brakeBeat(s) {
+    const inc = (s.incidents || []).find(x => x.kind === 'brakeLost') || {}, d = Math.round(M.star(s.target).d), lost = (s.fuel ? Object.values(s.fuel.tanks).reduce((a, x) => a + (x.lost || 0), 0) : 0);
+    return {
+      id: 'x.wearLost', scene: 'dark', kind: 'end',
+      title: { ru: 'Без торможения', en: 'No braking' },
+      text: {
+        ru: s => `Год ${Math.floor(s.terminalAt)}. Магнит сбросил скорость до 0,01c, но на последний участок — двигателем до нуля — топлива нет: баки потеряли ${nf(lost, 2, 'ru')} тыс. т. Принятый график торможения невыполним.
+
+Сорок первая пройдёт систему ${nm(s, 'ru').replace(/^звезда /, 'звезды ')} за несколько недель и уйдёт дальше. На борту ${ppl(inc.aboard || 0)}; они живы. Передача на Землю и к Кольцу — журнал баков, координаты и курс — дойдёт через ${yrs(d)}.
+
+Экспедиция к цели окончена.`,
+        en: s => `Year ${Math.floor(s.terminalAt)}. The magnet brought the speed down to 0.01c, but there is no propellant for the last leg — the engine down to zero: the tanks lost ${nf(lost, 2, 'en')} thousand t. The accepted braking schedule cannot be flown.
+
+The Forty-First will cross the ${nm(s, 'en')} system in a few weeks and go on. There are ${inc.aboard || 0} people aboard; they are alive. The transmission to Earth and the Ring — the tank log, the coordinates and the course — will arrive in ${yrsEn(d)}.
+
+The expedition to the target is over.`
       }
     };
   }
@@ -582,6 +605,11 @@ The expedition is over. The next one will receive the log — which failure was 
       wearNote(s, `Опора кольца ${H} отремонтирована${op.heavy ? ' — новая дорожка' : ''}: кольцо снова вращается${zg ? `; в невесомости остаются ${ppl(zg)}` : ', невесомость кончилась'}. Комплектов роликов — ${w.inv.rollerKit}, дорожек — ${w.inv.trackKit}.`,
         `Ring ${H}'s bearing repaired${op.heavy ? ' — a new track' : ''}: the ring rotates again${zg ? `; ${zg} people still work in zero-g` : ', the zero-g work is over'}. Roller kits left: ${w.inv.rollerKit}, tracks: ${w.inv.trackKit}.`);
       return null; }
+    if (op.kind === 'tank') { if (op.cancelled || W.destroyed(w.nodes[op.target])) return null;   // бак разрушен до конца ремонта
+      W.repairDefect(w, op.target, t); tankSync(s, t);
+      wearNote(s, `Арматура бака ${op.target} восстановлена, проверка герметичности пройдена: подача открыта, ${nf(s.fuel.tanks[op.target].fuel, 2, 'ru')} тыс. т топлива снова доступны. Гермокомплектов в запасе: ${w.inv.tankKit}.`,
+        `Tank ${op.target}'s fittings restored, leak test passed: the feed is open, ${nf(s.fuel.tanks[op.target].fuel, 2, 'en')} thousand t of propellant available again. Sealing kits left: ${w.inv.tankKit}.`);
+      return null; }
     if (op.kind === 'rad') { W.repairDefect(w, op.target, t); const home = W.rehome(w, t), L = W.LOOPS.find(x => w.link.rad[x] === op.target);
       wearNote(s, `Секция радиатора ${op.target} отремонтирована, опрессовка пройдена — контур ${L} ${W.loopRuns(w, L) ? 'снова отводит тепло' : 'ждёт насос'}${home ? '; группы вернулись домой' : ''}. Секционных комплектов — ${w.inv.radKit}.`,
         `Radiator section ${op.target} repaired, pressure test passed — loop ${L} ${W.loopRuns(w, L) ? 'rejects heat again' : 'waits for a pump'}${home ? '; the groups are back home' : ''}. Section kits left: ${w.inv.radKit}.`);
@@ -683,11 +711,20 @@ The expedition is over. The next one will receive the log — which failure was 
     if (b.kind === 'core') { wearTerminal(s, t, 'heat'); return null; }
     // опасный дефект (шаг «хрупкость» 3): обнаружен — карточка; 75% допуска — снова (если работу продолжили); допуск исчерпан —
     // тяжёлый отказ: секция выключена, группы — на другие контуры, карточка о тяжёлом ремонте
-    if (b.kind === 'defect') { W.detect(w, b.id, t); return dangerAsk(s, b.id, 'open', t); }
+    if (b.kind === 'defect') { W.detect(w, b.id, t);
+      if (w.nodes[b.id].fam === 'brakeTank' && s.fuel) { const x = s.fuel.tanks[b.id], d = x.fuel * TANK_FIRST, r0 = s.reserve; x.fuel -= d; x.lost = (x.lost || 0) + d; fuelSync(s);   // течь замечена — уже ушло
+        tankMove(s, t, r0, `течь бака ${b.id}`, `tank ${b.id} leak`);
+        wearNote(s, `Бак ${b.id}: давление падает — течь арматуры. Пока её нашли, ушло ${nf(d * 1000, 0, 'ru')} т топлива.`, `Tank ${b.id}: the pressure is dropping — a leak in the fittings. ${nf(d * 1000, 0, 'en')} t of propellant were lost before it was found.`); }
+      return dangerAsk(s, b.id, 'open', t); }
     // шаг 4б: 75% — только прибор (решение «эксплуатировать до отказа» принято); исчерпанный допуск — разрушение основания навсегда
+    if (b.kind === 'warn' && w.nodes[b.id].fam === 'brakeTank') { W.warnDefect(w, b.id, t); tankSync(s, t);
+      const d = Math.round(W.DANGER.brakeTank.tol * 0.25 / Math.max(0.2, w.nodes[b.id].r)), x = s.fuel && s.fuel.tanks[b.id];
+      wearNote(s, `Бак ${b.id}: израсходовано три четверти допуска течи — в баке ${x ? nf(x.fuel, 2, 'ru') : '?'} тыс. т, до разрушения около ${d} суток.`,
+        `Tank ${b.id}: three quarters of the leak margin used — ${x ? nf(x.fuel, 2, 'en') : '?'} thousand t left in it, about ${d} days before it fails.`); return null; }
     if (b.kind === 'warn') { W.warnDefect(w, b.id, t); const bear = /\.bearing$/.test(b.id), u = b.id.split('.')[0], d = Math.round(W.DANGER[bear ? 'bearing' : 'radiator'].tol * 0.25 / Math.max(0.2, w.nodes[b.id].r));
       wearNote(s, bear ? `Опора кольца ${u}: израсходовано три четверти допуска — до заклинивания около ${d} суток.` : `Секция радиатора ${u}: израсходовано три четверти допуска — до разрушения около ${d} суток.`,
         bear ? `Ring ${u}'s bearing: three quarters of its margin used — about ${d} days before it seizes.` : `Radiator section ${u}: three quarters of its margin used — about ${d} days before it ruptures.`); return null; }
+    if (b.kind === 'heavy' && w.nodes[b.id].fam === 'brakeTank') return tankRupture(s, b.id, t);
     if (b.kind === 'heavy') { W.isolate(w, b.id, t, true); wearCheckGroups(s, t); wearCoreWarn(s, t); if (s.jobs) JB.dispatch(s.jobs, t, pools(s));
       const bear = /\.bearing$/.test(b.id), u = b.id.split('.')[0], L = radLoop(w, b.id);
       wearNote(s, bear ? `Опора кольца ${u} заклинила и повредила посадочное место: кольцо остановлено до конца рейса — в невесомости ${ppl(W.zeroG(w).n)}.` : `Секция радиатора ${u} разрушена: основание потеряно, контур ${L} без теплоотвода до конца рейса. Схема ${layout(w)}.`,
@@ -698,8 +735,39 @@ The expedition is over. The next one will receive the log — which failure was 
   // ---- опасный узел (шаг «хрупкость» 3; спецификация Codex — DOC «Ревью Codex — хрупкость корабля и регламент», шаг 3):
   // единая карточка для узлов с развивающимся дефектом. Сейчас — секции радиаторов R1–R4 (секция = теплоотвод своего контура)
   const radLoop = (w, id) => W.LOOPS.find(L => w.link.rad[L] === id);
+  // бак (шаг 4в): дефектная серия — 4% на экспедицию; при обнаружении течи уходит 1% содержимого; допуск исчерпан при работе
+  // «до отказа» — бак пуст и непригоден; в четверти таких исходов — разрыв: сосед по компоновке (T1↔T2, T3↔T4) теряет содержимое
+  // с вероятностью 20% (5% — если его подача уже перекрыта). Один переход; броски — скрытые, по ключам бака и поколения
+  const TANK_SERIES = 0.04, TANK_FIRST = 0.01, TANK_RUPTURE = 0.25, TANK_SPREAD = { open: 0.2, shut: 0.05 };
+  function tankRupture(s, id, t) {
+    const w = s.wear, n = w.nodes[id], key = `tanks.${id}.gen.${n.gen}`;
+    W.isolate(w, id, t, true); tankSync(s, t);
+    const burst = (hidden(s, key + '.rupture') ?? 1) < TANK_RUPTURE, nb = W.TANK_PAIR[id], m = w.nodes[nb];
+    let hit = false;
+    if (burst && m && !(m.defect && m.defect.stage === 'heavy')) {
+      hit = (hidden(s, key + '.spread') ?? 1) < (m.ok ? TANK_SPREAD.open : TANK_SPREAD.shut);
+      if (hit) { for (const op of w.ops.filter(o => !o.done && o.target === nb)) {   // его ремонт теряет смысл: снять работу, вернуть комплект
+          op.done = true; op.cancelled = true; w.inv.tankKit += 1;
+          const j = s.jobs && s.jobs.list.find(x => x.ref === op.id && x.status !== 'done'); if (j) Object.assign(j, { status: 'done', w: 0, end: t, cancelled: true }); }
+        if (s.jobs) JB.dispatch(s.jobs, t, pools(s));
+        m.defect = { at: t, u0: W.DANGER.brakeTank.tol, t0: t, stage: m.ok ? 'open' : 'isolated', warned: true };
+        if (m.ok) W.isolate(w, nb, t, true); else m.defect.stage = 'heavy';
+        w.log.push({ at: t, kind: 'fail', id: nb, fam: 'brakeTank', gen: m.gen, cause: 'neighbor' }); tankSync(s, t); }
+    }
+    wearNote(s, `Бак ${id}: допуск течи исчерпан — бак пуст и непригоден.` + (burst ? ` Оболочка разорвалась${hit ? `: осколки пробили соседний бак ${nb} — он тоже пуст.` : `; соседний бак ${nb} цел.`}` : '') + ` ${tankLine(s, 'ru')}`,
+      `Tank ${id}: the leak margin is used up — the tank is empty and unusable.` + (burst ? ` The shell burst${hit ? `: fragments holed the neighbouring tank ${nb} — it is empty too.` : `; the neighbouring tank ${nb} is intact.`}` : '') + ` ${tankLine(s, 'en')}`);
+    return dangerReask(s, t);
+  }
+  // строка о топливе: доступно, изолировано, торможение обеспечено ли
+  function tankLine(s, lang) {
+    const ru = lang === 'ru', f = s.fuel; if (!f) return '';
+    const on = Object.values(f.tanks).filter(x => x.feed === 'connected').reduce((a, x) => a + x.fuel, 0), off = Object.values(f.tanks).filter(x => x.feed === 'isolated').reduce((a, x) => a + x.fuel, 0);
+    const brake = f.short > 1e-9 ? (ru ? 'торможения не хватает' : 'braking is not covered') : s.reserve < 0.5 ? (ru ? 'торможение обеспечено, манёвренного резерва нет' : 'braking is covered, no manoeuvre reserve left') : (ru ? `торможение обеспечено, резерв манёвров ${nf(s.reserve, 1, 'ru')}%` : `braking is covered, manoeuvre reserve ${nf(s.reserve, 1, 'en')}%`);
+    return ru ? `Топливо: доступно ${nf(on, 2, 'ru')} тыс. т${off > 1e-9 ? `, изолировано ${nf(off, 2, 'ru')} тыс. т` : ''}; ${brake}.` : `Propellant: ${nf(on, 2, 'en')} thousand t available${off > 1e-9 ? `, ${nf(off, 2, 'en')} thousand t isolated` : ''}; ${brake}.`;
+  }
   // положение для повторов: можно ли ремонтировать и сколько групп без охлаждения (и ядро)
-  const dangerSig = (s, id) => { const o = W.observe(s.wear, Math.max(s.wear.t, s.year)); return { can: dangerCan(s, id), warm: o.groups.filter(g => g.sleep && g.heat).length + (o.core.cooled ? 0 : 100), zg: o.zeroG.n }; };
+  const dangerSig = (s, id) => { const o = W.observe(s.wear, Math.max(s.wear.t, s.year)); return { can: dangerCan(s, id), warm: o.groups.filter(g => g.sleep && g.heat).length + (o.core.cooled ? 0 : 100), zg: o.zeroG.n,
+    short: !!(s.fuel && s.fuel.short > 1e-9 && /^T\d$/.test(id)) }; };   // бак: торможение перестало быть обеспеченным — повод решить снова
   function dangerAsk(s, id, stage, t) { s.wearAsked = (s.wearAsked || 0) + 1; (s.dangerSeen = s.dangerSeen || {})[id] = dangerSig(s, id); return { kind: 'wear', type: 'danger', id, stage, at: t }; }
   // выключенная и не ремонтируемая секция: совет решает снова, когда ремонт стал возможен (материалы, комплекты) или когда
   // без охлаждения осталось больше групп, чем при прошлом решении (ядро — тоже), — один раз на каждое изменение
@@ -709,7 +777,7 @@ The expedition is over. The next one will receive the log — which failure was 
       if (n.ok || !n.defect || pendingFor(w, id)) continue;
       const now = dangerSig(s, id), was = (s.dangerSeen || {})[id] || { can: false, warm: 0, zg: 0 };
       if (!now.can) { (s.dangerSeen = s.dangerSeen || {})[id] = Object.assign({}, was, { can: false }); continue; }   // ремонтировать нечем — запомнить
-      if ((!was.can && now.can) || now.warm > was.warm || now.zg > (was.zg || 0)) return dangerAsk(s, id, n.defect.stage === 'heavy' ? 'heavy' : 'isolated', t);
+      if ((!was.can && now.can) || now.warm > was.warm || now.zg > (was.zg || 0) || (now.short && !was.short)) return dangerAsk(s, id, n.defect.stage === 'heavy' ? 'heavy' : 'isolated', t);
     }
     return null;
   }
@@ -736,9 +804,10 @@ The expedition is over. The next one will receive the log — which failure was 
         wearStop, wearStart, regJob, REG_ASK, wearRegAsk, regWakeTo, wearRegDecision, wearRegTick, matReserve, jobDone, wearSyncDead, wearDead,
         wearSync, pumpFail, layout, wearNote, wearReroute, wearOp, wearMove$, pendingFor, wearMove, wearUnit, wearCheckGroups, SHOP_RESERVE,
         shopPolicy, shopNeeds, wearShopAsk, prodOf, PART_RU, PART_EN, wearDispose, wearShop, wearShopFail, wearDriveFix, wearShopLost, deadLoop,
-        wearCollRetry, wearCollFail, wearTerminal, wearCoreWarn, terminalBeat, DONOR, agroLost, donorDays, agroDonorOK, wearDonor, wearDonorDone,
-        jobName, jobsLine, wearRebuildable, wearRebuild, wearRebuilt, wearRefit, wearRecover, wearRecovered, wearOpDone, wearDeaths, pumpSpare,
-        pumpProspect, wearRespond, wearFire, radLoop, dangerSig, dangerAsk, dangerReask, dangerCan, queueDays, dangerAfter
+        wearCollRetry, wearCollFail, wearTerminal, wearCoreWarn, terminalBeat, brakeBeat, DONOR, agroLost, donorDays, agroDonorOK, wearDonor,
+        wearDonorDone, jobName, jobsLine, wearRebuildable, wearRebuild, wearRebuilt, wearRefit, wearRecover, wearRecovered, wearOpDone, wearDeaths,
+        pumpSpare, pumpProspect, wearRespond, wearFire, radLoop, TANK_SERIES, TANK_FIRST, TANK_RUPTURE, TANK_SPREAD, tankRupture, tankLine, dangerSig,
+        dangerAsk, dangerReask, dangerCan, queueDays, dangerAfter
       },
       link: __link
     };

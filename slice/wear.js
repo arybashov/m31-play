@@ -31,7 +31,10 @@
     control: { eta: 650, k: 3, l0: 0.0001, live: true },
     collector: { eta: 500, k: 4, l0: 0.0001, live: true },              // шаг 3e: отказывают, ремонт — вставка (COLL)
     radiator: { eta: 350, k: 3, l0: 0.0001, live: true, danger: true }, // шаг «хрупкость» 3б: порог — обнаруженный дефект, не отказ
-    bearing: { eta: 300, k: 3, l0: 0.0001, live: true, danger: true },  // шаг 3в–3г: опора вращения кольца — износ дорожки, затем заклинивание
+    bearing: { eta: 300, k: 3, l0: 0.0001, live: true, danger: true },
+    // шаг «хрупкость» 4в: тормозной бак T1–T4 — порог — течь арматуры (обнаружена), стареет по календарю; дефектная серия (скрытый
+    // признак на экспедицию, content) — ресурс η вдвое меньше (поле узла eta, в публичной проекции не видно)
+    brakeTank: { eta: 700, k: 4, l0: 0.00002, live: true, danger: true },  // шаг 3в–3г: опора вращения кольца — износ дорожки, затем заклинивание
     power: { eta: 600, k: 3, l0: 0.0001, live: false },
     bus: { eta: 600, k: 3, l0: 0.0001, live: false },
     // мастерская (шаг 3c, план B6): привод станков стареет только в работе — ресурс 3 000 станко-суток; управляющая база
@@ -62,8 +65,9 @@
   const REG = { D0: 1200, age: 0.0015, ageMax: 0.5, perYear: 250, k: 0.35, kMax: 3, step: 0.25, mat: 0.08, shop: 20, train: 180, labor: 0.6 };
   const limitOf = (w, L) => PWR.max - ((w.nodes[L + '.coll'].inserts || 0) >= COLL.inserts ? 1 : 0);
   const LOOPS = ['L1', 'L2', 'L3', 'L4'], BUSES = ['BUS1', 'BUS2'], BLOCKS = ['PB1', 'PB2'], RADS = ['R1', 'R2', 'R3', 'R4'];
+  const TANKS = ['T1', 'T2', 'T3', 'T4'], TANK_PAIR = { T1: 'T2', T2: 'T1', T3: 'T4', T4: 'T3' };   // баки торможения; сосед по компоновке (разрыв задевает одного)
   const GIDS = Array.from({ length: NG }, (_, i) => 'G' + String(i + 1).padStart(2, '0'));
-  const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1, radKit: 6, rollerKit: 2, trackKit: 1 };   // секционных комплектов 6 (у Codex 4: совет на Gl 338 — 92%)
+  const SPARES = { pump: 4, valve: 8, control: 8, cooler: 4, powerKit: 1, radKit: 6, rollerKit: 2, trackKit: 1, tankKit: 4 };   // секционных комплектов 6 (у Codex 4: совет на Gl 338 — 92%)
   // опасный дефект (шаг «хрупкость» 3; «Ревью Codex — хрупкость корабля и регламент», шаг 3): порог Вейбулла узла семейства
   // danger — обнаруженное повреждение (течь секции радиатора): узел ещё работает, но дефект развивается — допуск tol
   // эквивалентных суток под нагрузкой (темп — как старение узла, с долгом регламента); 75% допуска — предупреждение, 100% —
@@ -73,6 +77,7 @@
   // (240 + 7). Шаг 4б (план Codex): исчерпанный допуск — разрушение основания: секция теряет теплоотвод контура, заклинившая
   // опора повреждает посадочное место кольца — до конца рейса, бортовым комплектом не восстановить
   const DANGER = { radiator: { tol: 30, warn: 0.75, repair: { kit: 'radKit', kits: 1, materials: 2, work: 24, hold: 2 } },
+    brakeTank: { tol: 30, warn: 0.75, repair: { kit: 'tankKit', kits: 1, materials: 0, work: 16, hold: 2 } },   // течь арматуры: 16 чел.-сут + 2 сут проверки
     bearing: { tol: 90, warn: 0.75, repair: { kit: 'rollerKit', kits: 1, materials: 2, work: 80, hold: 2 }, alt: { kit: 'trackKit', kits: 1, materials: 6, work: 240, hold: 7 } } };
   // кольца (шаг 3в): два вращающихся кольца по 36 оборудованных жилых мест; остановленное мест не даёт — лишние бодрствующие
   // работают в невесомости, вахта — слабее (производительность ×(1 − 0,75 × в невесомости / бодрствующих))
@@ -117,6 +122,7 @@
     for (const L of LOOPS) { nodes[L + '.pump'] = node(L + '.pump', 'pump', t); nodes[L + '.coll'] = node(L + '.coll', 'collector', t); }
     for (const id of RADS) nodes[id] = node(id, 'radiator', t);
     for (const H of RINGS) nodes[H + '.bearing'] = node(H + '.bearing', 'bearing', t);
+    if (o.tanks) for (const id of TANKS) nodes[id] = Object.assign(node(id, 'brakeTank', t), o.tankEta ? { eta: o.tankEta } : {});   // 4в: баки торможения
     for (const g of GIDS) { nodes[g + '.cool'] = node(g + '.cool', 'cooler', t); nodes[g + '.ctrl'] = node(g + '.ctrl', 'control', t); }
     if (o.machine) { nodes['SHOP.drive'] = node('SHOP.drive', 'shopDrive', t); nodes['SHOP.base'] = node('SHOP.base', 'shopBase', t); }   // машинное производство
     const link = { group: {}, loop: { L1: 'BUS1', L2: 'BUS1', L3: 'BUS2', L4: 'BUS2' }, bus: { BUS1: 'PB1', BUS2: 'PB2' }, rad: { L1: 'R1', L2: 'R2', L3: 'R3', L4: 'R4' }, tie: false };
@@ -326,7 +332,10 @@
 
   // ---------------------------------------------------------------- календарь: следующая граница модели
   // порядок при равной дате: завершение операции → отказ узла → одиночная капсула → исчерпание буфера (затем решение)
-  const threshold = (n, rnd) => -Math.log(uOpen(rnd(`wear.${n.id}.gen.${n.gen}.threshold`)));
+  // ключ порога — одна строка на узел и поколение (строка с готовым хешем: память скрытых бросков находит её без пересчёта)
+  const THR_KEY = new WeakMap();
+  const thrKey = n => { let c = THR_KEY.get(n); if (!c || c.gen !== n.gen) { c = { gen: n.gen, k: `wear.${n.id}.gen.${n.gen}.threshold` }; THR_KEY.set(n, c); } return c.k; };
+  const threshold = (n, rnd) => -Math.log(uOpen(rnd(thrKey(n))));
   function failureAt(n, t0, t1, rnd) {
     const F = FAM[n.fam]; if (!F.live || !n.ok || n.defect) return null;
     const E = threshold(n, rnd), from = Math.max(t0, n.t0);
@@ -613,14 +622,14 @@
   function publicOf(w, own) {                                           // own — w уже своя копия (проекция партии): без второго копирования
     if (!w) return w;
     const p = own ? w : JSON.parse(JSON.stringify(w));
-    for (const id of Object.keys(p.nodes)) delete p.nodes[id].h0;
+    for (const id of Object.keys(p.nodes)) { delete p.nodes[id].h0; if (p.nodes[id].fam === 'brakeTank') delete p.nodes[id].eta; }   // ресурс бака выдаёт дефектную серию
     return p;
   }
   const take = w => { const out = w.notes; w.notes = []; return out; };
 
   const api = { PARAMS, FAM, NG, SEATS, NOM, MAX, LOOPS, BUSES, BLOCKS, RADS, GIDS, SPARES, BUF, RECHARGE, CAPS_RATE,
     TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor, CORE_BUF, coreAt, PWR, budget,
-    COLL, limitOf, canInsert, insertColl, REG, regOf, regDemand, regAt, regSet, regNext, regNextYear, onRegGrid, regMatTo, DANGER, defectAt, detect, warnDefect, isolate, repairDefect, dangerRecipe, canRepairDefect, destroyed, RINGS, RING, ringRuns, zeroG, dangerIds,
+    TANKS, TANK_PAIR, COLL, limitOf, canInsert, insertColl, REG, regOf, regDemand, regAt, regSet, regNext, regNextYear, onRegGrid, regMatTo, DANGER, defectAt, detect, warnDefect, isolate, repairDefect, dangerRecipe, canRepairDefect, destroyed, RINGS, RING, ringRuns, zeroG, dangerIds,
     overAge: w => { const B = budget(w); return Math.max(0, ...LOOPS.filter(L => loopRuns(w, L)).map(L => overRate('pump', loopPower(w, L, B) / PWR.nom))); },
     partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,

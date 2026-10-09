@@ -82,7 +82,50 @@
   function fuelBurn(s, t0, t1) {
     if (!s.fuel || s.arrive == null) return;
     const dv = M.STOP - brakeLeft(s, t1) - s.fuel.burned;
-    if (dv > 1e-15) { fuelSpendDv(s, dv); s.fuel.burned += dv; }
+    if (dv > 1e-15) { s.fuel.burned += fuelSpendDv(s, dv); fuelSync(s); }   // нехватка — сожжено меньше графика (short)
+  }
+  // резерв из массы (4в): когда течь, изоляция или потеря бака развели проценты и массу. Недостаток торможения — short
+  function fuelSync(s) {
+    if (!s.fuel) return;
+    const dv = dvLeft(s);
+    s.reserve = Math.max(0, 100 * (dv - brakeReq(s)) / s.reserveDv);
+    s.fuel.short = Math.max(0, brakeReq(s) - dv);
+  }
+  // отрезок перемотки: течь и двигательное торможение. Если идут оба — по абсолютной суточной сетке (оба меняют содержимое
+  // баков: порядок и нарезка не должны влиять на итог больше, чем на долю суток); иначе — одним шагом. Вернуть: была ли течь
+  function fuelSpan(s, t0, t1) {
+    const leak = tankLeaking(s), burn = !!(s.fuel && s.arrive != null && brakeLeft(s, t0) > brakeLeft(s, t1) + 1e-15);
+    if (!(leak && burn)) { if (leak) tankSync(s, t1); fuelBurn(s, t0, t1); return leak; }
+    const h = 1 / 365.25; let a = t0;
+    while (a < t1 - 1e-12) { const b = Math.min(t1, (Math.floor(a / h + 1e-9) + 1) * h); tankSync(s, b); fuelBurn(s, a, b); a = b; }
+    return leak;
+  }
+  // идёт ли течь (бак работает «до отказа»): только тогда отрезок перемотки меняет топливо
+  const tankLeaking = s => !!(s.fuel && s.wear && TANKS.some(id => { const n = s.wear.nodes[id]; return n && n.ok && n.defect && n.defect.stage === 'open'; }));
+  // баки в модели износа (4в): подача — по состоянию узла (изолирован — балласт, разрушен — пуст); течь при работе «до
+  // отказа» — по израсходованному допуску: доля (u − u₀)/(tol − u₀) нынешнего содержимого, телескопически (нарезка не важна)
+  function tankSync(s, t) {
+    const w = s.wear; if (!s.fuel || !w) return;
+    let changed = false; const why = [];
+    for (const id of TANKS) {
+      const n = w.nodes[id], x = s.fuel.tanks[id]; if (!n) continue;
+      if (n.defect && n.defect.stage === 'heavy') {                         // разрушен: содержимое ушло, бак непригоден
+        if (x.feed !== 'lost') { x.lost = (x.lost || 0) + x.fuel; x.fuel = 0; x.feed = 'lost'; delete x.leakU; changed = true; why.push([`бак ${id} разрушен`, `tank ${id} destroyed`]); }
+        continue;
+      }
+      const feed = n.ok ? 'connected' : 'isolated';
+      if (x.feed !== feed) { x.feed = feed; changed = true; why.push(feed === 'isolated' ? [`бак ${id} перекрыт`, `tank ${id} shut`] : [`бак ${id} снова подключён`, `tank ${id} reconnected`]); }
+      if (n.ok && n.defect && n.defect.stage === 'open') {
+        const tol = W.DANGER.brakeTank.tol, u = Math.min(tol, W.defectAt(n, t)), u0 = x.leakU != null ? x.leakU : n.defect.u0;
+        if (u > u0 + 1e-12) { const d = x.fuel * Math.min(1, (u - u0) / (tol - u0)); x.fuel -= d; x.lost = (x.lost || 0) + d; x.leakU = u; changed = true; why.push([`течь бака ${id}`, `tank ${id} leak`]); }
+      } else if (x.leakU != null) { delete x.leakU; changed = true; }
+    }
+    if (changed) { const r0 = s.reserve; fuelSync(s); tankMove(s, t, r0, why.map(x => x[0]).join(', '), why.map(x => x[1]).join(', ')); }
+  }
+  // изменение резерва топливом баков — с причиной (отчёт вахты: «Резерв манёвров: −3,1 п.п. — течь бака T2»)
+  function tankMove(s, t, r0, ru, en) {
+    const d = s.reserve - r0; if (!(Math.abs(d) > 1e-9) || !s.wear || !ru) return;
+    (s.wear.moves = s.wear.moves || []).push({ at: t, key: 'reserve', d, name: { ru, en } });
   }
   const pctDv = (r, lang) => (lang === 'ru' ? String(r * 100).replace('.', ',') : String(r * 100)) + '% c';
   const eachAwake = (T, w) => M.awake(T, w);
@@ -237,10 +280,10 @@ Kassel signs for the Council last.`
 
     return {
       names: {
-        pct, pctM, M, SH, EVM, W, JB, R, RQ, nm, nmG, nmD, f1, fb, plural, yrs, yrsG, yrsEn, ppl, dvPct, DV, pctDv, eachAwake, STATUS, yrsAgo, yr1,
-        archiveShort, archiveLines, legacyLines, colonyTie, subsets, cargoOf, passportParse, passportOptions, kitList, eqList, passportOption,
-        probeTimes, brake, stageOff, kms, Y, lag, supportPlan, supportWorld, src, vAt, heatAgo, TANKS, fuelInit, fuelOn, dvLeft, brakeLeft,
-        fuelSpendDv, fuelAddDv, spendPct, addPct, fuelBurn, brakeReq
+        pct, pctM, M, SH, EVM, W, JB, R, RQ, nm, nmG, nmD, f1, fb, plural, yrs, yrsG, yrsEn, ppl, dvPct, DV, TANKS, fuelInit, fuelOn, dvLeft,
+        brakeLeft, brakeReq, fuelSpendDv, fuelAddDv, spendPct, addPct, fuelBurn, fuelSync, fuelSpan, tankLeaking, tankSync, tankMove, pctDv, eachAwake,
+        STATUS, yrsAgo, yr1, archiveShort, archiveLines, legacyLines, colonyTie, subsets, cargoOf, passportParse, passportOptions, kitList, eqList,
+        passportOption, probeTimes, brake, stageOff, kms, Y, lag, supportPlan, supportWorld, src, vAt, heatAgo
       },
       link: __link
     };

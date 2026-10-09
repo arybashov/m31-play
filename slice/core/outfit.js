@@ -208,7 +208,7 @@
   const INCIDENT_NAME = { cloud: { ru: 'край облака', en: "the cloud's edge" }, loop: { ru: 'общая магистраль', en: 'the common main' }, stream: { ru: 'поток', en: 'the stream' },
     supplyCargo: { ru: 'охлаждение в дрейфе', en: 'cooling in the drift' }, supplyExposure: { ru: 'монтаж под вспышками', en: 'installation under the flares' }, supplyBus: { ru: 'общая плата', en: 'the common board' },
     rescueLate: { ru: 'сроки капсул Оттепели', en: "Thaw's capsule lives" }, rescueSection: { ru: 'протекающая секция склада', en: "the store's leaking section" },
-    rescueDock: { ru: 'крепление склада', en: "the store's mount" }, wearGroup: { ru: 'группа без охлаждения', en: 'a group without cooling' }, wearLost: { ru: 'ядро без охлаждения', en: 'the core without cooling' }, rescueWake: { ru: 'массовое пробуждение', en: 'mass waking' }, rescueWater: { ru: 'вода старой площадки', en: "the old site's water" } };
+    rescueDock: { ru: 'крепление склада', en: "the store's mount" }, brakeLost: { ru: 'торможение у цели', en: 'braking at the target' }, wearGroup: { ru: 'группа без охлаждения', en: 'a group without cooling' }, wearLost: { ru: 'ядро без охлаждения', en: 'the core without cooling' }, rescueWake: { ru: 'массовое пробуждение', en: 'mass waking' }, rescueWater: { ru: 'вода старой площадки', en: "the old site's water" } };
   const INCIDENT_BEAT = { cloud: 'd.cloud', loop: 'd.overload1', stream: 'd.stream', supplyCargo: 'd.supplyCooler', supplyExposure: 'd.supplyApproach2', supplyBus: 'd.supplyBus',
     rescueLate: 'd.rescue', rescueSection: 'd.rescueConnect', rescueDock: 'd.rescueConnect', rescueWake: 'd.rescue', rescueWater: 'd.home' };
   // старые записи без имён — прежний порядок реестра (номер места → имя без сдвига)
@@ -224,6 +224,9 @@
       if (inc.kind === 'rescueWater' && inc.pop !== 'thaw' && (s.incidents || []).some(z => z.kind === 'rescueWater' && z.pop === 'thaw' && z.year === inc.year))
         return ru ? `Год ${incYear(inc)} · Вода старой площадки — та же авария. Погибли ${ppl(inc.dead)} экипажа: ${namesLine(inc, 'ru')}.`
           : `Year ${incYear(inc)} · The old site's water — the same accident. Dead, ${inc.dead} of the crew: ${namesLine(inc, 'en')}.`;
+      // торможение невыполнимо (шаг 4в): топлива на двигательный участок не хватило — корабль проходит систему, люди живы
+      if (inc.kind === 'brakeLost') return ru ? `Год ${incYear(inc)} · Торможение невыполнимо. Топлива на последний участок — двигателем от 0,01c до нуля — не хватило (недостаёт ${nf((inc.short || 0) * 299792.458, 0, 'ru')} км/с): баки теряли топливо. Корабль прошёл систему цели. На борту ${ppl(inc.aboard || 0)}, все живы.`
+        : `Year ${incYear(inc)} · Braking cannot be flown. There was not enough propellant for the last leg — the engine from 0.01c down to zero (${nf((inc.short || 0) * 299792.458, 0, 'en')} km/s short): the tanks had been losing propellant. The ship crossed the target system. There are ${inc.aboard || 0} people aboard, all alive.`;
       // рейс окончен: ядро без отвода тепла (шаг 3d)
       if (inc.kind === 'wearLost') return ru ? `Год ${incYear(inc)} · Ядро без охлаждения. Все контуры стояли дольше теплового запаса обязательного оборудования; рейс окончен. На борту было ${ppl(inc.aboard || 0)}.`
         : `Year ${incYear(inc)} · The core without cooling. Every loop was down longer than the essential equipment's thermal reserve; the voyage is over. There were ${inc.aboard || 0} people aboard.`;

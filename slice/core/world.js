@@ -90,10 +90,10 @@
   // ---- запись экспедиции в мир — один раз по id; Земля узнаёт об итоге, когда дойдёт отчёт
   const MISSION_NAME = { contact: { ru: 'контакт', en: 'contact' }, supply: { ru: 'снабжение', en: 'supply' }, rescue: { ru: 'спасение', en: 'rescue' } };
   function expeditionEvent(s, exp) {
-    const d = Math.round(M.star(s.target).d), end = s.lostShip ? 'lost' : s.dutchman ? 'dutchman' : s.outcome || outcomeOf(s);
+    const d = Math.round(M.star(s.target).d), end = s.lostShip ? 'lost' : s.adrift ? 'adrift' : s.dutchman ? 'dutchman' : s.outcome || outcomeOf(s);   // adrift — торможение невыполнимо (4в)
     // когда Земля узнает: отчёт первого утра дома; последняя передача погибшего; о «голландце» и аварии — не по отчёту
-    const reportAt = end === 'lost' ? Math.round(s.year + d) : ['dutchman', 'sos'].includes(end) ? null : Y4(s) + d;
-    const ok = !['lost', 'dutchman', 'sos'].includes(end);
+    const reportAt = end === 'lost' || end === 'adrift' ? Math.round(s.year + d) : ['dutchman', 'sos'].includes(end) ? null : Y4(s) + d;
+    const ok = !['lost', 'adrift', 'dutchman', 'sos'].includes(end);
     // задание заявки: выполнено ли и когда отчёт о нём дойдёт до Земли (DOC «Ревью Codex — заявки из мира», шаг 5)
     // выполнение — одно правило с эпилогом (у снабжения и спасения — по их итогу, отчёт — с отчётом экспедиции)
     const task = s.task ? Object.assign({}, s.task, { done: ok && missionComplete(s),
@@ -103,14 +103,14 @@
       request: s.requestId || null, task,
       home: ok && end !== 'supplyFailed' ? homeKind(s) : null, alive: ok ? aliveOf(s) : null,
       incidents: JSON.parse(JSON.stringify(s.incidents || [])),
-      hull: end === 'lost' ? 'wreck' : end === 'dutchman' ? 'orbitDead' : end === 'sos' ? 'sleeping' : null,
+      hull: end === 'lost' ? 'wreck' : end === 'adrift' ? 'adrift' : end === 'dutchman' ? 'orbitDead' : end === 'sos' ? 'sleeping' : null,
       cast: CAST.map(id => ({ id, ru: people[id].ru[0], en: people[id].en[0], fate: end === 'lost' || end === 'dutchman' ? 'dead' : end === 'sos' ? 'asleep' : 'alive' })),
       facts: rescueS(s) ? thawFacts(s, end) : !ok ? null : s.mission === 'supply' ? { relayOK: s.relayOK, capsOK: s.capsOK, shelter: !!s.shelter, shelterPeople: s.shelterPeople || null, outpostDead: s.outpostDead || 0, capsLost: !!s.capsLost, failed: !!s.supplyFailed }
         : s.mission === 'rescue' ? { rescued: s.rescued, housed: !!s.housed, op: s.rescueOp, thawDead: s.thawDead } : null } };
   }
   // спасатель v3: реестр Оттепели в памяти мира — живые по номерам, где живут, погибшие; при аварии — последняя диагностика склада
   function thawFacts(s, end) {
-    const stranded = !s.thawStable && !!s.thawConfirmed;
+    const stranded = (!s.thawStable && !!s.thawConfirmed) || end === 'adrift';   // без торможения — до склада не дошли: живые остаются там
     return { v: 3, rescued: s.rescued, housed: !!s.housed, op: s.rescueOp, thawDead: s.thawDead, stranded,
       alive: stranded ? thawAlive(s, storeNow(s)) : thawAlive(s, Infinity).filter(() => s.rescued > 0), deadIds: (s.thawDeadIds || []).slice(),
       site: s.site || null, place: s.thawPlace || null, crewDead: s.rescueCrewDead || 0, failed: end === 'rescueFailed', infirmaryUntil: s.infirmaryUntil };
@@ -145,6 +145,7 @@
       const lostBy = x.lostBy || ((x.incidents || []).some(z => z.kind === 'wearLost') ? 'heat' : 'stream');
       const reportAt = x.reportAt == null ? null : Math.round(x.reportAt);
       const res = {
+        adrift: ru ? 'торможение не удалось: топлива на последний участок не хватило, корабль прошёл систему и уходит дальше; люди живы' : 'braking failed: there was no propellant for the last leg; the ship crossed the system and is moving on; the people are alive',
         lost: lostBy === 'heat' ? (ru ? 'корабль погиб: все контуры охлаждения отказали, ядро осталось без отвода тепла; следующим останутся журнал отказов и координаты остова' : 'the ship was lost: every cooling loop failed and the core was left without heat rejection; the failure log and the wreck coordinates remain for those who follow')
           : ru ? 'корабль погиб в потоке Тёмной звезды; следующим останутся измеренный поток, журнал и координаты остова' : "the ship was lost in the Dark Star's stream; the measured stream, the log and the wreck's coordinates remain for those who follow",
         dutchman: ru ? `вахты не хватило на зал анабиоза; автоматика ведёт пустой корабль к ${nmD({ target: x.target })}, орбита — около года ${x.arrive}. Для следующих это будет находка` : `the watch was too few for the anabiosis hall; the automation flies the empty ship to ${where}, orbit around year ${x.arrive}. For those who follow it will be a find`,
@@ -169,11 +170,13 @@
         : `Minutes: ${x.incidents.map(i => `year ${incYear(i)} — ${INCIDENT_NAME[i.kind].en}, ${i.lost ? 'the ship lost' : i.dead ? `${i.dead} dead` : 'no one died'}`).join('; ')}.`);
       if (x.cast && x.cast.length) { const n = x.cast.map(c => c[lang]).join(', ');
         out.push(x.hull === 'wreck' ? (ru ? `На борту остова — ${n}.` : `Aboard the wreck: ${n}.`)
+          : x.hull === 'adrift' ? (ru ? `На борту, живы, — ${n}.` : `Aboard, alive: ${n}.`)
           : x.hull === 'orbitDead' ? (ru ? `На борту «голландца» — ${n}.` : `Aboard the Flying Dutchman: ${n}.`)
           : x.hull === 'sleeping' ? (ru ? `Уснули на корабле, когда ушёл сигнал бедствия, — ${n}.` : `Went to sleep aboard the ship when the distress signal went out: ${n}.`)
           : x.home === 'colony' ? (ru ? `Основатели колонии у ${at} — ${n}.` : `Founders of the colony at ${where}: ${n}.`)
           : x.home === 'outpost' ? (ru ? `С форпостом остались — ${n}.` : `Staying with the outpost: ${n}.`)
           : (ru ? `У ${at} живут — ${n}.` : `Living at ${where}: ${n}.`)); }
+      if (x.hull === 'adrift') out.push(ru ? `Сорок первая прошла систему ${nmG({ target: x.target })} без торможения; её курс и последние координаты переданы — живых на борту можно догнать только кораблём быстрее её.` : `The Forty-First crossed the ${where} system without braking; its course and last coordinates have been sent — the living aboard can be reached only by a faster ship.`);
       if (x.hull === 'wreck') out.push(lostBy === 'heat'   // отказ охлаждения: остов там, где корабль был, — в пути или у цели
         ? (x.endedAt >= x.arrive ? (ru ? `Остов остаётся на орбите у ${at}; журнал отказов передан.` : `The wreck stays in orbit at ${where}; the failure log has been transmitted.`)
           : (ru ? `Остов идёт по прежнему курсу к ${nmD({ target: x.target })}; его траектория передана — следующие смогут его найти.` : `The wreck coasts on along its course to ${where}; its trajectory has been transmitted — those who follow can find it.`))
@@ -408,7 +411,8 @@
     return {
       names: {
         homeKind, PLAN_WHO, planWho, planText, endR, MISSION_NAME, expeditionEvent, thawFacts, THAW_PLACE, thawWorld, HOME_KIND, worldLines, UTF8,
-        hashU32, RISK, publicOf, hidden, initialState, taskResult, TASK_NAME, taskName, SURVEY_WORLD, taskReportText, missionComplete
+        hashU32, RISK, publicOf, HIDDEN, hidSeed, hidVer, hidMap, hidden, initialState, taskResult, TASK_NAME, taskName, SURVEY_WORLD, taskReportText,
+        missionComplete
       },
       link: __link
     };

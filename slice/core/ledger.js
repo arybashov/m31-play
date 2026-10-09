@@ -77,7 +77,7 @@
     loop: ['Авария общей магистрали', 'The common main fails'], supplyCargo: ['Отказ охлаждения в дрейфе', 'Cooling fails in the drift'],
     supplyExposure: ['Монтаж под вспышками', 'Installation under the flares'], supplyBus: ['Отказ общей платы', 'The common board fails'],
     rescueLate: ['Сроки капсул Оттепели', "Thaw's capsule lives run out"], rescueSection: ['Протекающая секция склада', "The store's section leaks"],
-    rescueDock: ['Срыв крепления склада', "The store's mount gives way"], wearGroup: ['Группа без охлаждения', 'A group without cooling'], wearLost: ['Ядро без охлаждения', 'The core without cooling'], rescueWake: ['Массовое пробуждение', 'Mass waking'], rescueWater: ['Вода старой площадки', "The old site's water"] };
+    rescueDock: ['Срыв крепления склада', "The store's mount gives way"], brakeLost: ['Торможение невыполнимо', 'Braking cannot be flown'], wearGroup: ['Группа без охлаждения', 'A group without cooling'], wearLost: ['Ядро без охлаждения', 'The core without cooling'], rescueWake: ['Массовое пробуждение', 'Mass waking'], rescueWater: ['Вода старой площадки', "The old site's water"] };
   const incidentHeadline = (inc, lang) => {
     const ru = lang === 'ru', name = HEADLINE_NAME[inc.kind] ? HEADLINE_NAME[inc.kind][ru ? 0 : 1] : INCIDENT_NAME[inc.kind] ? INCIDENT_NAME[inc.kind][ru ? 'ru' : 'en'] : inc.kind;
     const who = inc.pop === 'thaw' ? (ru ? ' Оттепели' : ' of Thaw') : /^rescue/.test(inc.kind) ? (ru ? ' экипажа' : ' of the crew') : '';

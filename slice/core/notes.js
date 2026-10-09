@@ -236,7 +236,8 @@
       : ev.kind === 'event' ? (ru ? `Требуется решение совета: ${EV.TYPES[ev.type].name.ru}.` : `Council decision required: ${EV.TYPES[ev.type].name.en}.`)
       : ev.kind === 'wear' ? (ev.type === 'shop' ? (ru ? 'Требуется решение совета: что мастерская делает со снятыми насосами.' : 'Council decision required: what the workshop does with removed pumps.')
         : ev.type === 'reg' ? (ru ? 'Требуется решение совета: регламент не успевает.' : 'Council decision required: maintenance is falling behind.')
-        : ev.type === 'danger' ? (/\.bearing$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — опора кольца ${ev.id.split('.')[0]}.` : `Council decision required: a dangerous node — ring ${ev.id.split('.')[0]}'s bearing.`)
+        : ev.type === 'danger' ? (/^T\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — течь бака ${ev.id}.` : `Council decision required: a dangerous node — a leak in tank ${ev.id}.`)
+          : /\.bearing$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — опора кольца ${ev.id.split('.')[0]}.` : `Council decision required: a dangerous node — ring ${ev.id.split('.')[0]}'s bearing.`)
           : ru ? `Требуется решение совета: опасный узел — секция радиатора ${ev.id}.` : `Council decision required: a dangerous node — radiator section ${ev.id}.`)
         : ru ? `Требуется решение совета: остановлен контур охлаждения ${ev.loop}.` : `Council decision required: cooling loop ${ev.loop} has stopped.`)
       : (ru ? 'Требуется решение совета.' : 'Council decision required.'));

@@ -3,12 +3,12 @@
 (function (root) {
   'use strict';
   const wearCards = __core => {
-    let DONOR, EV, JB, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter,
-    dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelBurn, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf,
-    pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn,
-    wearDonor, wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop,
-    wearSyncDead;
-    const __link = () => { ({ DONOR, EV, JB, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelBurn, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead } = __core); };
+    let DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter,
+    dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl,
+    prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs,
+    wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop,
+    wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -67,7 +67,56 @@
   }
   // решение совета по опасному узлу: положение после него запоминается — своя остановка не повод спрашивать снова
   const dangerOwn = (id, opts) => opts.map(o => Object.assign({}, o, { effect: y => { if (o.effect) o.effect(y); (y.dangerSeen = y.dangerSeen || {})[id] = dangerSig(y, id); } }));
+  // опасный узел: тормозной бак (шаг «хрупкость» 4в) — течь арматуры. Совет видит содержимое, срок ремонта по очереди и резерв
+  // после изоляции (на копии); дефектная серия и броски разрыва скрыты
+  function wearTankDecision(s, ev) {
+    const id = ev.id, stage = ev.stage, Dg = W.DANGER.brakeTank, open = stage === 'open' || stage === 'warn', nb = W.TANK_PAIR[id];
+    const R = x => W.dangerRecipe(x.wear, id), can = x => dangerCan(x, id), fuelOf = x => x.fuel ? x.fuel.tanks[id].fuel : 0;
+    const left = x => Math.max(0, (Dg.tol - W.defectAt(x.wear.nodes[id], x.year)) / Math.max(0.2, x.wear.nodes[id].r));
+    const shut = x => { const c = M.copy(x); if (c.wear.nodes[id].ok) W.isolate(c.wear, id, c.year); tankSync(c, c.year); return c; };   // бак перекрыт: резерв, нехватка
+    const resLine = (c, x, ru) => c.fuel.short > 1e-9 ? (ru ? `Торможения не хватит: недостаёт ${nf(c.fuel.short * 299792.458, 0, 'ru')} км/с.` : `Braking will not be covered: ${nf(c.fuel.short * 299792.458, 0, 'en')} km/s short.`)
+      : (ru ? `Резерв манёвров станет ${nf(c.reserve, 1, 'ru')}% (сейчас ${nf(x.reserve, 1, 'ru')}%); торможение обеспечено.` : `The manoeuvre reserve becomes ${nf(c.reserve, 1, 'en')}% (now ${nf(x.reserve, 1, 'en')}%); braking is covered.`);
+    const days = x => queueDays(x, { prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 2, work: R(x).work, hold: R(x).hold }, x.year);
+    const cost = (x, ru) => { const d = days(x), q = d == null ? (ru ? 'людей на ремонт сейчас нет' : 'no people for the repair now') : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
+      return ru ? `Гермокомплект (в запасе ${x.wear.inv.tankKit}), ${R(x).work} чел.-сут и ${R(x).hold} суток проверки; ${q}.` : `A sealing kit (${x.wear.inv.tankKit} in stock), ${R(x).work} person-days and ${R(x).hold} days of leak testing; ${q}.`; };
+    const head = (x, ru) => {
+      if (stage === 'open') return ru ? `Течь арматуры бака ${id}: давление падает. В баке ${nf(fuelOf(x), 2, 'ru')} тыс. т топлива. С открытой подачей содержимое уйдёт примерно за ${nf(left(x), 0, 'ru')} суток. ${tankLine(x, 'ru')}`
+        : `A leak in tank ${id}'s fittings: the pressure is dropping. The tank holds ${nf(fuelOf(x), 2, 'en')} thousand t of propellant. With the feed open it will all leak away in about ${nf(left(x), 0, 'en')} days. ${tankLine(x, 'en')}`;
+      if (stage === 'heavy') return ru ? `Бак ${id} пуст и непригоден. ${tankLine(x, 'ru')}` : `Tank ${id} is empty and unusable. ${tankLine(x, 'en')}`;
+      return ru ? `Бак ${id} перекрыт: ${nf(fuelOf(x), 2, 'ru')} тыс. т топлива на борту, но двигателю недоступны. ${tankLine(x, 'ru')}` : `Tank ${id} is shut: ${nf(fuelOf(x), 2, 'en')} thousand t of propellant aboard but unavailable to the engine. ${tankLine(x, 'en')}`; };
+    const repair = { id: 'repair', label: { ru: open ? 'Перекрыть подачу и восстановить арматуру' : 'Восстановить арматуру', en: open ? 'Shut the feed and restore the fittings' : 'Restore the fittings' },
+      known: { ru: y => [cost(y, true), open ? 'На время ремонта топливо бака недоступно двигателю, потом подача откроется. ' + resLine(shut(y), y, true) : 'После проверки подача откроется — топливо бака снова доступно.'],
+        en: y => [cost(y, false), open ? "For the repair the tank's propellant is unavailable to the engine; then the feed reopens. " + resLine(shut(y), y, false) : "After the test the feed reopens — the tank's propellant is available again."] },
+      effect: y => { const w = y.wear; if (w.nodes[id].ok) W.isolate(w, id, y.year); const op = wearOp(y, 'tank', id, y.year, false); (y.danger = y.danger || {})[id] = op ? 'repair' : 'isolate'; tankSync(y, y.year);
+        if (!op) wearNote(y, `Ремонт арматуры бака ${id} не начат: гермокомплектов не хватило. Подача перекрыта.`, `The repair of tank ${id}'s fittings did not start: no sealing kit. The feed is shut.`); },
+      record: { ru: `Подачу бака ${id} перекрывают, арматуру восстанавливают.`, en: `Tank ${id}'s feed is shut and its fittings restored.` } };
+    const isolate = { id: 'isolate', label: { ru: 'Перекрыть подачу, бак не трогать', en: 'Shut the feed, leave the tank' },
+      known: { ru: y => ['Топливо остаётся на борту, но двигателю недоступно — лишний вес. ' + resLine(shut(y), y, true), 'Гермокомплект цел; восстановить арматуру можно позже.'],
+        en: y => ['The propellant stays aboard but the engine cannot use it — dead weight. ' + resLine(shut(y), y, false), 'The sealing kit is kept; the fittings can be restored later.'] },
+      effect: y => { W.isolate(y.wear, id, y.year); tankSync(y, y.year); (y.danger = y.danger || {})[id] = 'isolate'; },
+      record: { ru: `Подачу бака ${id} перекрывают; бак остаётся как есть.`, en: `Tank ${id}'s feed is shut; the tank is left as it is.` } };
+    const cont = { id: 'continue', label: { ru: 'Оставить подачу открытой — до отказа', en: 'Keep the feed open — to failure' },
+      known: { ru: y => [`Течь продолжится: ${nf(fuelOf(y), 2, 'ru')} тыс. т уйдут примерно за ${nf(left(y), 0, 'ru')} суток, потом бак непригоден.`, `Оболочка при этом может разорваться и задеть соседний бак ${nb}.`, 'Решение окончательное: дальше — только запись прибора.'],
+        en: y => [`The leak goes on: ${nf(fuelOf(y), 2, 'en')} thousand t will leak away in about ${nf(left(y), 0, 'en')} days; then the tank is unusable.`, `The shell may burst as well and hit the neighbouring tank ${nb}.`, 'The decision is final: from here on, only an instrument record.'] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
+      record: { ru: `Бак ${id} работает с течью; за давлением следят.`, en: `Tank ${id} runs with a leak, its pressure under watch.` } };
+    const leave = { id: 'leave', label: { ru: 'Оставить бак перекрытым', en: 'Leave the tank shut' },
+      known: { ru: y => [`Гермокомплекты (${y.wear.inv.tankKit}) — на другое.`, stage === 'heavy' ? 'Бак пуст: восстанавливать нечего.' : 'Топливо бака остаётся лишним весом.'],
+        en: y => [`The sealing kits (${y.wear.inv.tankKit}) are kept for other work.`, stage === 'heavy' ? 'The tank is empty: there is nothing to restore.' : "The tank's propellant stays dead weight."] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'leave'; },
+      record: { ru: `Бак ${id} остаётся перекрытым.`, en: `Tank ${id} stays shut.` } };
+    return {
+      id: 'd.wear.danger', key: id, stage, scene: 'vault', kind: 'decision',
+      title: { ru: open ? `Опасный узел: течь бака ${id}` : `Бак ${id} перекрыт`, en: open ? `A dangerous node: a leak in tank ${id}` : `Tank ${id} is shut` },
+      rec: x => can(x) ? { id: 'repair', why: open ? { ru: 'течь не остановится сама; топливо бака — это торможение у цели', en: "a leak does not stop by itself; the tank's propellant is the braking at the target" }
+          : { ru: 'топливо бака снова станет торможением и резервом', en: "the tank's propellant becomes braking and reserve again" } }
+        : { id: open ? 'isolate' : 'leave', why: { ru: 'восстанавливать нечем — подачу перекрывают, пока топливо цело', en: 'there is nothing to restore it with — the feed is shut while the propellant is intact' } },
+      context: { ru: x => head(x, true), en: x => head(x, false) },
+      options: x => dangerOwn(id, (can(x) ? [repair] : []).concat(open ? [isolate, cont] : [leave]))
+    };
+  }
   function wearDangerDecision(s, ev) {
+    if (/^T\d$/.test(ev.id)) return wearTankDecision(s, ev);
     if (/\.bearing$/.test(ev.id)) return wearRingDecision(s, ev);
     const id = ev.id, stage = ev.stage, Dg = W.DANGER.radiator, open = stage === 'open' || stage === 'warn';
     const L = x => radLoop(x.wear, id), R = x => W.dangerRecipe(x.wear, id), can = x => dangerCan(x, id);
@@ -329,6 +378,18 @@
       return b && { at: b.at, cause: `job.${b.job.type || b.job.owner}`, go: () => { s.year = Math.max(s.year, b.at); const j = JB.step(s.jobs, b.job.id, b.at, pools(s)); return j ? jobDone(s, j, b.at) : null; } }; } },
     // износ корабля: смена бодрствующих, отказы узлов, одиночные капсулы, исчерпание буферов
     { id: 'wear', next: wearNext },
+    // торможение невыполнимо (4в): к началу двигательного участка (и во время него) топлива на STOP → 0 не хватает — конец рейса
+    { id: 'brake', next: (s, t0, t1) => { if (!s.fuel || s.terminalAt != null || s.arrive == null || !(s.fuel.short > 1e-9)) return null;
+      const at = Math.max(t0, arriveView(s) - M.ENGINE); if (at > t1 + 1e-12 || at > arriveView(s) + 1e-9) return null;
+      const w = s.wear, shut = w ? W.TANKS.filter(id => w.nodes[id] && !w.nodes[id].ok && !(w.nodes[id].defect && w.nodes[id].defect.stage === 'heavy')) : [];
+      // ремонт перекрытого бака идёт (люди на нём или выдержка) и кончится до середины двигательного участка — ждать его; работа
+      // без людей или поздняя — не ждать (иначе финал обходится до прибытия)
+      const going = id => w.ops.some(o => { if (o.done || o.target !== id) return false; const j = s.jobs && s.jobs.list.find(x => x.ref === o.id && x.status !== 'done');
+        return !!j && (j.status === 'work' || j.status === 'hold') && JB.eta(j, at) <= arriveView(s) - M.ENGINE / 2; });
+      if (shut.some(going)) return null;
+      const ask = shut.find(id => dangerCan(s, id) && !(s.fuel.brakeAsked || []).includes(id));
+      if (ask) return { at, cause: null, go: () => { (s.fuel.brakeAsked = s.fuel.brakeAsked || []).push(ask); return dangerAsk(s, ask, 'isolated', at); } };   // последний шанс — восстановить
+      return { at, cause: null, go: () => { wearTerminal(s, at, 'braking'); return null; } }; } },
     // регламент: узлы сетки в четверть года (множитель старения по отставанию, спрос по году рейса); сама работа — тик в начале хода
     // устойчиво (долга нет, старение штатное, людей — ровно по спросу и хватает, материалы есть, никто не учится) — промежуточные
     // узлы ничего не меняют: только границы лет (ревью Codex: после погашения долга m и люди меняются на ближайшем узле сетки)
@@ -358,7 +419,7 @@
         if (s.wear && s.jobs && s.wear.shop && s.wear.shop.machine)        // станки заняты работой — привод стареет (с этой границы)
           W.setShop(s.wear, W.shopMachine(s.wear) && JB.active(s.jobs).some(j => j.equip === 'shop' && j.status === 'work'), t0);
         const nx = calNext(s, t0, target), t1 = nx ? nx.at : target;
-        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); fuelBurn(s, t0, t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
+        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); if (fuelSpan(s, t0, t1)) book(s, 'wear.leak', t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
         wearRegTick(s, t0);                                                // регламент списан по t1 — события шага видят настоящий запас
         if (!nx) break;
         const ev = nx.go();
@@ -374,8 +435,8 @@
 
     return {
       names: {
-        wearRingDecision, dangerOwn, wearDangerDecision, wearNext, wearDecision, wearReviseDecision, wearShopDecision, wearDonorDecision, inSpan, CAL,
-        CAL_EPS, calPick, calNext, simAdvance
+        wearRingDecision, dangerOwn, wearTankDecision, wearDangerDecision, wearNext, wearDecision, wearReviseDecision, wearShopDecision,
+        wearDonorDecision, inSpan, CAL, CAL_EPS, calPick, calNext, simAdvance
       },
       link: __link
     };
