@@ -13,7 +13,7 @@
 
   // Миссия: цель, паспорт, поворот курса — расчёты в mission.js (браузер: M31Mission).
   const M = root.M31Mission || require('./mission.js');
-  // Щит как прибор (правила v5, симулятор): shield.js (браузер: M31Shield).
+  // Щит как прибор (симулятор): shield.js (браузер: M31Shield).
   const SH = root.M31Shield || require('./shield.js');
   // События v1 (DOC «События v1»): генератор эпизодов дрейфа — events.js (браузер: M31Events)
   const EVM = root.M31Events || require('./events.js');
@@ -110,7 +110,7 @@
     const order = legacy ? Object.keys(M.LEGACY_KITS) : M.kitsFor(s.mission);
     if (!names.every(k => order.includes(k)) || names.join('+') !== order.filter(k => names.includes(k)).join('+')) return null;
     const eq = legacy ? M.eqLegacy(names) : M.eqParse(p[3]);
-    if (!eq || (!legacy && M.eqSwaps(eq, s.mission, s.riskVersion) > M.SWAPS)) return null;
+    if (!eq || (!legacy && M.eqSwaps(eq, s.mission) > M.SWAPS)) return null;
     const kits = names.filter(k => M.KITS[k]), cargo = cargoOf(kits, eq), cap = M.capacity(b, r);
     if (cap < 0 || cargo > cap + 1e-9) return null;
     const bm = legacy ? null : M.brakeMass(b, r, cargo), tMag = legacy ? null : M.magYears(bm, b);
@@ -120,7 +120,7 @@
   }
   // список для экрана решения и выборочного обхода: рекомендованное оснащение миссии, все комплекты
   function passportOptions(s) {
-    const eq = M.eqDefault(s.mission, s.riskVersion), code = M.eqCode(eq), out = [];
+    const eq = M.eqDefault(s.mission), code = M.eqCode(eq), out = [];
     for (const b of M.SPEEDS) for (const r of M.RESERVES) for (const kits of subsets(M.kitsFor(s.mission))) {
       const o = passportParse(s, `${b}|${r}|${kits.join('+')}|${code}`);
       if (o) out.push(o);
@@ -129,7 +129,7 @@
   }
   const kitList = (kits, lang) => kits.length ? kits.map(k => M.KITS[k][lang].toLowerCase()).join(', ') : (lang === 'ru' ? 'без груза сверх ядра' : 'nothing beyond the core');
   // оснащение словами: отличия от рекомендации Совета
-  const eqList = (s, eq, lang) => { const d = M.eqDefault(s.mission, s.riskVersion), diff = M.EQUIP.filter(p => eq[p.id] !== d[p.id]);
+  const eqList = (s, eq, lang) => { const d = M.eqDefault(s.mission), diff = M.EQUIP.filter(p => eq[p.id] !== d[p.id]);
     return diff.length ? diff.map(p => `${p[lang].toLowerCase()} — ${M.eqOpt(p.id, eq[p.id])[lang].toLowerCase()}`).join('; ')
       : (lang === 'ru' ? 'как рекомендует Совет' : 'as the Council recommends'); };
   function passportOption(s0, id, b, r, kits, eq, T, bm, tMag, Tx) {
@@ -172,6 +172,17 @@ Kassel signs for the Council last.`
   const kms = x => String(Math.round(x));
   const Y = (s, f) => Math.round(8 + f * (brake(s) - 8));
   const lag = (s, y) => Math.max(1, Math.round(M.distLy(y, s.beta, s.arrive, s.tMag, M.star(s.target).d)));   // лет идёт сообщение с Земли
+  // корабль поддержки (DOC «Корабль поддержки — проект v1»): стартовал, когда сводка о нём ушла с Земли (год сводки минус
+  // наше расстояние в св. годах), встреча — через год после нашего прибытия; крейсерская скорость — из этих сроков
+  // (разгон 8 лет, магнит 3,86 года до 0,01c, двигатель 4 года): D = b·a/2 + b·q + (b + u)·m/2 + u·e/2
+  function supportPlan(s) {
+    if (!s.target || !s.arrive || ownStory(s)) return null;
+    const D = M.star(s.target).d, tN = Y(s, 0.12), A = arriveView(s), tL = tN - M.distLy(tN, s.beta, s.arrive, s.tMag, D);
+    const a = 8, m = 3.86, e = 4, u = 0.01, q = A + 1 - tL - a - m - e;
+    return { launch: tL, arrive: A + 1, beta: (D - u * (m + e) / 2) / (a / 2 + q + m / 2), acc: a, mag: m, brake: e, u, D };
+  }
+  // в 3D — после сводки о нём; найденный — у цели рядом с нами (встреча)
+  const supportWorld = (s, ids) => { if (!ids.has('a2.support')) return null; const P = supportPlan(s); return P && Object.assign(P, { meet: s.support === 'found' }); };
   // Акт III: годы от прибытия; источник сигнала — ε Индейца
   const src = s => s.target === M.SOURCE;
   const vAt = (s, y) => M.speedAt(y, s.beta, s.arrive, s.tMag);
@@ -225,10 +236,8 @@ Kassel signs for the Council last.`
     if (s.wear) { if (years > s.wear.t + 1e-6 && wearOn(s)) LOSS_FUTURE++; return W.losses(s.wear, Math.min(years, s.wear.t)); }
     return M.losses(years, s.watch, capsSafe(s), crewOf(s));
   };
-  const shieldAllow = s => eqOf(s).shield === 'dust40' ? 1.5 : 0;       // удвоенный щит держит полтора года износа облака
-  const v1 = s => s.riskVersion >= 1;                                   // правила цены ошибки (версия 0 — прежние)
-  const supplyS = s => s.riskVersion >= 2 && s.mission === 'supply';      // сюжет снабженца «То, что они разобрали» (DOC: спецификация Codex)
-  const rescueS = s => s.riskVersion >= 3 && s.mission === 'rescue';      // сюжет спасателя «Сорок мест» (DOC: спасатель v3, спецификация)
+  const supplyS = s => s.mission === 'supply';      // сюжет снабженца «То, что они разобрали» (DOC: спецификация Codex)
+  const rescueS = s => s.mission === 'rescue';      // сюжет спасателя «Сорок мест» (DOC: спасатель v3, спецификация)
   const ownStory = s => supplyS(s) || rescueS(s);                        // у миссии свой дрейф: без компромисса Ирсона и корабля поддержки
   // снабженец (версия 2): в дрейфе пыль бьёт по охлаждению; в 30% партий треснул коллектор — прямое подключение холодильника
   // переносит отказ на весь контур: 12 погибших экипажа, аварийный сон и сигнал бедствия. Опрессовка видит трещину в 9 из 10.
@@ -250,30 +259,28 @@ Kassel signs for the Council last.`
     incident(st, 'supplyCargo', SUPPLY.cargoDead, { check: st.cargoMethod === 'check' ? 'pressure' : null, found: false, year: Y(st, 0.5) + st.cargoDays / 365.25 });
     st.sos = 'cargo';
   }
-  // версия 1: пробой — установленное событие на краю облака, а не вывод из среднего износа
-  const breached = s => v1(s) ? !!s.shieldBreach && !s.shieldFixed : s.shieldWear > shieldAllow(s) && !s.shieldFixed;
-  // облако (версия 1): в 25% партий в крае — полоса крупной пыли; затмение видит её в 90% случаев
-  const CLOUD = { band: 0.25, sense: 0.9, check: 2, dead: 8, patch: 5 };
+  // сектор щита пробит (удар облака или потока) и не заменён запасным
+  const breached = s => !!s.shieldBreach && !s.shieldFixed;
+  // облако: в 25% партий в крае — полоса крупной пыли; затмение видит её в 90% случаев
+  const CLOUD = { band: 0.25, sense: 0.9, check: 2, dead: 8 };
   const cloudBand = s => (hidden(s, 'contact.cloud.band') ?? 1) < CLOUD.band;
-  // правила v5: край облака D2 — место на пути, не год (DOC «Симулятор v1 — время и щит», шаг 4): вход и выход, св. лет
+  // край облака D2 — место на пути, не год (DOC «Симулятор v1 — время и щит», шаг 4): вход и выход, св. лет
   // от Солнца — из прежнего эталона (0,08c: вход на году 4,6, проход 21 сутки); на разгоне путь β·t²/(2·ACC).
   // Мелкая пыль края — 10 фонов; полоса крупной пыли (скрытый факт cloudBand) — средняя треть края, 40 фонов, и одно
   // крупное зерно 0,500–0,515 мм: его удар считает модель щита (энергия → выбоина → пробой, если не хватило остатка)
   const CLOUD_X = [0.1058, 0.108461292158756], CLOUD_RHO = { edge: 10, band: 40 };
   const cloudYear = (s, x) => Math.sqrt(2 * M.ACC * x / s.beta);
   const edgeIn = s => cloudYear(s, CLOUD_X[0]), edgeOut = s => cloudYear(s, CLOUD_X[1]);
-  const edgeAt = s => s.riskVersion >= 5 ? edgeOut(s) : 4.6;            // год записей о проходе края
   const edgeDays = s => Math.round((edgeOut(s) - edgeIn(s)) * 365.25);
   const edgeMonths = (s, lang) => { const m = Math.max(1, Math.round((edgeIn(s) - 4) * 12));
     return lang === 'ru' ? `${m} ${plural(m, ['месяц', 'месяца', 'месяцев'])}` : `${m} month${m === 1 ? '' : 's'}`; };
-  // исход полосы для текстов: в v5 — из модели щита, раньше — из «полутора лет износа»
-  const bandHit = s => s.riskVersion >= 5 ? !!s.cloudHit : s.shieldWear > 0;
-  const bandBreach = s => s.riskVersion >= 5 ? !!(s.cloudHit && s.cloudHit.breached) : !!s.shieldBreach;
-  // контур воды (версия 1, контакт): после пробуждения группы Б в 66,5% партий повреждена общая магистраль колец;
+  // исход полосы для текстов — из модели щита
+  const bandHit = s => !!s.cloudHit;
+  const bandBreach = s => !!(s.cloudHit && s.cloudHit.breached);
+  // контур воды (контакт): после пробуждения группы Б в 66,5% партий повреждена общая магистраль колец;
   // обычная проверка (7 суток, −2) видит дефект в половине случаев, углублённая (42 суток, −8) — в девяти из десяти
   const LOOP = { common: 0.665, ordinary: { days: 7, cost: 2, sense: 0.5 }, deep: { days: 42, cost: 8, sense: 0.9 }, dead: 31, materials: 20 };
   const loopCommon = s => (hidden(s, 'contact.loop.common') ?? 1) < LOOP.common;
-  const loopV1 = s => v1(s) && (!s.mission || s.mission === 'contact');   // снабженец и спасатель — прежние правила
   const loopAt = s => Y(s, 0.68) + 2;                                    // два года запаса от пробуждения группы Б
   // совместный план (снабженец v2): связь, капсулы, обе работы, места в кольцах корабля или признанный срыв.
   // relay/capsules/both — только при разделённом или исправном управлении; при потерянной секции — места до 45-го дня.
@@ -339,7 +346,7 @@ Kassel signs for the Council last.`
       : s.busMethod === 'split' ? 'Twelve days go into separating power and controls. The new cooler no longer depends on the old node.'
       : 'The controller is replaced; the second trial passes. The local shift reroutes the channels before final acceptance.'
   };
-  // ---- протокол происшествий (версия 1): наблюдение → проверка → допущение → решение → причина → имена → что можно было
+  // ---- протокол происшествий: наблюдение → проверка → допущение → решение → причина → имена → что можно было
   // Имена погибших — из реестра рядовых членов экипажа (персонажи с репликами не гибнут за кадром и не говорят после).
   const FIRST = [['Аран', 'Aran'], ['Вела', 'Vela'], ['Дарен', 'Daren'], ['Ева', 'Eva'], ['Ильм', 'Ilm'], ['Кира', 'Kira'], ['Лей', 'Lei'], ['Мара', 'Mara'],
     ['Олен', 'Olen'], ['Рина', 'Rina'], ['Сав', 'Sav'], ['Тала', 'Tala'], ['Ульф', 'Ulf'], ['Фира', 'Fira'], ['Хал', 'Hal'], ['Эла', 'Ela'],
@@ -353,7 +360,7 @@ Kassel signs for the Council last.`
   // сюжетный экипаж 41-й (Кассель остаётся на Земле во главе Совета); у следующих экспедиций будет свой состав
   const CAST = ['dasser', 'orin', 'lorn', 'kora', 'irson', 'marr', 'dan', 'naya', 'selina', 'tamir'];
   const castNames = lang => CAST.map(id => people[id] ? people[id][lang][0] : id);
-  // погибшие — разные люди, выбор задан сидом (детерминирован), в версии 0 имён нет
+  // погибшие — разные люди, выбор задан сидом (детерминирован); без сида имён нет
   function victims(s, key, n, pop) {
     const local = pop === 'outpost', field = local ? 'outpostDeadIds' : 'deadIds', size = local ? 250 : crewOf(s);
     const out = [], dead = new Set(s[field] || []);
@@ -482,10 +489,10 @@ Kassel signs for the Council last.`
         stream: ru ? {
           what: 'Поток у Тёмной звезды', obs: 'счётчики ударов росли; модель давала 91% за безопасный проход',
           check: inc.check ? (inc.found ? 'измерение показало полосу на курсе' : 'измерение полосы не показало') : 'поток не измеряли',
-          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: inc.route === 'evade' ? (s.riskVersion >= 5 ? 'манёвр сократит время в ядре потока' : 'манёвр успеет увести корабль из потока') : 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: 'уйти сразу, не дожидаясь измерений' }
+          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: inc.route === 'evade' ? 'манёвр сократит время в ядре потока' : 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: 'уйти сразу, не дожидаясь измерений' }
           : { what: 'The stream at the Dark Star', obs: 'the impact counters were rising; the model gave 91% for a safe passage',
           check: inc.check ? (inc.found ? 'the measurement showed the band on course' : 'the measurement showed no band') : 'the stream was not measured',
-          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: inc.route === 'evade' ? (s.riskVersion >= 5 ? "the manoeuvre would shorten the time in the stream's core" : 'the manoeuvre would take the ship out of the stream in time') : 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: 'leaving at once, without waiting for measurements' }
+          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: inc.route === 'evade' ? "the manoeuvre would shorten the time in the stream's core" : 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: 'leaving at once, without waiting for measurements' }
       }[inc.kind];
       return ru
         ? `Год ${incYear(inc)} · ${P.what}. Наблюдение: ${P.obs}. Проверка: ${P.check}. Решение: ${P.dec}${recPart ? ` (${recPart}; допущение — ${P.assume})` : ''}. Причина: ${P.cause}${inc.lost ? '; ранее пробитый сектор щита и нехватка мощности для быстрого ухода' : ''}. ${inc.lost ? `Корабль погиб: на борту было ${ppl(inc.aboard)}, среди них ${castNames('ru').join(', ')}.` : inc.dead ? `Погибли ${ppl(inc.dead)}${inc.pop === 'thaw' ? ' Оттепели' : /^rescue/.test(inc.kind) ? ' экипажа' : ''}: ${namesLine(inc, 'ru')}.` : 'Погибших нет: насосы на отдельной сети удержали людей; капсульная секция потеряна.'} Можно было: ${P.alt}.`
@@ -618,8 +625,8 @@ There are no longer years of waiting between question and answer.`;
     const aw = ids ? awakeOf(s, ids) : s.watch;
     g('watch', ru ? 'на вахте' : 'on watch', `${aw}`, aw);
     g('loop', ru ? 'контур' : 'cooling loop', s.highPower ? (ru ? 'полный' : 'full') : (ru ? 'без резерва мощности' : 'no high-power reserve'));
-    if (v5(s) && s.shield) g('shield', ru ? 'щит' : 'shield', shieldGaugeV5(s, lang), SH.observe(s.shield).min); else
-    g('shield', ru ? 'щит' : 'shield', breached(s) && s.year < Y(s, 0.25) && !v1(s) ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г. — пробьёт сектор` : `wear ${pct(s.shieldWear, 'en')} yr — will breach a sector`) : breached(s) ? (ru ? 'сектор пробит' : 'sector breached') : s.shieldWear > 0 ? (ru ? `износ ${pct(s.shieldWear, 'ru')} г.` : `wear ${pct(s.shieldWear, 'en')} yr`) : (ru ? 'цел' : 'whole'));
+    if (s.shield) g('shield', ru ? 'щит' : 'shield', shieldGaugeV5(s, lang), SH.observe(s.shield).min); else
+    g('shield', ru ? 'щит' : 'shield', breached(s) ? (ru ? 'сектор пробит' : 'sector breached') : (ru ? 'цел' : 'whole'));
     g('probes', ru ? 'зонды' : 'probes', `${probesOf(s)}`, probesOf(s));
     g('power', ru ? 'энергия у цели' : 'power at target', s.support === 'found' ? (ru ? 'топливо поддержки' : 'support fuel') : powerOK(s) ? M.eqOpt('energy', eqOf(s).energy)[lang].toLowerCase() : (ru ? 'только корабль' : 'the ship only'));
     if (s.support) g('support', ru ? 'поддержка' : 'support', s.support === 'found' ? (ru ? 'найдена' : 'found') : (ru ? 'потеряна' : 'lost'));
@@ -665,7 +672,7 @@ There are no longer years of waiting between question and answer.`;
         if (b > 0.05) add(b < 0.25 ? 0.6 + 0.4 * (0.25 - b) / 0.2 : b < 0.5 ? 0.35 + 0.25 * (0.5 - b) / 0.25 : b < 1.5 ? 0.15 + 0.2 * (1.5 - b) : Math.max(0, 0.15 * (3 - b) / 1.5),
           `регламент: отставание ${nf(o.reg.B, 0, 'ru')} чел.-сут, старение ×${nf(o.reg.m, 2, 'ru')}`, `maintenance: ${nf(o.reg.B, 0, 'en')} person-days behind, ageing ×${nf(o.reg.m, 2, 'en')}`); }
     }
-    if (v5(s) && s.shield) { const so = SH.observe(s.shield), open = s.shield.hits.some(x => x.state !== 'replaced' && x.residual <= 0);
+    if (s.shield) { const so = SH.observe(s.shield), open = s.shield.hits.some(x => x.state !== 'replaced' && x.residual <= 0);
       // пробоина — нулевой остаток (хуже любого тонкого места), не маскирует остальные панели
       add(zoneOf(open ? 0 : so.min, [0.5 * SH.RULES.service, SH.RULES.service, 2 * SH.RULES.service, 5 * SH.RULES.service]),
         open ? 'щит пробит' : `щит: минимум ${nf(so.min, 1, 'ru')} кг/м²`, open ? 'the shield is breached' : `shield: minimum ${nf(so.min, 1, 'en')} kg/m²`); }
@@ -675,10 +682,8 @@ There are no longer years of waiting between question and answer.`;
     const LV = ru ? ['в норме', 'без резерва', 'дефицит', 'критично'] : ['nominal', 'no margin', 'shortfall', 'critical'];
     return { value, level, label: LV[level], reason: level ? worst.map(x => x.text).join('; ') : '', items };
   }
-  // ---- модель времени (правила v5, DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
-  // Пока одна система — фронтальный щит: фоновая эрозия по скорости корабля, прибор и приборный журнал. Облако и поток
-  // ещё на прежней механике (шаги 4–5); решений модель пока не требует.
-  const v5 = s => s.riskVersion >= 5;
+  // ---- модель времени (DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
+  // Фронтальный щит: фоновая эрозия по скорости корабля, удары облака и потока, прибор и приборный журнал.
   const SIM_TITLE = { ru: 'Приборный журнал · щит', en: 'Instrument log · shield' };
   const SIM_NOTE = 0.05;                                                // кг/м²: шаг сводки износа в журнале
   // среда на пути: множитель фоновой плотности пыли на год y (край облака — только при проходе через край)
@@ -772,9 +777,18 @@ There are no longer years of waiting between question and answer.`;
   }
   // ---- износ корабля (DOC «Долгий рейс — износ и смена курса», шаг 2; план — «Ревью Codex — износ, шаг 2»).
   // Модель — wear.js; здесь — подключение к партии: создание при отлёте, граница календаря, ответы на отказы.
-  // Включена в правилах 5 (шаг 2f); ctx.wear: false — партия без модели (сравнение в калибровке).
+  // ctx.wear: false — партия без модели (сравнение в калибровке).
   // модель идёт, пока экспедиция сама ведёт корабль: после сигнала бедствия людей ведёт модель спасения (M.survivors)
-  const wearOn = s => v5(s) && !!s.wearOn && !s.sos && !s.lostShip && !s.dutchman;
+  // год, когда на корабле никого не остаётся: база внизу построена и последняя волна спустилась (высадка, купола на всех,
+  // база на спутниках — по сроку стройки из «Где будет дом»; поселение — только на поверхности, surface или keep; сначала
+  // орбита, потом поверхность — стройка с решения «Дом»; keep без своей энергии — зимой люди возвращаются на орбиту, корабль
+  // остаётся домом), у спасателя — площадка готова. С этого года корабль — склад и архив над домом: модель износа останавливается (wearStop),
+  // её конец больше не конец экспедиции. Упрощение среза: гибель корабля над готовым домом (больница, энергия) не
+  // моделируется — DOC «Долгий рейс — износ и смена курса». Орбитальный дом, маяк, возвращение, форпост снабженца,
+  // эвакуация в корабль, купол на сорок (остальные ждут на орбите) — корабль и есть дом: износ идёт до конца
+  const offShipAt = s => s.mission === 'rescue' ? (['old', 'closed'].includes(s.site) ? s.homeReadyAt ?? null : null)
+    : s.home === 'moons' || s.settle === 'surface' || (s.settle === 'keep' && energyOK(s)) ? s.homeReadyAt ?? null : null;
+  const wearOn = s => !!s.wearOn && !s.sos && !s.lostShip && !s.dutchman && !(s.wear && s.wear.stopAt != null);
   const wearRnd = s => key => hidden(s, key);
   // бодрствующие на год y: до года 2 на ногах весь экипаж, до передачи полномочий (год 8) — шестьдесят, дальше — вахта;
   // у цели (год прибытия) зал будят — капсулы больше не держат людей
@@ -798,6 +812,15 @@ There are no longer years of waiting between question and answer.`;
   const pools = s => ({ tech: techs(s), shop: !s.wear || W.shopOpen(s.wear) ? 1 : 0 });   // мастерская — один производственный слот (3b); привод в ремонте — закрыта (3c)
   const auralN = s => techs(s);
   const auralDays = s => { const n = auralN(s); return n ? WEAR_WORK.pump.work / n + WEAR_WORK.pump.hold : Infinity; };   // насос авралом, сутки
+  // все внизу (offShipAt): незаконченные работы износа (ремонт, переборка, лом, регламент) снимаются с той же даты; модель
+  // дальше не идёт (wearOn) — ни отказов, ни новых работ, ни материалов из лома
+  function wearStop(s, t) {
+    const w = s.wear; if (!w || w.stopAt != null) return;
+    w.stopAt = t;
+    if (!s.jobs) return;
+    for (const j of JB.active(s.jobs).filter(x => x.owner === 'wear')) Object.assign(j, { status: 'done', w: 0, end: t, cancelled: true });
+    JB.dispatch(s.jobs, t, pools(s));
+  }
   function wearStart(s) {
     if (!wearOn(s) || s.wear || !s.eq) return;
     s.wear = W.create({ crew: crewOf(s), watch: awakeNow(s), reserved: Math.max(0, M.CREW - crewOf(s)), safe: capsSafe(s), at: s.year, protect: CAST_SEATS,
@@ -1002,7 +1025,7 @@ There are no longer years of waiting between question and answer.`;
     if (!W.canRebuild(w, sn)) W.dismantle(w, sn, t);                    // переборки исчерпаны — в лом; годный ждёт мастерскую
   }
   function wearShop(s, t) {
-    const w = s.wear; if (!w || !s.jobs) return;
+    const w = s.wear; if (!w || !s.jobs || !wearOn(s)) return;
     W.partsOf(w);
     if (w.nodes['SHOP.drive'] && !w.nodes['SHOP.drive'].ok && !w.shop.lost) wearDriveFix(s, t);   // ремонт привода ждал материалов
     wearCollRetry(s, t);                                                // и вставка коллектора
@@ -1690,6 +1713,8 @@ The expedition is over. The next one will receive the log — which failure was 
     // границы среды: только смена множителя пыли (строго после t0 — граница, на которой стоим, пройдена)
     { id: 'env', next: (s, t0, t1) => { let m = null; for (const t of envMarks(s)) if (t > t0 && t <= t1 && (m == null || t < m)) m = t;
       return m != null && { at: m, cause: null, go: () => null }; } },
+    // все внизу: модель износа останавливается в этот день (раньше работ очереди и отказов той же даты)
+    { id: 'offShip', next: (s, t0, t1) => { const at = offShipAt(s); return s.wear && s.wear.stopAt == null && inSpan(at, t0, t1) && { at, cause: null, go: () => { wearStop(s, at); return null; } }; } },
     // работы очереди (шаг 3a): конец ручной части или выдержки; завершение — у владельца (износ, событие)
     { id: 'jobs', next: (s, t0, t1) => { if (!s.jobs) return null; const b = JB.nextBoundary(s.jobs, t0, t1);
       return b && { at: b.at, cause: `job.${b.job.type || b.job.owner}`, go: () => { s.year = Math.max(s.year, b.at); const j = JB.step(s.jobs, b.job.id, b.at, pools(s)); return j ? jobDone(s, j, b.at) : null; } }; } },
@@ -1714,6 +1739,7 @@ The expedition is over. The next one will receive the log — which failure was 
     if (!s.shield && s.eq) { s.shield = SH.create(s.eq.shield); s.simYear = s.year; SH.note(s.shield, { kind: 'accept' }); }
     wearStart(s);
     const from = s.simYear != null ? s.simYear : s.year;
+    if (offShipAt(s) != null && offShipAt(s) <= from + 1e-9) wearStop(s, from);   // все уже внизу — работы износа сняты
     // и при target === from: решение-вставка могло встать на дате, где осталась необработанная граница (удар на той же дате)
     if (s.shield && target >= from) {
       let t0 = from;
@@ -1830,7 +1856,7 @@ The expedition is over. The next one will receive the log — which failure was 
     return ru ? `Годы ${nf(n.y0, yd, 'ru')}–${nf(n.y1, yd, 'ru')}${dur}. ${Env}. Средний поток энергии пыли на щит — ${nf(n.flux, fd, 'ru')} Вт/м². Снято за отрезок — ${nf(n.dSigma * 1000, 1, 'ru')} г/м² проекции, с приёмки — ${nf(done, 1, 'ru')} г/м². Минимум по щиту — ${nf(ob.min, 3, 'ru')} кг/м²${where}, ${lim}.`
       : `Years ${nf(n.y0, yd, 'en')}–${nf(n.y1, yd, 'en')}${dur}. ${Env}. Mean dust energy flux on the shield — ${nf(n.flux, fd, 'en')} W/m². Removed over the interval — ${nf(n.dSigma * 1000, 1, 'en')} g/m² of projected area, since acceptance — ${nf(done, 1, 'en')} g/m². Shield minimum — ${nf(ob.min, 3, 'en')} kg/m²${where}, ${lim}.`;
   }
-  // потери удара потока v5 — одной строкой (тяжесть — streamOutcome)
+  // потери удара потока — одной строкой (тяжесть — streamOutcome)
   function streamLossLine(s, lang) {
     const ru = lang === 'ru', h = s.streamImpact;
     if (!h || h.level == null) return '';
@@ -1838,7 +1864,7 @@ The expedition is over. The next one will receive the log — which failure was 
     return h.burnt ? (ru ? `Пыль ядра прожгла старое место у облака: удар проходит в зал анабиоза. Погибли ${ppl(s.streamDead)}.` : `The core dust burned through the old spot from the cloud: the strike reaches the anabiosis hall. ${s.streamDead} are dead.`)
       : (ru ? `Без резерва мощности корабль уходит из ядра сутками: поток успевает пройти по корпусу. Погибли ${ppl(s.streamDead)}.` : `Without the high-power reserve the ship takes days to leave the core: the stream has time to sweep the hull. ${s.streamDead} are dead.`);
   }
-  // журнал прохода края облака в v5: сутки прохода — из профиля, удар и ремонт — из модели щита
+  // журнал прохода края облака: сутки прохода — из профиля, удар и ремонт — из модели щита
   function edgeLogV5(s, lang) {
     const ru = lang === 'ru', d = edgeDays(s), h = s.cloudHit, kg = ru ? 'кг/м²' : 'kg/m²';
     const head = ru ? `Проход края облака: ${d} ${plural(d, ['сутки', 'суток', 'суток'])}.` : `Passage through the cloud's edge: ${d} days.`;
@@ -2097,7 +2123,7 @@ The expedition is over. The next one will receive the log — which failure was 
     // общая очередь работ (шаг 3a): события ставят работы в неё, когда она есть (модель износа включена)
     jobs: s => s.jobs ? { enqueue: spec => JB.enqueue(s.jobs, spec, s.year, pools(s)), list: () => JB.active(s.jobs).filter(j => j.owner === 'ev'), eta: j => JB.eta(j, s.year) } : null,
     // лом работ событий — в склад модели износа (четверть расхода, при завершении работы); переработка — работа мастерской
-    scrapAdd: (s, x, src) => { if (!s.wear) return false; W.addScrap(s.wear, W.SCRAP_BACK * x, `ev.${src}`, s.year); wearShop(s, s.year); return true; },
+    scrapAdd: (s, x, src) => { if (!s.wear || !wearOn(s)) return false; W.addScrap(s.wear, W.SCRAP_BACK * x, `ev.${src}`, s.year); wearShop(s, s.year); return true; },
     scrapOwned: s => !!s.wear });
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
   // Журнал: каждое изменение запасов и числа погибших — записью с причиной: решение (id/вариант), сцена (id), граница
@@ -2130,12 +2156,12 @@ The expedition is over. The next one will receive the log — which failure was 
   const track = (s, cause) => { routeCheck(s, cause); book(s, cause); };
   // исходный курс — последняя ревизия до отлёта (выбор цели и паспорт — в год 0); дальше — повороты
   const navDeparture = s => s.nav ? s.nav.revs.filter(r => r.at <= 0).pop() || null : null;
-  const sim = { active: v5, advance: simAdvance, notes: simNotes,
+  const sim = { active: () => true, advance: simAdvance, notes: simNotes,
     decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : ev.kind === 'wear' ? wearDecision(s, ev) : serviceDecision(s, ev),
     decided: (s, beat) => { EV.decided(s); wearSync(s); track(s, beat ? `${beat.id}/${s.choices[beat.id]}` : 'model'); },   // плановый совет, вахта в зале, ревизия маршрута, журнал
     applied: (s, beat) => { wearSync(s); track(s, beat.id); }, observe: observeShip, report: simReport, calendar: CAL.map(c => c.id),
     terminal: s => s.terminalAt != null, endBeat: s => terminalBeat(s) };   // рейс окончен состоянием корабля (шаг 3d)
-  // прибор щита v5: минимум остатка по панелям — среднее скрыло бы опасную дыру
+  // прибор щита: минимум остатка по панелям — среднее скрыло бы опасную дыру
   function shieldGaugeV5(s, lang) {
     const o = SH.observe(s.shield), ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²';
     const worst = o.damaged.slice().sort((a, b) => a.residual - b.residual)[0];
@@ -2178,7 +2204,7 @@ The expedition is over. The next one will receive the log — which failure was 
   // Прогноз — по среде, в которой корабль уже идёт (её видит вахта), без скрытых опасностей впереди
   const PANEL_STATE = { ok: ['цела', 'intact'], scarred: ['выбоина', 'scar'], patched: ['заплата', 'patch'], breached: ['сквозной пробой', 'through-breach'], new: ['заменена', 'replaced'] };
   function shieldInspect(s, id, lang) {
-    if (!(v5(s) && s.shield)) return null;
+    if (!s.shield) return null;
     const ru = lang === 'ru', kg = ru ? 'кг/м²' : 'kg/m²', V = SH.publicView(s.shield), p = V.panels.find(x => x.id === id) || V.panels[0];
     const yr = y => ru ? `год ${nf(y, 2, 'ru')}` : `year ${nf(y, 2, 'en')}`;
     const where = p.belt ? (ru ? `пояс ${p.belt}, ${p.r0}–${p.r1} м от оси` : `belt ${p.belt}, ${p.r0}–${p.r1} m from the axis`) : (ru ? `центр носа, до ${p.r1} м` : `nose centre, out to ${p.r1} m`);
@@ -2218,22 +2244,22 @@ The expedition is over. The next one will receive the log — which failure was 
   // кто на борту читает слабые спектры (для поиска поддержки)
   const reader = (s, lang) => s.taught ? (lang === 'ru' ? 'ученики Коры' : "Kora's students") : s.koraYear ? (lang === 'ru' ? 'Ная Сорн' : 'Naya Sorn')
     : hasIR(s) ? (lang === 'ru' ? 'инфракрасная обсерватория' : 'the infrared observatory') : null;
-  // окно у потока: 30 суток; проверка + манёвр должны уложиться
-  const WINDOW = 30, CHECK = { probe: 10, kora: 21, student: 26, model: 0 };
+  // сутки проверки потока: проверка и манёвр должны уложиться в окно до ядра (streamWin)
+  const CHECK = { probe: 10, kora: 21, student: 26 };
   const burnDays = s => s.highPower ? 0.25 : 12;
   const CHECK_PLUS = { student: 18 };                                   // расширенная спектрометрия: ученики читают поток быстрее; Кору будят три недели в любом случае
   const checkDays = (s, k) => eqOf(s).sensors === 'spectraPlus' && CHECK_PLUS[k] ? CHECK_PLUS[k] : CHECK[k];
-  // поток (версия 1): в 30% партий опасная полоса пересекает номинальный курс. Зонд (10 суток) видит её в 9 из 10,
+  // поток: в 30% партий опасная полоса пересекает номинальный курс. Зонд (10 суток) видит её в 9 из 10,
   // Кора (21) — в 19 из 20, ученики (26, со спектрометрией 18) — в 8 из 10. Удар — при проходе или опоздавшем уходе:
   // целый щит и полная мощность — 8 погибших, нет одного — 27, нет обоих — гибель корабля
-  const STREAM = { wide: 0.3, sense: { probe: 0.9, kora: 0.95, student: 0.8 }, dead: { 1: 8, 2: 27 }, mat: { 1: 10, 2: 15 } };
+  const STREAM = { wide: 0.3, sense: { probe: 0.9, kora: 0.95, student: 0.8 }, dead: { 1: 8, 2: 27 } };
   const streamWide = s => (hidden(s, 'contact.stream.wide') ?? 1) < STREAM.wide;
-  // правила v5: поток у Тёмной звезды — место на пути, отсчитанное от цели (DOC «Симулятор v1 — время и щит», шаг 5):
+  // поток у Тёмной звезды — место на пути, отсчитанное от цели (DOC «Симулятор v1 — время и щит», шаг 5):
   // предупреждение и вход в ядро — на 0,0328 и 0,0315 св. года до цели (на эталоне — «прибытие − 5» и 30 суток до
   // ядра), ядро толщиной 0,00012 св. года (около трёх суток на 0,015c). Предвестник — 10⁻¹⁸ кг/м³; ядро на курсе —
   // только при широкой полосе (скрытый факт streamWide): 10⁻¹⁶ кг/м³ и одно зерно 1,9–2,1 мм.
   const STREAM_X = { warn: 0.032809771231847, core: 0.031545807335968, thick: 0.00012, dark: 1900 / 63241.077 };   // dark — ближайший проход пары карликов, 1900 а.е. до цели вдоль пути
-  const STREAM_RHO = { pre: 1e-18, core: 1e-16 }, STREAM_MAT5 = { 1: 5, 2: 10 };   // v5: отсеки; щит — отдельным решением
+  const STREAM_RHO = { pre: 1e-18, core: 1e-16 }, STREAM_MAT5 = { 1: 5, 2: 10 };   // отсеки; щит — отдельным решением
   const STREAM_MEMO = new Map();
   // года предупреждения, входа в ядро и выхода из него: остаток пути до цели — интеграл той же скорости, что у модели
   function streamTimes(s) {
@@ -2259,7 +2285,7 @@ The expedition is over. The next one will receive the log — which failure was 
         : `There is nothing to stop beside it with: just killing the passing speed takes ${v} km/s, more than the whole manoeuvre reserve (${res} km/s).`)
       : (ru ? `Встать рядом с ней — одно гашение скорости прохода съело бы ${Math.round(100 * vk / res)}% резерва манёвров (${v} из ${res} км/с), а ещё поперечный перенос и годы пути обратно к A. Совет решает идти мимо.`
         : `Stopping beside it — just killing the passing speed would eat ${Math.round(100 * vk / res)}% of the manoeuvre reserve (${v} of ${res} km/s), plus the sideways transfer and years back to A. The council decides to go past.`);
-    const lead = v1(s) && s.streamRoute === 'pass' ? (ru ? 'Край потока проводит' : 'The edge of the stream takes') : (ru ? 'Изменённая траектория проводит' : 'The changed trajectory takes');
+    const lead = s.streamRoute === 'pass' ? (ru ? 'Край потока проводит' : 'The edge of the stream takes') : (ru ? 'Изменённая траектория проводит' : 'The changed trajectory takes');
     const log = ru ? `Они пытались вскрыть диск, прорезая один из спиральных выступов. Разрез выпустил пламя; чужой металл заварил пролом сам. Погибла часть экипажа, двигатель был повреждён. Маяк диска проснулся от вскрытия — это и был сигнал, который приняло Кольцо. Выжившие годами держались на орбите, пока питание капсул не иссякло.`
       : `They tried to open the disc by cutting through one of the spiral ridges. The cut let out flame; the alien metal welded the breach shut by itself. Part of the crew died, the engine was damaged. The disc's beacon woke at the breach — that was the signal the Ring received. The survivors held on in orbit for years, until the capsules' power ran out.`;
     return ru ? `${lead} корабль мимо пары карликов — источника сигнала. Ближе ${DARK.side} а.е. путь к ε Индейца A к ним не подходит: пара лежит в стороне. ${stop}
@@ -2281,14 +2307,14 @@ When the pair is behind, the crew holds the rite of names: each of the Thirty-Se
 
 The log's last entry is a woman's voice: to those who come after — do not open the hull.`;
   }
-  const warnAt = s => s.riskVersion >= 5 && src(s) ? streamTimes(s).warn : s.arrive - 5;   // v5: вход в систему — точка предупреждения
-  const streamAt = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? s.streamImpact.out : s.arrive - 5;   // v5: выход из ядра после удара
-  const sosAtStream = s => s.riskVersion >= 5 && s.streamImpact && s.streamImpact.out != null ? Math.max(s.streamImpact.out, s.streamImpact.done ?? s.streamImpact.out) : s.arrive - 5;   // сигнал — после манёвра ухода
+  const warnAt = s => src(s) ? streamTimes(s).warn : s.arrive - 5;   // вход в систему — точка предупреждения
+  const streamAt = s => s.streamImpact && s.streamImpact.out != null ? s.streamImpact.out : s.arrive - 5;   // выход из ядра после удара
+  const sosAtStream = s => s.streamImpact && s.streamImpact.out != null ? Math.max(s.streamImpact.out, s.streamImpact.done ?? s.streamImpact.out) : s.arrive - 5;   // сигнал — после манёвра ухода
   const days = (n, lang) => lang === 'ru' ? `${n} ${plural(n, ['сутки', 'суток', 'суток'])}` : `${n} day${n === 1 ? '' : 's'}`;
   // сколько снимает пыль ядра за весь проход (кг/м²) — для подсказки о слабом месте; на свежей копии, без скрытых фактов
   const coreLoss = s => { const T = streamTimes(s); return SH.erode(SH.create('dust20'), T.core, T.exit, y => M.speedAt(y, s.beta, s.arrive, s.tMag), STREAM_RHO.core).dSigma; };
-  const win = s => s.riskVersion >= 5 ? Math.round(streamWin(s)) : WINDOW;
-  // план прохода v5: когда начат и закончен манёвр ухода, когда удар зерна, сколько корабль в предвестнике и в ядре
+  const win = s => Math.round(streamWin(s));
+  // план прохода: когда начат и закончен манёвр ухода, когда удар зерна, сколько корабль в предвестнике и в ядре
   function streamPlan(s) {
     const T = streamTimes(s), wide = streamWide(s);
     const start = s.streamRoute === 'evade' ? T.warn + (s.streamDays || 0) / 365.25 : null;
@@ -2303,22 +2329,21 @@ The log's last entry is a woman's voice: to those who come after — do not open
   }
   const streamDv = s => dvPct(s, s.highPower ? DV.stream : DV.streamWeak);
   const canEvade = s => s.reserve >= streamDv(s);
-  const lateV1 = s => (s.streamDays || 0) + burnDays(s) > (s.riskVersion >= 5 ? streamWin(s) : WINDOW);   // граница включительна: ровно 30 — вовремя
-  const streamHitNow = s => streamWide(s) && (s.streamRoute === 'pass' || (s.streamRoute === 'evade' && lateV1(s)));
-  const windowLine1 = (s, lang) => { const ru = lang === 'ru', d = s.streamDays || 0, bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days'), W = s.riskVersion >= 5 ? streamWin(s) : WINDOW, over = d + burnDays(s) - W;
+  const streamLate = s => (s.streamDays || 0) + burnDays(s) > streamWin(s);   // граница включительна: ровно по окну — вовремя
+  const windowLine = (s, lang) => { const ru = lang === 'ru', d = s.streamDays || 0, bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days'), W = streamWin(s), over = d + burnDays(s) - W;
     return ru ? `Окно — ${days(win(s), 'ru')}: прошло ${d}, манёвр — ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : ' Успеваем.')
       : `Window: ${days(win(s), 'en')} — ${d} gone, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : ' In time.'); };
-  // версия 1: проверка у потока даёт сведения; маршрут — отдельным решением (d.streamRoute)
+  // проверка у потока даёт сведения; маршрут — отдельным решением (d.streamRoute)
   function streamCheckEffect(st, k) {
     st.streamCheck = k; st.streamDays = checkDays(st, k);
     st.streamFound = streamWide(st) && (hidden(st, 'contact.stream.check') ?? 1) < STREAM.sense[k];
   }
-  // v5: ответ приходит в свой срок — в совете о маршруте; в записи выбора — только начало проверки
-  const streamFoundRecord = { ru: s => s.riskVersion >= 5 ? `Проверка начата: ответ — через ${days(s.streamDays, 'ru')}.` : s.streamFound ? 'Ответ: крупных частиц больше расчётного — опасная полоса пересекает наш курс.' : 'Ответ: опасной полосы на нашем курсе не видно. Метод может её не захватить.',
-    en: s => s.riskVersion >= 5 ? `The check has begun: the answer in ${days(s.streamDays, 'en')}.` : s.streamFound ? 'The answer: more coarse particles than calculated — the dangerous band crosses our course.' : 'The answer: no dangerous band on our course. The method may not catch it.' };
+  // ответ приходит в свой срок — в совете о маршруте; в записи выбора — только начало проверки
+  const streamFoundRecord = { ru: s => `Проверка начата: ответ — через ${days(s.streamDays, 'ru')}.`,
+    en: s => `The check has begun: the answer in ${days(s.streamDays, 'en')}.` };
   const probeOK = s => probesLeft(s) || s.materials >= 5;              // зонд: готовый или из материалов
   const pctFrom = (p, lang) => lang === 'ru' ? { 0.9: 'в девяти случаях из десяти', 0.95: 'в девятнадцати случаях из двадцати', 0.8: 'в восьми случаях из десяти' }[p] : { 0.9: 'nine times in ten', 0.95: 'nineteen times in twenty', 0.8: 'eight times in ten' }[p];
-  function streamOptions1(s) {
+  function streamOptions(s) {
     const out = [{
       id: 'probe', label: { ru: 'Зонд Тамира', en: "Tamir's probe" },
       known: {
@@ -2349,8 +2374,8 @@ The log's last entry is a woman's voice: to those who come after — do not open
     if (canEvade(s)) out.push({
       id: 'evade', label: { ru: 'Уходить сразу', en: 'Leave at once' },
       known: {
-        ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine1(s, 'ru'), 'Опасна ли полоса — так и не узнаем.'],
-        en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine1(s, 'en'), 'Whether the band was dangerous we will never know.']
+        ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine(s, 'ru'), 'Опасна ли полоса — так и не узнаем.'],
+        en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine(s, 'en'), 'Whether the band was dangerous we will never know.']
       },
       cost: st => { st.reserve -= streamDv(st); },
       effect: st => { st.reserve -= streamDv(st); st.streamRoute = 'evade'; },
@@ -2367,27 +2392,10 @@ The log's last entry is a woman's voice: to those who come after — do not open
     });
     return out;
   }
-  const late = (s, k) => k === 'model' || checkDays(s, k) + burnDays(s) > WINDOW || s.reserve < dvPct(s, s.highPower ? DV.stream : DV.streamWeak);
-  const hitLevel = s => 1 + (breached(s) ? 1 : 0) + (s.highPower ? 0 : 1);
-  // долг обслуживания: тонкая вахта без допуска ремонтников пережила аварию в контуре воды
-  const maintDebt = s => s.watch < 48 && !s.repairQual;
   // энергия у цели: груз поддержки или работающий изомерный контур
   const energyOK = s => s.support === 'found' || powerOK(s);
-  function strike(st, k) {                                            // удар потока, если не успели или доверились модели
-    if (st.preview) return;                                           // прогноз «После» показывает известные затраты, не исход
-    if (!late(st, k)) return;
-    st.streamHit = hitLevel(st);
-    if (st.streamHit === 1) { st.dead += 2; st.materials -= 10; st.streamDead = 2; }
-    else if (st.streamHit === 2) { st.dead += 27; st.materials -= 15; st.streamDead = 27; }
-    else st.lostShip = true;
-  }
-  const windowLine = (s, k, lang) => {
-    const t = checkDays(s, k) + burnDays(s), over = t - (s.riskVersion >= 5 ? streamWin(s) : WINDOW), ru = lang === 'ru', bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days');
-    return ru ? `Окно — ${days(win(s), 'ru')}: проверка ${checkDays(s, k)}, манёвр ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : '')
-      : `Window: ${days(win(s), 'en')} — check ${checkDays(s, k)}, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : '');
-  };
   const riskLine = (s, lang) => { const ru = lang === 'ru', r = [];
-    if (s.riskVersion >= 5 && s.shield) {                              // v5: слабое место — по модели щита (ядро снимает ~10 кг/м²)
+    if (s.shield) {                                      // слабое место — по модели щита (ядро снимает ~10 кг/м²)
       const cl = coreLoss(s), w = SH.observe(s.shield).damaged.filter(d => d.residual < cl).sort((a, b) => a.residual - b.residual)[0];
       if (w) r.push(ru ? (w.residual <= 0 ? `в панели ${w.panel} открытая пробоина — пыль ядра пойдёт прямо в отсек` : `в панели ${w.panel} ${nf(w.residual, 1, 'ru')} кг/м², а ядро потока снимает до ${nf(cl, 1, 'ru')}`)
         : (w.residual <= 0 ? `panel ${w.panel} has an open hole — the core dust goes straight into the compartment` : `panel ${w.panel} has ${nf(w.residual, 1, 'en')} kg/m², and the stream's core removes up to ${nf(cl, 1, 'en')}`));
@@ -2607,6 +2615,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
     st.site = method === 'reuse' ? 'old' : method === 'stay' ? null : method;
     if (st.site === 'old' && bad) waterAccident(st);
     st.homeReady = !!st.site && st.site !== 'evacuated';
+    if (st.homeReady) st.homeReadyAt = st.year + st.siteDays / YD;     // площадка готова — люди переходят
     if (st.homeReady && st.rescued > 0) { st.housed = true; st.thawPlace = st.site; st.infirmaryUntil = null; }
   }
   function waterAccident(st) {
@@ -2821,10 +2830,9 @@ All this time, "nominal" described the equipment's operating mode.`;
 
   // ---------------------------------------------------------------- оснащение: досье, вопросы, карточки, цена (DOC: оснащение v4)
   // Анкета показывает только публичное: цель, каталог, архив на день старта, расчёт паспорта. Скрытое (сид) не используется.
-  const eqRules = s => s.riskVersion >= 4;
   // скрытые в анкете варианты: без применения в этой миссии (паспорт со старым id остаётся валидным)
   function eqHidden(s, pos, opt) {
-    if (supplyS(s)) return pos === 'energy' || pos === 'sensors' || (pos === 'shield' && opt !== 'dust20') || opt === 'inspect' || (opt === 'printQC' && !eqRules(s));
+    if (supplyS(s)) return pos === 'energy' || pos === 'sensors' || (pos === 'shield' && opt !== 'dust20') || opt === 'inspect';
     if (rescueS(s)) return ['energy', 'sensors', 'prod'].includes(pos) || (pos === 'shield' && opt !== 'dust20') || opt === 'inspect';
     return false;
   }
@@ -2845,10 +2853,10 @@ All this time, "nominal" described the equipment's operating mode.`;
     return { cloud: s.mission === 'contact' && M.episode(Object.assign({}, s, { arrive: T })) === 'cloud', source: s.target === M.SOURCE,
       red: M.isRedDwarf(s.target), colony: c && c.status !== 'dead' && c.awake > 0 ? c : null };
   }
-  // польза / условие / основание — по миссии и версии правил
+  // польза / условие / основание — по миссии
   function eqCard(s, opt, lang) {
     const ru = lang === 'ru', R = routeSigns(s), L = (r, e) => ru ? r : e;
-    const red = R.red && !R.source, sup = supplyS(s), res = rescueS(s), v4 = eqRules(s);
+    const red = R.red && !R.source, sup = supplyS(s), res = rescueS(s);
     const C = {
       capsStd: [L('Не добавляют массы к штатному кораблю.', 'Add no mass to the standard ship.'), L('Сохраняются штатные риски отказа капсулы и пробуждения.', 'Standard capsule-failure and waking risks remain.'), L('Меньшая масса сокращает путь; прогноз потерь — ниже.', 'Lower mass shortens the voyage; the loss estimate is below.')],
       capsSafe: [L('Вдвое снижают фоновые отказы капсул и смерти при пробуждении.', 'Halve background capsule failures and deaths on waking.'),
@@ -2876,25 +2884,21 @@ All this time, "nominal" described the equipment's operating mode.`;
       sectors: [L('Позволяют восстановить полный расчёт щита после пробоя.', "Restore the shield's full rating after a breach."), L('Нужны допуск ремонтников и 3% материалов; первоначальные потери не отменяются.', 'Require repair qualification and 3% of materials; initial losses are not reversed.'), L('Заплата закрывает пробой, но не заменяет целый сектор.', 'A patch seals the breach but does not replace an intact sector.')],
       repair: sup ? [L('Не добавляет производственной массы.', 'Adds no manufacturing mass.'), L(`Второй монтажный комплект стоит 30% материалов; разделение платы — ${busSplitFor(s, 'repair')}%.`, `The second installation kit costs 30% of materials; board separation costs ${busSplitFor(s, 'repair')}%.`), L('Детали придётся брать из общего запаса.', 'Parts must come from the shared stock.')]
         : [L('Не добавляет массы производственного оборудования.', 'Adds no production-equipment mass.'), L('Изготовить капельный радиатор этим набором нельзя.', 'This kit cannot manufacture a droplet radiator.'), L('Для возвращения утраченного резерва мощности может понадобиться производство.', 'Restoring a lost high-power reserve may require manufacturing.')],
-      tools: sup ? [L(`Второй монтажный комплект — 10% материалов вместо 30${v4 ? `; разделение платы — ${busSplitFor(s, 'tools')}% вместо 12` : ''}.`, `The second installation kit costs 10% of materials instead of 30${v4 ? `; board separation ${busSplitFor(s, 'tools')}% instead of 12` : ''}.`),
-          v4 ? L('Производство не обнаруживает дефект и не ускоряет работы; монтаж требует свободных сетей.', 'Manufacturing neither detects damage nor speeds up work; installation requires free grids.') : L('Нужны две свободные сети и материалы на недостающее оборудование; разделение платы стоит 12%.', 'Two free grids and materials for missing equipment are required; board separation costs 12%.'),
+      tools: sup ? [L(`Второй монтажный комплект — 10% материалов вместо 30; разделение платы — ${busSplitFor(s, 'tools')}% вместо 12.`, `The second installation kit costs 10% of materials instead of 30; board separation ${busSplitFor(s, 'tools')}% instead of 12.`),
+          L('Производство не обнаруживает дефект и не ускоряет работы; монтаж требует свободных сетей.', 'Manufacturing neither detects damage nor speeds up work; installation requires free grids.'),
           L('Изготовление на борту сохраняет запас форпоста.', "Onboard manufacturing preserves the outpost's stock.")]
         : [L('Позволяют изготовить радиатор за 20% материалов и вернуть резерв мощности.', 'Allow a radiator to be built for 20% of materials, restoring the high-power reserve.'), L('Нужны потеря повышенной мощности, чертёж и допуск ремонтников.', 'Require lost high power, the blueprint and repair qualification.'), L('Восстановление контура требует изготовления деталей.', 'Restoring the loop requires manufactured parts.')],
-      printQC: sup ? [L(`Второй монтажный комплект — 10% материалов${v4 ? `; разделение платы — ${busSplitFor(s, 'printQC')}% вместо 12` : ''}.`, `The second installation kit costs 10% of materials${v4 ? `; board separation ${busSplitFor(s, 'printQC')}% instead of 12` : ''}.`),
-          v4 ? L('Производство не обнаруживает дефект и не ускоряет работы; на 2 тыс. т тяжелее станков.', 'Manufacturing neither detects damage nor speeds up work; 2 kt heavier than machine tools.') : L('Эффект совпадает со станками, но масса больше на 2 тыс. т.', 'The effect matches machine tools, with 2 kt more mass.'),
+      printQC: sup ? [L(`Второй монтажный комплект — 10% материалов; разделение платы — ${busSplitFor(s, 'printQC')}% вместо 12.`, `The second installation kit costs 10% of materials; board separation ${busSplitFor(s, 'printQC')}% instead of 12.`),
+          L('Производство не обнаруживает дефект и не ускоряет работы; на 2 тыс. т тяжелее станков.', 'Manufacturing neither detects damage nor speeds up work; 2 kt heavier than machine tools.'),
           L('Изготовленные детали сокращают расход общего запаса.', 'Manufactured parts reduce use of the shared stock.')]
         : [L('Позволяет изготовить радиатор за 10% материалов вместо 20 на станках.', 'Allows a radiator to be built for 10% of materials instead of 20 with machine tools.'), L('Нужны потеря повышенной мощности, чертёж и допуск ремонтников.', 'Requires lost high power, the blueprint and repair qualification.'), L('Печать экономит материалы ценой большей массы оборудования.', 'Printing saves materials at the cost of greater equipment mass.')]
     };
-    if (!v1(s) && s.mission === 'contact') Object.assign(C, {                 // версия 0: щит — износ у облака, без полосы и ремонта слоя
-      dust20: [L('Не добавляет массы сверх штатного щита.', 'Adds no mass beyond the standard shield.'), L('Износ у края облака пробивает сектор щита.', "Wear at the cloud's edge breaches a shield sector."), L('Плотность края облака заранее не измерена.', "The density of the cloud's edge has not been measured in advance.")],
-      dust40: [L('Держит полтора года износа у облака без пробоя.', 'Holds a year and a half of cloud wear without a breach.'), L('Отдельной защиты от потока нет.', 'It provides no separate stream immunity.'), L('Износ зависит от времени в крае облака.', "Wear depends on the time spent in the cloud's edge.")],
-      sectors: [L('Пробитый сектор меняют на запасной.', 'A breached sector is replaced with a spare.'), L('Нужны допуск ремонтников и 3% материалов.', 'Requires repair qualification and 3% of materials.'), L('Заплата закрывает пробой, но не заменяет целый сектор.', 'A patch seals the breach but does not replace an intact sector.')] });
     return C[opt] || [];
   }
   // аварийная польза — отдельной условной строкой, без частот генератора
   function eqIf(s, opt, lang, d) {
     const ru = lang === 'ru', R = routeSigns(s, d);
-    if (opt === 'dust40' && s.mission === 'contact' && v1(s) && R.cloud) return ru ? 'Если пройдём полосу крупной пыли у облака: удвоенный щит предотвращает пробой; расчётная разница аварийных потерь — 8 человек.' : "If we cross the cloud's coarse-dust band: the doubled shield prevents a breach; the estimated difference in incident losses is 8 people.";
+    if (opt === 'dust40' && s.mission === 'contact' && R.cloud) return ru ? 'Если пройдём полосу крупной пыли у облака: удвоенный щит предотвращает пробой; расчётная разница аварийных потерь — 8 человек.' : "If we cross the cloud's coarse-dust band: the doubled shield prevents a breach; the estimated difference in incident losses is 8 people.";
     if (['grid', 'reactor5', 'dual'].includes(opt) && s.mission === 'contact') return ru ? 'Если поселению не хватит энергии и другого источника не будет: энергетический груз предотвращает зимний дефицит; потери без него зависят от выбранного поселения.' : 'If the settlement lacks power and no other source is available: power cargo prevents the winter shortage; losses without it depend on the settlement chosen.';
     return null;
   }
@@ -2902,7 +2906,7 @@ All this time, "nominal" described the equipment's operating mode.`;
   const sgn = (x, lang, dg) => { const v = Math.abs(x) < 0.5 * Math.pow(10, -dg) ? 0 : x, t = (lang === 'ru' ? f1 : f1)(Math.abs(v), lang);
     return v === 0 ? (x === 0 ? '0' : (x > 0 ? '+<0' : '−<0') + (lang === 'ru' ? ',1' : '.1')) : `${v > 0 ? '+' : '−'}${dg === 2 ? (lang === 'ru' ? Math.abs(v).toFixed(2).replace('.', ',') : Math.abs(v).toFixed(2)) : t}`; };
   function eqCost(s, d, pos, lang) {
-    const ru = lang === 'ru', rec = M.eqDefault(s.mission, s.riskVersion)[pos];
+    const ru = lang === 'ru', rec = M.eqDefault(s.mission)[pos];
     if (d.eq[pos] === rec) return [];
     const a = passportNumbers(s, Object.assign({}, d, { eq: Object.assign({}, d.eq, { [pos]: rec }) })), b = passportNumbers(s, d);
     const dt = (b.T - a.T) * 365.25, dtTxt = Math.abs(dt) < 30 ? `${sgn(dt, lang, 1)} ${ru ? 'сут.' : 'days'}` : `${sgn((b.T - a.T) * 12, lang, 1)} ${ru ? 'мес.' : 'months'}`;
@@ -2918,8 +2922,6 @@ All this time, "nominal" described the equipment's operating mode.`;
   // рекомендация Совета: «предлагаем X, потому что Y; принимаем риск Z»
   function eqCouncil(s, lang) {
     const ru = lang === 'ru';
-    if (s.mission === 'supply' && !eqRules(s)) return ru ? 'В этой версии Совет предложил станки и подключение к колонии. Станки экономят материалы второго монтажного комплекта; подключение монтажу не помогает и добавляет массу. Комплект сохранён по правилам этого паспорта.'
-      : 'In this version, the Council proposed machine tools and a colony grid link. The tools save materials for the second installation kit; the link does not help installation and adds mass. The loadout is retained under this passport\'s rules.';
     return ({
       contact: ru ? 'Совет предлагает ИК-обсерваторию и штатное остальное оснащение, потому что предстоит искать слабые тепловые следы; принимает риск повреждения щита и необходимость отдельно обеспечить энергию поселению.' : 'The Council proposes an IR observatory with otherwise standard equipment because we must seek faint heat traces; it accepts the risk of shield damage and the need to secure settlement power separately.',
       supply: ru ? 'Совет предлагает станки без отдельного энергетического груза, потому что ведомость форпоста требует восстановления оборудования, а две монтажные сети уже есть на корабле; принимает расход материалов на разведчик и остаточный риск проверок старых узлов.' : "The Council proposes machine tools without separate power cargo because the outpost's inventory calls for equipment restoration and the ship already has two installation grids; it accepts the material cost of a scout and the residual risk of checks on old components.",
@@ -2951,15 +2953,15 @@ All this time, "nominal" described the equipment's operating mode.`;
       [H[1], ru ? `Отказов капсул в долгом пути; ${hz.join(' ')} нехватки энергии после высадки.` : `Capsule failures during the long voyage; ${hz.join(' ')} an energy shortage after landing.`],
       [H[2], (ru ? `${UNK[0]}, условия будущего поселения и фактическая среда на курсе не установлены. ` : `${UNK[1]}, settlement conditions and the actual medium along our course are unconfirmed. `) + unk.join(' ')]];
   }
-  // разделение общей платы снабженца (версия 4: станки и печать удешевляют)
-  const busSplitFor = (s, prod) => eqRules(s) && supplyS(s) ? ({ repair: 12, tools: 10, printQC: 8 })[prod] : STORM.split;
+  // разделение общей платы снабженца: станки и печать удешевляют
+  const busSplitFor = (s, prod) => supplyS(s) ? ({ repair: 12, tools: 10, printQC: 8 })[prod] : STORM.split;
   const busSplit = s => busSplitFor(s, eqOf(s).prod);
   // итог оснащения после пути: что помогло, что не понадобилось, чего не хватило — по установленным событиям партии.
   // ids — сцены, которые прошли. Контрфакт — только для события, которое случилось; оценки капсул помечены как расчёт.
   function eqSummary(s, lang, ids) {
     const ru = lang === 'ru', eq = eqOf(s), help = [], miss = [], used = new Set(), had = id => ids.has(id), L = (r, e) => ru ? r : e;
     const rq = s.repairQual ? '' : L(` и ${DV.probe} км/с резерва манёвров`, ` and ${DV.probe} km/s of manoeuvre reserve`);
-    if (s.riskVersion >= 5 && s.cloudHit) {                            // v5: исход полосы — из модели щита
+    if (s.cloudHit) {                                    // исход полосы — из модели щита
       const h = s.cloudHit;
       if (!h.breached) { help.push(L(`Удвоенный щит выдержал удар крупного зерна у облака: на панели ${h.panel} выбоина, сквозного пробоя нет, ремонт не понадобился.`, `The doubled shield withstood the coarse grain at the cloud: a scar on panel ${h.panel}, no through-breach, no repair needed.`)); used.add('shield'); }
       else {
@@ -2967,17 +2969,10 @@ All this time, "nominal" described the equipment's operating mode.`;
         if (h.repair === 'replace') { help.push(L(`Запасная панель установлена ремонтниками с допуском: щит снова держит полный расчёт; крепёж — ${SHIELD_WORK.replace}% материалов.`, `Qualified repair hands fitted a spare panel: the shield holds its full rating again; fasteners took ${SHIELD_WORK.replace}% of materials.`)); used.add('shield'); }
         else if (eq.shield === 'sectors' && !s.repairQual) miss.push(L('Запасную панель не поставили: нет допуска к работе под тягой.', 'No spare panel was fitted: no qualification for work under thrust.'));
       }
-    } else if (had('a1.edge.t1') && v1(s) && s.shieldWear > 0) {
-      if (eq.shield === 'dust40') { help.push(L(`Удвоенный щит выдержал полосу крупной пыли у облака: сквозного пробоя нет; на наружный слой ушло ${CLOUD.patch}% материалов.`, `The doubled shield withstood the cloud's coarse-dust band: no through-breach; the outer layer took ${CLOUD.patch}% of materials.`)); used.add('shield'); }
-      else miss.push(L(`Щит пробит полосой крупной пыли. По зарегистрированному удару удвоенный слой выдержал бы нагрузку; расчётная разница потерь — ${CLOUD.dead} человек.`, `The shield was breached by the coarse-dust band. For the recorded impact a doubled layer would have held; the estimated loss difference is ${CLOUD.dead} people.`));
     }
-    if (s.riskVersion >= 5) {                                          // v5: замена панели — решение у пробоя (облако — выше, поток — здесь)
-      const h = s.streamImpact;
-      if (h && h.repair === 'replace') { help.push(L(`После удара потока запасная панель ${h.panel} установлена ремонтниками с допуском; крепёж — ${SHIELD_WORK.replace}% материалов.`, `After the stream strike qualified repair hands fitted a spare panel ${h.panel}; fasteners took ${SHIELD_WORK.replace}% of materials.`)); used.add('shield'); }
-      else if (h && h.level != null && !s.lostShip && eq.shield === 'sectors' && !s.repairQual) miss.push(L('После удара потока запасную панель не поставили: нет допуска к работе под тягой.', 'After the stream strike no spare panel was fitted: no qualification for work under thrust.'));
-    }
-    else if (had('a2.sector')) { help.push(L('Запасной сектор установлен ремонтниками с допуском: щит снова держит полный расчёт; крепёж — 3% материалов.', 'Qualified repair hands fitted the spare sector: the shield holds its full rating again; fasteners took 3% of materials.')); used.add('shield'); }
-    else if ((s.shieldBreach || had('a2.breach')) && eq.shield === 'sectors' && !s.repairQual) miss.push(L('Полный сектор не установлен: нет допуска к работе под тягой. Заплата не восстанавливает полный расчёт щита.', 'No full sector was fitted: no qualification for work under thrust. The patch does not restore the shield\'s full rating.'));
+    const hs = s.streamImpact;                           // замена панели после удара потока — решение у пробоя
+    if (hs && hs.repair === 'replace') { help.push(L(`После удара потока запасная панель ${hs.panel} установлена ремонтниками с допуском; крепёж — ${SHIELD_WORK.replace}% материалов.`, `After the stream strike qualified repair hands fitted a spare panel ${hs.panel}; fasteners took ${SHIELD_WORK.replace}% of materials.`)); used.add('shield'); }
+    else if (hs && hs.level != null && !s.lostShip && eq.shield === 'sectors' && !s.repairQual) miss.push(L('После удара потока запасную панель не поставили: нет допуска к работе под тягой.', 'After the stream strike no spare panel was fitted: no qualification for work under thrust.'));
     if (s.scout > 0) {
       if (hasScouts(s)) { help.push(L(`Выпущен готовый разведчик: сохранены 10% материалов${rq}.`, `A ready scout was launched: 10% of materials saved${rq}.`)); used.add('probes'); }
       else miss.push(L(`Готового разведчика не было: сборка потребовала 10% материалов${rq}.`, `No ready scout: assembly used 10% of materials${rq}.`));
@@ -3004,7 +2999,7 @@ All this time, "nominal" described the equipment's operating mode.`;
     // производство: глагол — по варианту (станки — мн. ч., печать — ж. р.)
     const prodName = { tools: L('Станки', 'Machine tools'), printQC: L('Металлопечать', 'Metal printing') }[eq.prod], pv = (pl, f) => eq.prod === 'printQC' ? f : pl;
     if (s.blueprint === 'built' && prodName) { help.push(L(`${prodName} ${pv('позволили', 'позволила')} восстановить резерв мощности: капельный радиатор — ${BLUEPRINT[eq.prod]}% материалов.`, `${prodName} restored the high-power reserve: the droplet radiator took ${BLUEPRINT[eq.prod]}% of materials.`)); used.add('prod'); }
-    if (supplyS(s) && eqRules(s) && prodName && (s.busMethod === 'split' || s.busFound)) { help.push(L(`${prodName} ${pv('сократили', 'сократила')} расход на разделение платы: ${busSplit(s)}% вместо ${STORM.split}.`, `${prodName} cut the board-separation cost: ${busSplit(s)}% instead of ${STORM.split}.`)); used.add('prod'); }
+    if (supplyS(s) && prodName && (s.busMethod === 'split' || s.busFound)) { help.push(L(`${prodName} ${pv('сократили', 'сократила')} расход на разделение платы: ${busSplit(s)}% вместо ${STORM.split}.`, `${prodName} cut the board-separation cost: ${busSplit(s)}% instead of ${STORM.split}.`)); used.add('prod'); }
     if (s.mission === 'supply' && s.deliver === 'both' && prodName) { help.push(L(`${prodName} ${pv('сохранили', 'сохранила')} 20% материалов: второй монтажный комплект — 10% вместо 30.`, `${prodName} saved 20% of materials: the second installation kit cost 10% instead of 30.`)); used.add('prod'); }
     if (eq.caps === 'capsSafe') { const T = Math.min(s.year, s.arrive), a = M.losses(T, s.watch, true, crewOf(s)).total, b = M.losses(T, s.watch, false, crewOf(s)).total;
       help.push(L(`Расчёт: надёжные капсулы — фоновые потери за путь ${a} вместо ${b}; это оценка модели, не список спасённых.`, `Estimate: reliable capsules — background losses on the road ${a} instead of ${b}; a model estimate, not a list of people saved.`)); used.add('caps'); }
@@ -3015,7 +3010,7 @@ All this time, "nominal" described the equipment's operating mode.`;
     if (pp.length === 4 && s.eq) {
       const sp = Object.assign({}, s, { target: s.taskHistory && s.taskHistory.length ? s.taskHistory[0].star : reqOf(s) ? reqOf(s).star : s.target }), d0 = { b: Number(pp[0]), r: Number(pp[1]), kits: pp[2] ? pp[2].split('+') : [], eq: s.eq };
       const cur = passportNumbers(sp, d0), base = passportNumbers(sp, Object.assign({}, d0, { eq: M.EQ_BASE })),
-        rec = passportNumbers(sp, Object.assign({}, d0, { eq: M.eqDefault(s.mission, s.riskVersion) })), mo = x => `${sgn(x * 12, lang, 1)} ${ru ? 'мес.' : 'months'}`;
+        rec = passportNumbers(sp, Object.assign({}, d0, { eq: M.eqDefault(s.mission) })), mo = x => `${sgn(x * 12, lang, 1)} ${ru ? 'мес.' : 'months'}`;
       const same = Math.abs(cur.used - rec.used) < 1e-9;
       cost = L(`Оснащение сверх штатного: ${f1(cur.used - base.used, 'ru')} тыс. т, расчётная задержка от массы ${mo(cur.T - base.T)}; ${same ? 'по массе совпадает с комплектом Совета.' : `от комплекта Совета: ${sgn(cur.used - rec.used, 'ru', 2)} тыс. т, ${mo(cur.T - rec.T)}`}`,
         `Equipment above standard: ${f1(cur.used - base.used, 'en')} kt, estimated mass-related delay ${mo(cur.T - base.T)}; ${same ? "by mass it matches the Council's loadout." : `relative to the Council's loadout: ${sgn(cur.used - rec.used, 'en', 2)} kt, ${mo(cur.T - rec.T)}.`}`);
@@ -3034,7 +3029,7 @@ All this time, "nominal" described the equipment's operating mode.`;
   const setWorld = w => { WORLD = Object.assign({ passTug: true }, w || {}); };
   // cargo: год сигнала — целый (сутки работ — в журнале)
   // год сигнала — целый (у склада — после консервации зала: прибытие округляется вверх)
-  const SOS_AT = { cargo: SOS_AT_cargo, drift: s => loopV1(s) ? loopAt(s) : Y(s, 0.75) + 2, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
+  const SOS_AT = { cargo: SOS_AT_cargo, drift: loopAt, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
   function incidentOf(s, cause) {
     const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, s.arrive)).total + s.dead + (s.rescueCrewDead || 0));
     return { id: `${s.target}|${sent}|${cause}`, cause, target: s.target, beta: s.beta, arrive: s.arrive, tMag: s.tMag, capRate: capsSafe(s) ? 1e-4 : 2e-4, sent, mission: s.mission,
@@ -3059,8 +3054,8 @@ All this time, "nominal" described the equipment's operating mode.`;
       best === c
         ? (ru ? `Сигнал первым услышит ${place(c, 'ru')} — в год ${yr(c.hear)} — и сможет помочь к году ${yr(c.complete)}.` : `${cap(place(c, 'en'))} will hear the signal first — in year ${yr(c.hear)} — and can help by year ${yr(c.complete)}.`)
         : (ru ? `Сигнал первым услышит ${place(c, 'ru')}, в год ${yr(c.hear)}; быстрее всех поможет ${place(best, 'ru')} — к году ${yr(best.complete)}.` : `${cap(place(c, 'en'))} will hear first, in year ${yr(c.hear)}; ${place(best, 'en')} can help soonest — by year ${yr(best.complete)}.`),
-      ru ? `Капсулы с вахтой из двенадцати продержатся до года ${inc.deadline}.` + (m >= 0 ? ` Запас — ${yrs(m)}.` : ' Никто не успевает.')
-        : `Capsules with a watch of twelve will hold until year ${inc.deadline}.` + (m >= 0 ? ` Margin: ${yrsEn(m)}.` : ' No one makes it in time.'),
+      ru ? `Капсулы с вахтой из двенадцати продержатся до года ${Math.round(inc.deadline)}.` + (m >= 0 ? ` Запас — ${yrs(m)}.` : ' Никто не успевает.')
+        : `Capsules with a watch of twelve will hold until year ${Math.round(inc.deadline)}.` + (m >= 0 ? ` Margin: ${yrsEn(m)}.` : ' No one makes it in time.'),
       ru ? 'Экспедиция на этом кончается: дальше решают те, кто услышит.' : 'The expedition ends here: those who hear will decide the rest.'
     ];
   }
@@ -3082,7 +3077,7 @@ All this time, "nominal" described the equipment's operating mode.`;
     home: { ru: s => `Корабль на орбите у ${nmG(s)}.`, en: s => `The ship is in orbit at ${nm(s, 'en')}.` },
     rescueDock: { ru: s => `Корабль на орбите у ${nmG(s)}, рядом со складом Оттепели; живые Оттепели остаются в капсулах склада, их последняя диагностика — в сигнале.`, en: s => `The ship is in orbit at ${nm(s, 'en')}, beside Thaw's store; Thaw's living remain in the store's capsules, their last diagnostics in the signal.` }
   };
-  // «Звать помощь?» после отказа контура — одна форма для версии 0 и версии 1
+  // «Звать помощь?» после отказа контура (a2.loopEnd1)
   const sosDrift = (id, when) => ({
     id, scene: 'ring', kind: 'decision', when,
     title: { ru: 'Звать помощь?', en: 'Call for help?' },
@@ -3108,9 +3103,9 @@ They can go on living on the patches. Or they can put the hall into conservation
       }
     }, sosOption('drift')]
   });
-  // «Летучий голландец»: некому обслуживать зал. Версия 0 списывает отказ здесь; версия 1 — уже в a2.loopEnd1
-  const dutchmanEnd = (id, when, year, effect) => ({
-    id, scene: 'drift', kind: 'end', year, when, effect,
+  // «Летучий голландец»: некому обслуживать зал (отказ списан в a2.loopEnd1)
+  const dutchmanEnd = (id, when, year) => ({
+    id, scene: 'drift', kind: 'end', year, when,
     title: { ru: '«Летучий голландец»', en: 'The Flying Dutchman' },
     text: {
       ru: s => `Контур воды отказал в обоих кольцах. Группа Б и одиннадцать человек вахты погибли; оставшихся ${ppl(s.watch)} не хватило, чтобы обслуживать зал анабиоза. Капсулы отказывают по одной.
@@ -3133,13 +3128,13 @@ The expedition is over. For the next one — to another target — it will be a 
       ru: s => { const inc = s.incident, R = M.rescuers(inc, WORLD);
         return `Бодрствуют двенадцать; вахта сменяется из спящих по графику. В капсулах — ${ppl(inc.sleepers)}. ${SOS_WHERE[cause].ru(s)}
 
-Сигнал бедствия ушёл в год ${inc.sent}: журнал, координаты, число живых, неисправности и дата последнего гарантированного пробуждения — год ${inc.deadline}. Помочь могут: ${R.list.map(r => `${place(r, 'ru')} — сигнал дойдёт в год ${yr(r.hear)}`).join('; ')}.
+Сигнал бедствия ушёл в год ${Math.round(inc.sent)}: журнал, координаты, число живых, неисправности и дата последнего гарантированного пробуждения — год ${Math.round(inc.deadline)}. Помочь могут: ${R.list.map(r => `${place(r, 'ru')} — сигнал дойдёт в год ${yr(r.hear)}`).join('; ')}.
 
 Экспедиция прекращена. Что будет со спящими, решит тот, кто услышит первым: ${place(R.council, 'ru')}.`; },
       en: s => { const inc = s.incident, R = M.rescuers(inc, WORLD);
         return `Twelve are awake; the watch is relieved from among the sleepers on a schedule. ${inc.sleepers} are in the capsules. ${SOS_WHERE[cause].en(s)}
 
-The distress signal went out in year ${inc.sent}: the log, the coordinates, the number of living, the faults and the date of the last guaranteed waking — year ${inc.deadline}. Those who can help: ${R.list.map(r => `${place(r, 'en')} — the signal arrives in year ${yr(r.hear)}`).join('; ')}.
+The distress signal went out in year ${Math.round(inc.sent)}: the log, the coordinates, the number of living, the faults and the date of the last guaranteed waking — year ${Math.round(inc.deadline)}. Those who can help: ${R.list.map(r => `${place(r, 'en')} — the signal arrives in year ${yr(r.hear)}`).join('; ')}.
 
 The expedition is over. What happens to the sleepers will be decided by whoever hears first: ${place(R.council, 'en')}.`; }
     }
@@ -3147,9 +3142,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
 
   // ---- снабженец: откуда берутся системы для форпоста. Из груза заявки — бесплатно; иначе из своих материалов:
   // передатчик −35%, капсульный блок −40% (без груза заявки обе системы — три четверти запаса).
-  // Передатчик заявки мог уйти на холодильник капсульного блока (d.supplyRepair).
   const BUILD = { relay: 35, caps: 40 };                                 // из своих материалов: передатчик, капсульный блок
-  const relayKit = s => s.kits.includes('request') && s.cooler !== 'relayParts';
+  const relayKit = s => s.kits.includes('request');
   const capsKit = s => s.kits.includes('request');
   const supplyNeed = s => (relayKit(s) ? 0 : BUILD.relay) + (capsKit(s) ? 0 : BUILD.caps);   // материалов на обе системы
   // второй монтажный комплект: 30% материалов, со станками — 10%; нужен запас и на сами системы
@@ -3157,9 +3151,8 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   const supplyBothCost = s => { const c = ['tools', 'printQC'].includes(eqOf(s).prod) ? 10 : 30; return s.gridBlocks >= 2 && s.materials >= supplyNeed(s) + c ? c : null; };
   // переселение: койки и регенерация воздуха для девяноста (−15%), отдельная сеть для их колец
   const SHELTER = 15;
-  const shelterOK = s => s.gridBlocks >= 2 && s.materials >= SHELTER;
   // прогноз: что будет поставлено при выбранном порядке (для «Что известно» — те же правила, что у эффекта)
-  const supplyForecast = (s, first, extra = 0) => { const t = { kits: s.kits, cooler: s.cooler, materials: s.materials - extra, relayOK: false, capsOK: false }; supplyBuild(t, first); return t; };
+  const supplyForecast = (s, first, extra = 0) => { const t = { kits: s.kits, materials: s.materials - extra, relayOK: false, capsOK: false }; supplyBuild(t, first); return t; };
   // поставить системы: из груза заявки или из своих материалов, пока их хватает (сначала связь, потом капсулы — порядок работ в тексте)
   // порядок — выбранный: при нехватке материалов достаётся то, что ставят первым
   function supplyBuild(st, first) {
@@ -3171,8 +3164,6 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     if (r && c) return ru ? 'Передатчик и капсульный блок — из груза заявки.' : 'The transmitter and the capsule unit come from the request cargo.';
     const need = supplyNeed(s), parts = [!r && (ru ? 'передатчик' : 'the transmitter'), !c && (ru ? 'капсульный блок' : 'the capsule unit')].filter(Boolean).join(ru ? ' и ' : ' and ');
     return ru ? `${cap(parts)} придётся собирать из своих материалов: −${need}%${s.materials < need ? ` — а их ${Math.round(s.materials)}%, на всё не хватит` : ''}.` : `${cap(parts)} must be built from our own materials: −${need}%${s.materials < need ? ` — and there are ${Math.round(s.materials)}%, not enough for everything` : ''}.`; };
-  // вариант «сначала …» — только если эту систему есть из чего поставить
-  const supplyOptions = (s, opts) => opts.filter(o => (o.id !== 'relay' || relayKit(s) || s.materials >= BUILD.relay) && (o.id !== 'capsules' || capsKit(s) || s.materials >= BUILD.caps) && (o.id !== 'shelter' || shelterOK(s)));
 
   // ---- протокол совета на следующие три года (a4.plan): решённая задача, средства, ограничения — по фактам.
   // План записывается отдельно от результата: «решили восстановить связь» не значит «связь восстановлена».
@@ -3258,13 +3249,14 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   function expeditionEvent(s, exp) {
     const d = Math.round(M.star(s.target).d), end = s.lostShip ? 'lost' : s.dutchman ? 'dutchman' : s.outcome || outcomeOf(s);
     // когда Земля узнает: отчёт первого утра дома; последняя передача погибшего; о «голландце» и аварии — не по отчёту
-    const reportAt = end === 'lost' ? s.year + d : ['dutchman', 'sos'].includes(end) ? null : Y4(s) + d;
+    const reportAt = end === 'lost' ? Math.round(s.year + d) : ['dutchman', 'sos'].includes(end) ? null : Y4(s) + d;
     const ok = !['lost', 'dutchman', 'sos'].includes(end);
     // задание заявки: выполнено ли и когда отчёт о нём дойдёт до Земли (DOC «Ревью Codex — заявки из мира», шаг 5)
     // выполнение — одно правило с эпилогом (у снабжения и спасения — по их итогу, отчёт — с отчётом экспедиции)
     const task = s.task ? Object.assign({}, s.task, { done: ok && missionComplete(s),
       reportEarthAt: s.task.reportAt != null ? Math.round(s.task.reportAt + d) : ok && missionComplete(s) ? reportAt : null }) : null;
     return { id: `${exp}|done`, expedition: { id: exp, number: 41, mission: s.mission, target: s.target, outcome: end, arrive: s.arrive, endedAt: s.year, reportAt,
+      lostBy: end === 'lost' ? (s.terminalReason === 'heat' ? 'heat' : 'stream') : null,   // гибель: отказ охлаждения или поток Тёмной звезды
       request: s.requestId || null, task,
       home: ok && end !== 'supplyFailed' ? homeKind(s) : null, alive: ok ? aliveOf(s) : null,
       incidents: JSON.parse(JSON.stringify(s.incidents || [])),
@@ -3306,17 +3298,21 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
     const ru = lang === 'ru', out = [];
     for (const x of (world && world.expeditions) || []) {
       const where = M.nameOf(x.target, lang), at = ru ? nmG({ target: x.target }) : where, f = x.facts;
+      // записи прежних сборок: год отчёта без округления, гибель без причины (износ — по протоколу происшествий)
+      const lostBy = x.lostBy || ((x.incidents || []).some(z => z.kind === 'wearLost') ? 'heat' : 'stream');
+      const reportAt = x.reportAt == null ? null : Math.round(x.reportAt);
       const res = {
-        lost: ru ? 'корабль погиб в потоке Тёмной звезды; следующим останутся измеренный поток, журнал и координаты остова' : "the ship was lost in the Dark Star's stream; the measured stream, the log and the wreck's coordinates remain for those who follow",
+        lost: lostBy === 'heat' ? (ru ? 'корабль погиб: все контуры охлаждения отказали, ядро осталось без отвода тепла; следующим останутся журнал отказов и координаты остова' : 'the ship was lost: every cooling loop failed and the core was left without heat rejection; the failure log and the wreck coordinates remain for those who follow')
+          : ru ? 'корабль погиб в потоке Тёмной звезды; следующим останутся измеренный поток, журнал и координаты остова' : "the ship was lost in the Dark Star's stream; the measured stream, the log and the wreck's coordinates remain for those who follow",
         dutchman: ru ? `вахты не хватило на зал анабиоза; автоматика ведёт пустой корабль к ${nmD({ target: x.target })}, орбита — около года ${x.arrive}. Для следующих это будет находка` : `the watch was too few for the anabiosis hall; the automation flies the empty ship to ${where}, orbit around year ${x.arrive}. For those who follow it will be a find`,
         sos: ru ? 'авария, люди в анабиозе, сигнал бедствия ушёл' : 'an accident; the people are in anabiosis, the distress signal has gone out'
       }[x.outcome] || (OUTCOME[x.outcome] || { ru: x.outcome, en: x.outcome })[lang];
       const mis = MISSION_NAME[x.mission] ? MISSION_NAME[x.mission][lang] : '';
       out.push((ru ? `Экспедиция №${x.number} — ${mis} · ${where}: ${res}.` : `Expedition No. ${x.number} — ${mis} · ${where}: ${res}.`)
-        + (x.reportAt == null ? '' : x.reportAt <= x.endedAt ? (ru ? ` Отчёт получен на Земле около года ${x.reportAt}.` : ` The report was received on Earth around year ${x.reportAt}.`)
-          : x.outcome === 'lost' ? (ru ? ` Последняя передача дойдёт до Земли около года ${x.reportAt}.` : ` The last transmission will reach Earth around year ${x.reportAt}.`)
-          : (ru ? ` Отчёт дойдёт до Земли около года ${x.reportAt}.` : ` The report will reach Earth around year ${x.reportAt}.`)));
-      if (x.task && TASK_NAME[x.task.work]) { const n = taskName(x.task, lang), at = x.task.reportEarthAt;
+        + (reportAt == null ? '' : reportAt <= x.endedAt ? (ru ? ` Отчёт получен на Земле около года ${reportAt}.` : ` The report was received on Earth around year ${reportAt}.`)
+          : x.outcome === 'lost' ? (ru ? ` Последняя передача дойдёт до Земли около года ${reportAt}.` : ` The last transmission will reach Earth around year ${reportAt}.`)
+          : (ru ? ` Отчёт дойдёт до Земли около года ${reportAt}.` : ` The report will reach Earth around year ${reportAt}.`)));
+      if (x.task && TASK_NAME[x.task.work]) { const n = taskName(x.task, lang), at = x.task.reportEarthAt == null ? null : Math.round(x.task.reportEarthAt);
         out.push(x.task.done ? (ru ? `Задание — ${n}: выполнено${at != null ? `; отчёт дойдёт до Земли около года ${at}` : ''}.` : `The task — ${n}: done${at != null ? `; the report will reach Earth around year ${at}` : ''}.`)
           : (ru ? `Задание — ${n}: не выполнено.` : `The task — ${n}: not done.`)); }
       if (f && x.mission === 'supply' && (f.capsLost || f.failed)) out.push(ru ? `Ксилона Ир: ${f.failed ? 'снабжение сорвано — постоянного обеспечения нет' : 'капсульная секция потеряна при повторном включении'}.` : `Xylona Ir: ${f.failed ? 'the supply mission failed — no permanent support' : 'the capsule section was lost on restart'}.`);
@@ -3335,7 +3331,10 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
           : x.home === 'colony' ? (ru ? `Основатели колонии у ${at} — ${n}.` : `Founders of the colony at ${where}: ${n}.`)
           : x.home === 'outpost' ? (ru ? `С форпостом остались — ${n}.` : `Staying with the outpost: ${n}.`)
           : (ru ? `У ${at} живут — ${n}.` : `Living at ${where}: ${n}.`)); }
-      if (x.hull === 'wreck') out.push(ru ? 'Остов уходит от ε Индейца по прежней траектории, кувыркаясь; его траектория передана — следующие смогут его найти.' : 'The wreck tumbles away from ε Indi along its former trajectory; its trajectory has been transmitted — those who follow can find it.');
+      if (x.hull === 'wreck') out.push(lostBy === 'heat'   // отказ охлаждения: остов там, где корабль был, — в пути или у цели
+        ? (x.endedAt >= x.arrive ? (ru ? `Остов остаётся на орбите у ${at}; журнал отказов передан.` : `The wreck stays in orbit at ${where}; the failure log has been transmitted.`)
+          : (ru ? `Остов идёт по прежнему курсу к ${nmD({ target: x.target })}; его траектория передана — следующие смогут его найти.` : `The wreck coasts on along its course to ${where}; its trajectory has been transmitted — those who follow can find it.`))
+        : (ru ? 'Остов уходит от ε Индейца по прежней траектории, кувыркаясь; его траектория передана — следующие смогут его найти.' : 'The wreck tumbles away from ε Indi along its former trajectory; its trajectory has been transmitted — those who follow can find it.'));
       if (x.hull === 'orbitDead') out.push(ru ? `Корабль на орбите у ${at} — с экипажем на борту, без живых. Маяк передаёт, пока хватает питания.` : `The ship is in orbit at ${where} — with its crew aboard, none alive. The beacon transmits while power lasts.`);
       if (x.home) out.push(ru ? `У ${at}: ${HOME_KIND[x.home].ru}; экипаж — ${ppl(x.alive)}.` : `At ${where}: ${HOME_KIND[x.home].en}; crew: ${x.alive} people.`);
     }
@@ -3350,7 +3349,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   }
 
   // ---- цена ошибки (DOC «Ревью Codex — цена ошибки, спецификация v1»): скрытые состояния задаются сидом экспедиции
-  // заранее и не перебрасываются. Версия 0 — старые сохранения: скрытого нет, прежние правила до конца экспедиции.
+  // заранее и не перебрасываются. Без сида скрытого нет: hidden → null.
   // hidden(s, key) ∈ [0, 1): FNV-1a по UTF-8 с финализацией; ключ постоянный (без токенов, вариантов, языка, preview).
   const UTF8 = new TextEncoder();
   function hashU32(str) {
@@ -3364,35 +3363,34 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   // публичное состояние — то, что знает экипаж: без сида скрытое недоступно (hidden → null). По нему строятся
   // тексты карточки, «Что известно», рекомендация Совета и «После»; исход — только эффектом на полном состоянии.
   const publicOf = s => { const p = JSON.parse(JSON.stringify(s)); p.riskSeed = null; if (p.wear) p.wear = W.publicOf(p.wear); return EV.strip(p); };
-  const hidden = (s, key) => s.riskVersion >= 1 && s.riskSeed ? hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296 : null;
+  const hidden = (s, key) => s.riskSeed ? hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296 : null;
 
   function initialState(ctx) {
     const st = {
-      riskVersion: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? ctx.riskVersion : 0,   // правила цены ошибки
-      riskSeed: ctx && ctx.riskVersion >= 1 && ctx.riskSeed ? String(ctx.riskSeed) : null,
+      riskVersion: RISK,                                                // правила одни (старые версии удалены; номер — в ключе скрытых бросков)
+      riskSeed: ctx && ctx.riskSeed ? String(ctx.riskSeed) : null,
       evOff: !!(ctx && ctx.events === false),
       worldSeed: ctx && typeof ctx.worldSeed === 'string' && ctx.worldSeed ? ctx.worldSeed : null,   // сид мира: события Кольца
       agenda: ctx && Array.isArray(ctx.agenda) ? ctx.agenda.slice() : null,   // повестка Совета на старт экспедиции (requests.js)   // события v1 выключены (проверки и калибровка: те же сиды без событий)
       year: 0,
       reserve: 100,        // резерв манёвров, % паспортного
-      shieldWear: 0,       // износ фронтального щита сверх нормы, лет из ~150 расчётных
       agroDelay: 0,        // задержка резервного агромодуля, лет
       koraYear: false,     // Кора осталась на вахте ещё на год
       repairQual: false,   // ремонтники допущены к монтажу под тягой
-      measured: false,     // плотность края облака измерена (версия 1: проверка нашла полосу крупной пыли)
-      cloudCheck: null,    // версия 1: measured | skipped — проверка края затмением
-      cloudFound: false,   // версия 1: проверка нашла полосу крупной пыли
-      cloudDead: 0,        // версия 1: погибли у края облака
-      shieldBreach: false, // версия 1: сектор щита пробит (установлено)
-      loopCheck: null,     // версия 1: ordinary | deep | skipped — проверка общей магистрали
-      loopFound: false,    // версия 1: проверка нашла дефект общей магистрали
+      measured: false,     // плотность края облака измерена: проверка нашла полосу крупной пыли
+      cloudCheck: null,    // measured | skipped — проверка края затмением
+      cloudFound: false,   // проверка нашла полосу крупной пыли
+      cloudDead: 0,        // погибли у края облака
+      shieldBreach: false, // сектор щита пробит (установлено)
+      loopCheck: null,     // ordinary | deep | skipped — проверка общей магистрали
+      loopFound: false,    // проверка нашла дефект общей магистрали
       loopDead: 0,         // погибли при отказе контура воды
-      streamCheck: null,   // версия 1: probe | kora | student — чем проверяли поток
-      streamFound: false,  // версия 1: проверка увидела опасную полосу на курсе
-      streamDays: 0,       // версия 1: дни окна, ушедшие на проверку
-      streamRoute: null,   // версия 1: evade | pass
+      streamCheck: null,   // probe | kora | student — чем проверяли поток
+      streamFound: false,  // проверка увидела опасную полосу на курсе
+      streamDays: 0,       // дни окна, ушедшие на проверку
+      streamRoute: null,   // evade | pass
       streamDead: 0,       // погибли в потоке
-      streamCause: null,   // версия 1: shield | power — почему удар тяжёлый
+      streamCause: null,   // shield | power — почему удар тяжёлый
       cargoMethod: null,   // снабженец v2: direct | check | isolate — как подключали холодильник в дрейфе
       cargoFound: false,   // опрессовка нашла трещину
       cargoDays: 0,        // дни работ в дрейфе
@@ -3476,7 +3474,6 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       infirmaryUntil: null, // срок лазарета (три года от приёма)
       deliver: null,       // снабженец: relay | capsules | both
       sos: null,           // спать и звать помощь: drift | stream | home
-      cooler: null,        // снабженец: холодильник капсульного блока — own | relayParts | tools
       approach: null,      // снабженец: монтаж под вспышками — protect | wait | block
       gridBlocks: 2,       // независимых блоков корабельной сети
       relayOK: false, capsOK: false, shelter: false,   // снабженец: что работает у форпоста
@@ -3496,7 +3493,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
       taskHistory: [],     // снятые с программы задания
       choices: {}
     };
-    if (v5(st)) startBooks(st);                                         // журнал запасов и людей, ревизии маршрута (v5)
+    startBooks(st);                                                     // журнал запасов и людей, ревизии маршрута
     return st;
   }
 
@@ -4198,18 +4195,18 @@ The trays have names on them.`
       when: s => M.episode(s) === 'cloud',
       title: { ru: 'Научная модель · навигационный прогноз', en: 'Science model · navigation forecast' },
       text: {
-        ru: s => `Скорость ${fb(s.beta / 2, 'ru')}. На курсе — газово-пылевое облако класса D2, край пересекается через ${s.riskVersion >= 5 ? edgeMonths(s, 'ru') : '7 месяцев'}.
+        ru: s => `Скорость ${fb(s.beta / 2, 'ru')}. На курсе — газово-пылевое облако класса D2, край пересекается через ${edgeMonths(s, 'ru')}.
 Обнаружено на подлёте: линии поглощения в спектрах звёзд за ним, счётчики щита выше фона. С Земли не наблюдалось — слишком мало и темно.
 Проход без коррекции: безопасен. Уверенность 94% — при условии, что модель верна и набор гипотез полон.
 Модель проверена для облаков D1–D3 плотностью до 40 частиц/см³.
-Ресурс фронтального щита: ~150 лет дрейфа.` + (v1(s) ? `
-Не установлено: наибольший размер частиц у края. За фронтальным щитом в этом секторе — жилые отсеки кольца: крупная частица, пробив щит, убьёт людей.` : ''),
-        en: s => `Velocity ${fb(s.beta / 2, 'en')}. A class D2 gas-and-dust cloud on course; edge crossing in ${s.riskVersion >= 5 ? edgeMonths(s, 'en') : '7 months'}.
+Ресурс фронтального щита: ~150 лет дрейфа.
+Не установлено: наибольший размер частиц у края. За фронтальным щитом в этом секторе — жилые отсеки кольца: крупная частица, пробив щит, убьёт людей.`,
+        en: s => `Velocity ${fb(s.beta / 2, 'en')}. A class D2 gas-and-dust cloud on course; edge crossing in ${edgeMonths(s, 'en')}.
 Detected on approach: absorption lines in the spectra of stars behind it, shield counters above background. Not observed from Earth — too small and too dark.
 Passage without correction: safe. Confidence 94% — given the model is correct and the hypothesis set complete.
 Model validated for D1–D3 clouds up to 40 particles/cm³.
-Forward shield service life: ~150 years of drift.` + (v1(s) ? `
-Not established: the largest particle size at the edge. Behind the forward shield in this sector are the ring's living quarters: a coarse particle that breaks through will kill people.` : '')
+Forward shield service life: ~150 years of drift.
+Not established: the largest particle size at the edge. Behind the forward shield in this sector are the ring's living quarters: a coarse particle that breaks through will kill people.`
       }
     },
     {
@@ -4234,39 +4231,8 @@ Teya Marr, standing by the door, understands before anyone else what that means 
       }
     },
     {
-      id: 'a1.test.kora', scene: 'cloud', overlay: 'trajectory', kind: 'transcript', year: 4,
-      when: s => M.episode(s) === 'cloud' && s.koraYear && !v1(s),
-      effect: s => { s.measured = true; },
-      title: { ru: 'Проверка по затмению', en: 'Occultation check' },
-      text: {
-        ru: `— Есть способ проверить, — говорит Кора. — Через три недели край облака пройдёт перед фоновой звездой. Крупная пыль гасит её свет сильнее, чем мелкая.
-
-Наблюдение ведёт Ная Сорн. Кора стоит за её спиной и ни разу не трогает приборы.
-
-Через три недели звезда гаснет в 1,4 раза сильнее прогноза модели. Пыль крупная.`,
-        en: `"There's a way to check," says Kora. "In three weeks the edge of the cloud passes in front of a background star. Coarse dust dims its light more than fine."
-
-Naya Sorn runs the observation. Kora stands behind her and never once touches the instruments.
-
-Three weeks later the star dims 1.4 times more than the model predicts. The dust is coarse.`
-      }
-    },
-    {
-      id: 'a1.test.none', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: 4,
-      when: s => M.episode(s) === 'cloud' && !s.koraYear && !v1(s),
-      title: { ru: 'Журнал вахты', en: 'Watch log' },
-      text: {
-        ru: `Запрос: проверка размера частиц у края облака.
-Метод: затмение фоновой звезды — требует интерпретатора спектров.
-Интерпретатор на вахте: нет. Ландис К. — в анабиозе, группа 7.`,
-        en: `Request: particle-size check at the cloud edge.
-Method: background-star occultation — requires a spectral interpreter.
-Interpreter on watch: none. Landis K. — in anabiosis, group 7.`
-      }
-    },
-    {
       id: 'a1.test.v1', scene: 'cloud', overlay: 'trajectory', kind: 'transcript', year: 4,
-      when: s => M.episode(s) === 'cloud' && v1(s),
+      when: s => M.episode(s) === 'cloud',
       title: { ru: 'Проверка по затмению', en: 'Occultation check' },
       text: {
         ru: s => `— Проверить можно, — говорит ${s.koraYear ? 'Кора' : 'Ная Сорн'}. — Край облака пройдёт перед фоновой звездой. Крупная пыль гасит её свет сильнее, чем мелкая.
@@ -4283,10 +4249,10 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
     },
     {
       id: 'd.cloudCheck', scene: 'cloud', overlay: 'trajectory', kind: 'decision', year: 4,
-      when: s => M.episode(s) === 'cloud' && v1(s),
+      when: s => M.episode(s) === 'cloud',
       title: { ru: 'Проверить край облака?', en: "Check the cloud's edge?" },
-      context: { ru: s => s.riskVersion >= 5 ? `До края — ${edgeMonths(s, 'ru')}: время на проверку есть.` : 'До края — семь месяцев: время на проверку есть.',
-        en: s => s.riskVersion >= 5 ? `${edgeMonths(s, 'en')} to the edge: there is time for a check.` : 'Seven months to the edge: there is time for a check.' },
+      context: { ru: s => `До края — ${edgeMonths(s, 'ru')}: время на проверку есть.`,
+        en: s => `${edgeMonths(s, 'en')} to the edge: there is time for a check.` },
       rec: s => ({ id: 'measure', why: { ru: 'проверка дешевле ошибки', en: 'a check costs less than a mistake' } }),
       options: s => [{
         id: 'measure',
@@ -4321,7 +4287,7 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
         ru: 'Через семь месяцев корабль будет у края. Решение не отменить.',
         en: 'In seven months the ship will be at the edge. The decision cannot be undone.'
       },
-      rec: s => !v1(s) ? null : s.cloudFound ? { id: 'manoeuvre', why: { ru: 'проверка нашла полосу крупной пыли', en: 'the check found a band of coarse dust' } }
+      rec: s => s.cloudFound ? { id: 'manoeuvre', why: { ru: 'проверка нашла полосу крупной пыли', en: 'the check found a band of coarse dust' } }
         : { id: 'trust', why: s.cloudCheck === 'measured' ? { ru: 'проверка не нашла крупной пыли', en: 'the check found no coarse dust' } : { ru: 'модель даёт 94%', en: 'the model gives 94%' },
           assume: { ru: 'полосы крупной пыли в крае нет', en: 'there is no band of coarse dust in the edge' } },
       options: [
@@ -4348,28 +4314,21 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
           id: 'trust',
           label: { ru: 'Идти без коррекции', en: 'Go straight through' },
           known: {
-            ru: s => v1(s) ? ['Резерв манёвров сохраняется полностью.',
+            ru: s => ['Резерв манёвров сохраняется полностью.',
               s.cloudFound ? 'В крае — полоса крупной пыли: обычный щит её не держит; за сектором — жилые отсеки.'
                 : s.cloudCheck === 'measured' ? 'Признак крупной пыли не обнаружен; метод пропускает примерно одну полосу из десяти.'
                 : 'Крупна ли пыль у края — не измерено. Если там полоса крупных частиц, обычный щит пробьёт; за сектором — жилые отсеки.',
               eqOf(s).shield === 'dust40' ? 'Щит удвоенный: на такую полосу рассчитан — сквозного пробоя не ожидается, наружный слой пострадает.'
                 : eqOf(s).shield === 'sectors' ? 'Сектора сменные: пробитый заменят, если есть ремонтники с допуском; погибших это не вернёт.'
-                : 'Окна без тяги остаются на месте: монтаж агромодуля — по графику.'] : ['Резерв манёвров сохраняется полностью.',
-              s.measured ? 'Пыль крупная: щит потеряет около полутора лет ресурса из ста пятидесяти.'
-                         : 'Если пыль крупная, щит потеряет около полутора лет ресурса из ста пятидесяти.',
-              eqOf(s).shield === 'dust40' ? 'Щит удвоенный: полтора года износа — в пределах запаса, пробоя не будет.' : eqOf(s).shield === 'sectors' ? 'Сектора сменные: пробитый заменят, если есть ремонтники с допуском.' : 'Окна без тяги не сдвигаются: агромодуль — по графику.'],
-            en: s => v1(s) ? ['The manoeuvre reserve stays whole.',
+                : 'Окна без тяги остаются на месте: монтаж агромодуля — по графику.'],
+            en: s => ['The manoeuvre reserve stays whole.',
               s.cloudFound ? 'There is a band of coarse dust in the edge: an ordinary shield will not hold it; the living quarters are behind the sector.'
                 : s.cloudCheck === 'measured' ? 'No sign of coarse dust detected; the method misses about one band in ten.'
                 : 'Whether the dust at the edge is coarse has not been measured. If there is a band of coarse particles, an ordinary shield will be breached; the living quarters are behind the sector.',
               eqOf(s).shield === 'dust40' ? 'The shield is doubled: it is rated for such a band — no breach through is expected, the outer layer will suffer.'
                 : eqOf(s).shield === 'sectors' ? 'The sectors are replaceable: a breached one will be swapped if there are qualified repair hands; that will not bring back the dead.'
-                : 'The no-thrust windows stay put: the agro module keeps its schedule.'] : ['The manoeuvre reserve stays whole.',
-              s.measured ? 'The dust is coarse: the shield loses about a year and a half of its hundred and fifty.'
-                         : 'If the dust is coarse, the shield loses about a year and a half of its hundred and fifty.',
-              eqOf(s).shield === 'dust40' ? 'The shield is doubled: a year and a half of wear is within its margin — no breach.' : eqOf(s).shield === 'sectors' ? 'The sectors are replaceable: a breached one will be swapped if there are qualified repair hands.' : 'The no-thrust windows stay put: the agro module keeps its schedule.']
+                : 'The no-thrust windows stay put: the agro module keeps its schedule.']
           },
-          effect: s => { if (!v1(s)) s.shieldWear += 1.5; },             // версия 1: исход — у края (a1.edge.t1)
           record: {
             ru: 'Совет голосует идти без коррекции. Орин просит внести в протокол своё несогласие — как данные.',
             en: 'The council votes to go straight through. Orin asks for his dissent to be entered in the minutes — as data.'
@@ -4641,69 +4600,32 @@ He puts it on record. The trays with names go to storage.`
 Teya accepts the work without a word. That evening the trays with names move into the new module.`
       }
     },
-    { id: 's.edge', kind: 'skip', when: s => M.episode(s) === 'cloud', toYear: edgeAt, label: { ru: 'Промотать до края облака', en: "Skip ahead to the cloud's edge" } },
+    { id: 's.edge', kind: 'skip', when: s => M.episode(s) === 'cloud', toYear: edgeOut, label: { ru: 'Промотать до края облака', en: "Skip ahead to the cloud's edge" } },
     {
-      id: 'a1.edge.m', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
+      id: 'a1.edge.m', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeOut,
       when: s => s.choices['d.cloud'] === 'manoeuvre',
       title: { ru: 'Навигационный журнал', en: 'Navigation log' },
       text: {
         ru: s => `Коррекция выполнена. Край облака пройден в стороне.
-Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.` + (s.measured ? '' : v1(s) ? `
-Был ли в крае опасный слой — так и не узнаем.` : `
-Спектрограф при боковом обзоре: край плотнее прогноза модели; насколько — по таким данным не определить.`),
+Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.` + (s.measured ? '' : `
+Был ли в крае опасный слой — так и не узнаем.`),
         en: s => `Correction complete. The cloud's edge passed at a distance.
-Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.` + (s.measured ? '' : v1(s) ? `
-Whether there was a dangerous layer in the edge we will never know.` : `
-Side-view spectrograph: the edge is denser than the model forecast; by how much cannot be determined from this data.`)
+Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.` + (s.measured ? '' : `
+Whether there was a dangerous layer in the edge we will never know.`)
       }
     },
     {
-      id: 'a1.edge.t', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
-      when: s => s.choices['d.cloud'] === 'trust' && !v1(s),
+      id: 'a1.edge.t1', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeOut,   // проход и удар считает модель щита
+      when: s => s.choices['d.cloud'] === 'trust',
       title: { ru: 'Журнал фронтального щита', en: 'Forward shield log' },
       text: {
-        ru: `Проход края облака: три недели.
-Удары пыли: в 1,4 раза выше прогноза модели.
-Износ щита за проход — как за полтора года дрейфа. В пределах допуска.
-Резерв манёвров: 100,0% паспортного.`,
-        en: `Passage through the cloud's edge: three weeks.
-Dust impacts: 1.4 times the model forecast.
-Shield wear during passage equals a year and a half of drift. Within tolerance.
-Manoeuvre reserve: 100.0% of rated.`
+        ru: s => edgeLogV5(s, 'ru'),
+        en: s => edgeLogV5(s, 'en')
       }
     },
     {
-      id: 'a1.edge.t1', scene: 'cloud', overlay: 'trajectory', kind: 'instrument', year: edgeAt,
-      when: s => s.choices['d.cloud'] === 'trust' && v1(s),
-      effect: s => { if (s.riskVersion >= 5 || !cloudBand(s)) return;          // v5: проход и удар считает модель щита
-        s.shieldWear += 1.5; s.materials -= CLOUD.patch;
-        if (eqOf(s).shield !== 'dust40') { s.shieldBreach = true; s.dead += CLOUD.dead; s.cloudDead = CLOUD.dead;
-          incident(s, 'cloud', CLOUD.dead, { check: s.cloudCheck, found: s.cloudFound, year: 4.6 }); } },
-      title: { ru: 'Журнал фронтального щита', en: 'Forward shield log' },
-      text: {
-        ru: s => s.riskVersion >= 5 ? edgeLogV5(s, 'ru') : !s.shieldWear ? `Проход края облака: три недели.
-Удары пыли — в пределах прогноза модели. Износ щита — в норме.
-Резерв манёвров: 100,0% паспортного.`
-          : !s.shieldBreach ? `Проход края облака: три недели. На второй неделе — полоса крупной пыли: удары в сорок раз выше прогноза.
-Удвоенный щит держит: наружный слой выбит на участке в двенадцать метров, сквозного пробоя нет.
-Заплата — из материалов для высадки, −${CLOUD.patch}%.`
-          : `Проход края облака: три недели. На второй неделе — полоса крупной пыли.
-Частица массой в несколько миллиграммов пробивает сектор фронтального щита; за ним — жилой отсек кольца. Разгерметизация.
-Погибли ${ppl(s.cloudDead)} смены. Отсек перекрыт; заплата — из материалов для высадки, −${CLOUD.patch}%.`,
-        en: s => s.riskVersion >= 5 ? edgeLogV5(s, 'en') : !s.shieldWear ? `Passage through the cloud's edge: three weeks.
-Dust impacts within the model forecast. Shield wear normal.
-Manoeuvre reserve: 100.0% of rated.`
-          : !s.shieldBreach ? `Passage through the cloud's edge: three weeks. In the second week, a band of coarse dust: impacts forty times the forecast.
-The doubled shield holds: the outer layer is knocked out over twelve metres, no breach through.
-Patch from the landing materials, −${CLOUD.patch}%.`
-          : `Passage through the cloud's edge: three weeks. In the second week, a band of coarse dust.
-A particle of a few milligrams breaks through a sector of the forward shield; behind it, a living compartment of the ring. Decompression.
-${s.cloudDead} of the shift are dead. The compartment is sealed; patch from the landing materials, −${CLOUD.patch}%.`
-      }
-    },
-    {
-      id: 'a1.orin.t1', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: edgeAt,
-      when: s => s.choices['d.cloud'] === 'trust' && v1(s),
+      id: 'a1.orin.t1', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: edgeOut,
+      when: s => s.choices['d.cloud'] === 'trust',
       author: { ru: 'Орин Дал', en: 'Orin Dal' },
       text: {
         ru: s => !bandHit(s) ? (s.cloudCheck === 'measured' ? 'Проверка и модель сошлись: край чистый. Записываю расчёт и результат рядом.' : 'Модель была права: край чистый. Проверку мы не делали — значит, нам повезло, а не мы угадали. Записываю и это.')
@@ -4712,19 +4634,6 @@ ${s.cloudDead} of the shift are dead. The compartment is sealed; patch from the 
         en: s => !bandHit(s) ? (s.cloudCheck === 'measured' ? 'The check and the model agreed: the edge was clean. I am writing the calculation and the result side by side.' : 'The model was right: the edge was clean. We did not check — so we were lucky, not right. I am writing that down too.')
           : !bandBreach(s) ? 'There was a band. The doubled shield held it — on Earth they argued over it longer than over any other part. I am writing the calculation, the check and the result side by side.'
           : (s.cloudFound ? 'The check found the band — and the council went through the edge anyway.' : s.cloudCheck === 'measured' ? 'The check did not see the band: the method misses one in ten — and this was the one.' : 'We did not check the edge.') + ` ${s.cloudDead} people. I am entering the observation, the assumption and the decision in the minutes — next to their names. I entered my dissent as data; it was not enough.`
-      }
-    },
-    {
-      id: 'a1.orin.t', scene: 'cloud', overlay: 'trajectory', kind: 'note', year: edgeAt,
-      when: s => s.choices['d.cloud'] === 'trust' && !s.measured && !v1(s),
-      author: { ru: 'Орин Дал', en: 'Orin Dal' },
-      text: {
-        ru: `Модель ошиблась на краю — на шесть процентов, как я и считал. Щит заплатил полтора года. Резерв цел.
-
-Записываю рядом расчёт и результат. Пусть следующий, кто будет решать такое, видит оба.`,
-        en: `The model was wrong at the edge — by six percent, as I'd calculated. The shield paid a year and a half. The reserve is intact.
-
-I'm writing the calculation and the result side by side. Let the next person who has to decide something like this see both.`
       }
     },
     { id: 's.y6', kind: 'skip', toYear: 6, label: { ru: 'Промотать до года 6', en: 'Skip ahead to year 6' } },
@@ -4771,18 +4680,18 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
 Плазменный магнит: включение на году ${Math.round(brake(s))}.
 Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.
 Цель: ${nm(s, 'ru')} · прибытие около года ${s.arrive}.` +
-          (s.materials !== 100 ? `\nМатериалы для высадки: ${s.materials}% запаса.` : '') +
+          (s.materials !== 100 ? `\nМатериалы для высадки: ${Math.round(s.materials)}% запаса.` : '') +
           (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nКурс изменён на году ${s.earlyCouncil.at}: к ${nameAt(s.target, 'ru')}.` : '') +
-          (s.riskVersion >= 5 && s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : s.shieldWear > 0 ? `\nФронтальный щит: износ сверх нормы — ${pct(s.shieldWear, 'ru')} года из ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : ''),
+          (s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : ''),
         en: s => `Acceleration-stage thrust cut. Velocity ${fb(s.beta, 'en')}.
 Acceleration stage separated. For the last ${stageOff(s).days} days thrust was angled 10°: the stage drifts off sideways at ${kms(stageOff(s).dv)} km/s. The core cancelled its own sideways velocity — manoeuvre reserve −${pct(stageOff(s).reservePct, 'en')}%.
 The stage will pass ${nm(s, 'en')} a thousand AU aside around year ${Math.round(M.ACC + stageYears(s))}, ${yrsEn(s.arrive - M.ACC - stageYears(s))} ahead of us, and fly on. On a straight line it would have caught the core on the first day of braking and entered the target system at ${fb(s.beta, 'en')}: ${M.STAGE_DRY} kt — ${f1(M.stageMt(s.beta), 'en')} million megatons.
 Plasma magnet: switch-on in year ${Math.round(brake(s))}.
 Manoeuvre reserve: ${pct(s.reserve, 'en')}% of rated.
 Target: ${nm(s, 'en')} · arrival around year ${s.arrive}.` +
-          (s.materials !== 100 ? `\nLanding materials: ${s.materials}% of stock.` : '') +
+          (s.materials !== 100 ? `\nLanding materials: ${Math.round(s.materials)}% of stock.` : '') +
           (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nCourse changed in year ${s.earlyCouncil.at}: for ${M.nameOf(s.target, 'en')}.` : '') +
-          (s.riskVersion >= 5 && s.shield ? `\nForward shield: ${shieldGaugeV5(s, 'en')}.` : s.shieldWear > 0 ? `\nForward shield: wear beyond norm — ${pct(s.shieldWear, 'en')} years of ~${eqOf(s).shield === 'dust40' ? 300 : 150}.` : '')
+          (s.shield ? `\nForward shield: ${shieldGaugeV5(s, 'en')}.` : '')
       }
     },
     {
@@ -4863,7 +4772,7 @@ Osger, Dan — ${s.repairQual ? 'repair watch, qualified for work under thrust' 
     // ------------------------------------------------------------ АКТ II · ДРЕЙФ
     Object.assign(skipTo(0.12, 'дрейф', 'drift'), { id: 's.d1' }),
     {
-      id: 'a2.support', scene: 'ring', kind: 'bulletin', year: s => Y(s, 0.12), when: s => !ownStory(s),
+      id: 'a2.support', scene: 'support', kind: 'bulletin', year: s => Y(s, 0.12), when: s => !ownStory(s),
       act: { ru: 'Акт II · Дрейф', en: 'Act II · Drift' },
       title: bulletinTitle(0.12),
       text: {
@@ -4900,30 +4809,6 @@ The report is short; at the end, a request to send the Forty-First the repair lo
         en: s => `For the first time the outgoing watch reviews its decisions not before the council but before those who are waking: all of them, including the mistakes. The review takes six hours. The last item — ${lastCall(s, 'en')}.${supplyS(s) ? "\n\nXylona's next report has not arrived; its last confirmed state remains unchanged." : rescueS(s) ? "\n\nThere is no new complete medical report from Thaw." : ''}${s.mission === 'contact' ? `
 
 A saying appears aboard in these years. "More beautiful than anything we've seen," people say of what they are flying for.` : ''}`
-      }
-    },
-    {
-      id: 'a2.breach', scene: 'drift', kind: 'instrument', year: s => Y(s, 0.25),
-      when: s => s.shieldWear > shieldAllow(s) && !v1(s),
-      effect: s => { s.materials -= 5; },
-      title: { ru: 'Инженерный журнал · пробой щита', en: 'Engineering log · shield breach' },
-      text: {
-        ru: s => `Пробой фронтального щита: частица массой около миллиграмма на ${fb(s.beta, 'ru')}. Энергия удара — как у сотни килограммов взрывчатки.
-Щит изношен сверх нормы у края облака D2; в месте удара слой был тоньше расчётного.
-Ремонт — заплата из материалов для высадки, −5% запаса. Жертв нет.`,
-        en: s => `Forward shield breach: a particle of about a milligram at ${fb(s.beta, 'en')}. Impact energy comparable to a hundred kilograms of explosive.
-The shield was worn beyond norm at the D2 cloud edge; at the impact point the layer was thinner than designed.
-Repair: a patch from landing materials, −5% of stock. No casualties.`
-      }
-    },
-    {
-      id: 'a2.sector', scene: 'drift', kind: 'instrument', year: s => Y(s, 0.25),
-      when: s => s.riskVersion < 5 && (v1(s) ? s.shieldBreach : s.shieldWear > shieldAllow(s)) && eqOf(s).shield === 'sectors' && s.repairQual,
-      effect: s => { s.shieldFixed = true; s.materials -= 3; },
-      title: { ru: 'Инженерный журнал · замена сектора', en: 'Engineering log · sector replacement' },
-      text: {
-        ru: 'Пробитый сектор щита снимают целиком и ставят запасной из оснащения. Работа под тягой — только для ремонтников с допуском: две смены снаружи, крепёж — из материалов для высадки, −3%. Щит снова держит полный расчёт.',
-        en: 'The breached shield sector is removed whole and a spare from the equipment is fitted. Work under thrust is for qualified repair hands only: two shifts outside, fasteners from the landing materials, −3%. The shield holds its full rating again.'
       }
     },
 
@@ -5174,50 +5059,6 @@ The council decides to sleep and call for help: twelve stay on watch, and the di
       }
     },
     sosEnd('cargo', 'vault'),
-    {
-      id: 'a2s.spares', scene: 'vault', kind: 'instrument', year: s => Y(s, 0.5), when: s => s.mission === 'supply' && s.kits.includes('request') && !supplyS(s),
-      title: { ru: 'Журнал вахты · груз заявки', en: 'Watch log · the request cargo' },
-      text: {
-        ru: 'Плановая проверка груза заявки. Холодильник капсульного блока для форпоста деградировал при хранении: до прибытия он доживёт, а три года монтажа и работы у форпоста — нет. Капсулы форпоста без него не запустить.',
-        en: "A scheduled check of the request cargo. The capsule unit's cooler for the outpost has degraded in storage: it will last to arrival, but not three years of installation and work at the outpost. The outpost's capsules cannot be started without it."
-      }
-    },
-    {
-      id: 'd.supplyRepair', scene: 'vault', kind: 'decision', when: s => s.mission === 'supply' && s.kits.includes('request') && !supplyS(s),
-      title: { ru: 'Чей ремонтный запас', en: 'Whose repair stock' },
-      context: {
-        ru: 'Ремонтный запас корабля — это и наш будущий дом у форпоста. Передатчик заявки — это связь форпоста с Кольцом.',
-        en: "The ship's repair stock is also our own future home at the outpost. The request transmitter is the outpost's link to the Ring."
-      },
-      options: s => [{
-        id: 'own',
-        label: { ru: 'Отдать свой запас', en: 'Give our own stock' },
-        known: {
-          ru: ['Материалы для высадки −20%: насосы и теплообменник из своего склада.', 'Груз заявки цел: и связь, и капсулы.'],
-          en: ['Landing materials −20%: pumps and an exchanger from our own store.', 'The request cargo is whole: the link and the capsules.']
-        },
-        effect: st => { st.cooler = 'own'; st.materials -= 20; },
-        record: { ru: 'Тея Марр отдаёт из склада насосы и теплообменник: «Наш дом подождёт, их капсулы — нет».', en: 'Teya Marr hands over pumps and an exchanger from the store: "Our home can wait, their capsules cannot."' }
-      }, {
-        id: 'relayParts',
-        label: { ru: 'Снять детали с передатчика заявки', en: 'Strip the request transmitter for parts' },
-        known: {
-          ru: ['Свои материалы целы.', `Передатчика для форпоста не будет: связь — только из своих материалов, −${BUILD.relay}% у цели.`],
-          en: ['Our own materials stay whole.', `There will be no transmitter for the outpost: the link only from our materials, −${BUILD.relay}% at the target.`]
-        },
-        effect: st => { st.cooler = 'relayParts'; },
-        record: { ru: 'Ремонтники разбирают передатчик заявки на холодильник. Ирсон вычёркивает строку из накладной.', en: 'The repair hands strip the request transmitter for the cooler. Irson strikes the line off the manifest.' }
-      }].concat(['tools', 'printQC'].includes(eqOf(s).prod) ? [{
-        id: 'tools',
-        label: { ru: 'Изготовить детали на станках', en: 'Make the parts on the machine tools' },
-        known: {
-          ru: ['Материалы для высадки −10%: заготовки вместо готовых узлов.', 'Груз заявки цел: и связь, и капсулы. Двое ремонтников год работают у станков.'],
-          en: ['Landing materials −10%: blanks instead of finished parts.', 'The request cargo is whole: the link and the capsules. Two repair hands work a year at the machine tools.']
-        },
-        effect: st => { st.cooler = 'tools'; st.materials -= 10; },
-        record: { ru: 'Год у станков. Новый холодильник выходит грубее заводского, но держит расчёт.', en: 'A year at the machine tools. The new cooler comes out rougher than the factory one, but holds its rating.' }
-      }] : [])
-    },
 
     Object.assign(skipTo(0.6), { id: 's.d5' }),
     {
@@ -5255,7 +5096,7 @@ The experiment's leader was found honest in motive and removed from decision-mak
     {
       id: 'd.heat', scene: 'vault', overlay: 'sleepers', kind: 'decision', year: s => Y(s, 0.68), when: s => !ownStory(s),
       title: { ru: 'Теплообменники', en: 'Heat exchangers' },
-      rec: s => loopV1(s) ? { id: 'power', why: { ru: 'резерв мощности нужен у цели', en: 'the high-power reserve is needed at the target' }, assume: { ru: 'контур выдержит пробуждённую группу Б', en: 'the loop will carry the woken group B' } } : null,
+      rec: s => ({ id: 'power', why: { ru: 'резерв мощности нужен у цели', en: 'the high-power reserve is needed at the target' }, assume: { ru: 'контур выдержит пробуждённую группу Б', en: 'the loop will carry the woken group B' } }),
       context: {
         ru: '«По Дассеру» — сначала люди на борту. «По Далу» — сохранять диапазон возможностей корабля. Будить основателей ради решения совет не стал.',
         en: '"Dasser\'s way" — people aboard first. "Dal\'s way" — keep the ship\'s range of options. The council chose not to wake the founders for this.'
@@ -5265,12 +5106,10 @@ The experiment's leader was found honest in motive and removed from decision-mak
           id: 'power',
           label: { ru: 'Полный контур', en: 'The full loop' },
           known: {
-            ru: s => ['Резерв повышенной мощности сохранён.', 'Группу Б будят аварийно: двадцать человек тратят годы жизни, а жизнеобеспечение рассчитано на малую смену.']
-              .concat(loopV1(s) ? [`С группой Б бодрствуют ${s.watch + 20}: временного запаса воды — на два года. Выдержит ли общая магистраль колец такую нагрузку, не проверено; если нет — отказ в обоих кольцах сразу.`]
-                : maintDebt(s) ? [`Контур воды после аварии держит сорок человек, а будет ${s.watch + 20}: запаса — на два года.`] : []),
-            en: s => ['The high-power reserve is kept.', 'Group B is woken in an emergency: twenty people spend years of life, and life support is sized for a small watch.']
-              .concat(loopV1(s) ? [`With group B, ${s.watch + 20} are awake: temporary water reserves for two years. Whether the rings' common main can carry that load has not been checked; if not, it fails in both rings at once.`]
-                : maintDebt(s) ? [`After the failure the water loop carries forty people, and there will be ${s.watch + 20}: reserves for two years.`] : [])
+            ru: s => ['Резерв повышенной мощности сохранён.', 'Группу Б будят аварийно: двадцать человек тратят годы жизни, а жизнеобеспечение рассчитано на малую смену.',
+              `С группой Б бодрствуют ${s.watch + 20}: временного запаса воды — на два года. Выдержит ли общая магистраль колец такую нагрузку, не проверено; если нет — отказ в обоих кольцах сразу.`],
+            en: s => ['The high-power reserve is kept.', 'Group B is woken in an emergency: twenty people spend years of life, and life support is sized for a small watch.',
+              `With group B, ${s.watch + 20} are awake: temporary water reserves for two years. Whether the rings' common main can carry that load has not been checked; if not, it fails in both rings at once.`]
           },
           effect: st => { st.highPower = true; st.groupB = 'woken'; },
           record: {
@@ -5307,7 +5146,7 @@ The experiment's leader was found honest in motive and removed from decision-mak
     },
 
     {
-      id: 'a2.loop1', scene: 'ring', kind: 'instrument', year: s => Y(s, 0.68), when: s => loopV1(s) && s.groupB === 'woken',
+      id: 'a2.loop1', scene: 'ring', kind: 'instrument', year: s => Y(s, 0.68), when: s => contactRun(s) && s.groupB === 'woken',
       title: { ru: 'Инженерный журнал · испытание нагрузкой', en: 'Engineering log · load test' },
       text: {
         ru: s => `Группа Б на ногах: бодрствуют ${ppl(s.watch + 20)}. При испытании нагрузкой давление в общей магистрали колец проседает на семь процентов и возвращается не сразу.
@@ -5319,7 +5158,7 @@ An ordinary check sees the accessible sections; a defect under variable load may
       }
     },
     {
-      id: 'd.overloadCheck', scene: 'ring', kind: 'decision', year: s => Y(s, 0.68), when: s => loopV1(s) && s.groupB === 'woken',
+      id: 'd.overloadCheck', scene: 'ring', kind: 'decision', year: s => Y(s, 0.68), when: s => contactRun(s) && s.groupB === 'woken',
       title: { ru: 'Проверить общую магистраль?', en: 'Check the common main?' },
       context: { ru: s => `Запас — до года ${Math.round(loopAt(s))}. Проверка тратит его дни.`, en: s => `Reserves last to year ${Math.round(loopAt(s))}. A check spends their days.` },
       rec: s => ({ id: 'ordinary', why: { ru: 'обычная проверка по регламенту', en: 'the ordinary check, by the rules' } }),
@@ -5345,7 +5184,7 @@ An ordinary check sees the accessible sections; a defect under variable load may
       ].filter(o => !LOOP[o.id] || s.materials >= LOOP[o.id].cost)
     },
     {
-      id: 'd.overload1', scene: 'ring', kind: 'decision', year: s => Y(s, 0.68), when: s => loopV1(s) && s.groupB === 'woken',
+      id: 'd.overload1', scene: 'ring', kind: 'decision', year: s => Y(s, 0.68), when: s => contactRun(s) && s.groupB === 'woken',
       title: { ru: 'Жизнеобеспечение на пределе', en: 'Life support at the limit' },
       context: {
         ru: s => `Бодрствуют ${ppl(s.watch + 20)}; запас воды — до года ${Math.round(loopAt(s))}. ${s.loopFound ? 'Общая магистраль повреждена.' : s.loopCheck === 'skipped' ? 'Магистраль не проверяли.' : 'Проверка дефекта не нашла.'} Если магистраль откажет, погибнут те, кто будет в кольцах: группа Б и смена вахты.${s.watch - 11 < WATCH_SOS ? ' Оставшихся не хватит, чтобы обслуживать зал анабиоза.' : ''}`,
@@ -5374,7 +5213,7 @@ An ordinary check sees the accessible sections; a defect under variable load may
           record: { ru: 'Совет решает тянуть на запасе.', en: 'The council decides to run on the reserve.' } }])
     },
     {
-      id: 'a2.loopEnd1', scene: 'ring', kind: 'instrument', year: loopAt, when: s => loopV1(s) && s.overload === 'hold',
+      id: 'a2.loopEnd1', scene: 'ring', kind: 'instrument', year: loopAt, when: s => contactRun(s) && s.overload === 'hold',
       effect: s => { if (!loopCommon(s)) return; s.dead += LOOP.dead; s.loopDead = LOOP.dead; s.watch = Math.max(0, s.watch - 11); if (s.watch < WATCH_SOS) s.dutchman = true;   // меньше двенадцати — зал некому держать
         incident(s, 'loop', LOOP.dead, { check: s.loopCheck, found: s.loopFound, year: loopAt(s) }); },
       title: { ru: s => s.loopDead ? 'Медицинский журнал · отказ контура' : 'Инженерный журнал · контур', en: s => s.loopDead ? 'Medical log · the loop fails' : 'Engineering log · the loop' },
@@ -5385,9 +5224,9 @@ An ordinary check sees the accessible sections; a defect under variable load may
           : `The common main failed in both rings at once. Group B and eleven of the watch died while the others sealed the rings. ${s.watch} people remain on watch.` + (s.loopFound ? '\nThe defect had been found before the decision.' : s.loopCheck === 'skipped' ? '\nThe main had not been checked.' : '\nThe check had found no defect.')
       }
     },
-    dutchmanEnd('x.dutchman1', s => loopV1(s) && s.dutchman, loopAt, null),
-    Object.assign(sosDrift('d.sos.drift1', s => loopV1(s) && s.loopDead > 0 && !s.dutchman)),
-    Object.assign(sosEnd('drift', 'vault'), { id: 'x.sos.drift1', when: s => loopV1(s) && s.sos === 'drift' }),
+    dutchmanEnd('x.dutchman1', s => contactRun(s) && s.dutchman, loopAt),
+    sosDrift('d.sos.drift1', s => contactRun(s) && s.loopDead > 0 && !s.dutchman),
+    Object.assign(sosEnd('drift', 'vault'), { id: 'x.sos.drift1', when: s => contactRun(s) && s.sos === 'drift' }),
     Object.assign(skipTo(0.75), { id: 's.d7' }),
     {
       id: 'a2.blueprint', scene: 'ring', kind: 'bulletin', year: s => Y(s, 0.75),
@@ -5435,65 +5274,6 @@ An ordinary check sees the accessible sections; a defect under variable load may
         }
       }]
     },
-    {
-      id: 'd.overload', scene: 'ring', kind: 'decision', year: s => Y(s, 0.75), when: s => s.groupB === 'woken' && maintDebt(s) && !loopV1(s),
-      title: { ru: 'Жизнеобеспечение на пределе', en: 'Life support at the limit' },
-      context: {
-        ru: s => `На борту бодрствуют ${ppl(s.watch + 20)}. Контур воды после аварии рассчитан на сорок; запас кончается через два года. Ремонтников с допуском нет.`,
-        en: s => `${s.watch + 20} people are awake aboard. After the failure the water loop is sized for forty; the reserve runs out in two years. There are no qualified repair hands.`
-      },
-      options: s => [
-        {
-          id: 'sleep',
-          label: { ru: 'Вернуть в сон группу Б и ещё десятерых', en: 'Put group B and ten more back to sleep' },
-          known: {
-            ru: ['Тридцать человек тратят по циклу сна.', 'Вахта снова тонкая: ремонт медленнее, но на всех хватает воды.'],
-            en: ['Thirty people each spend a sleep cycle.', 'The watch is thin again: repairs are slower, but there is water for all.']
-          },
-          effect: st => { st.overload = 'sleep'; },
-          record: {
-            ru: 'Тридцать человек возвращаются в капсулы. Ирсон подписывает каждое усыпление сам.',
-            en: 'Thirty people go back into the capsules. Irson signs each one himself.'
-          }
-        }
-      ].concat(s.materials >= 20 ? [{
-        id: 'materials',
-        label: { ru: 'Собрать второй контур из материалов', en: 'Build a second loop from the materials' },
-        known: {
-          ru: ['Материалы для высадки −20%.', 'Все остаются на вахте.'],
-          en: ['Landing materials −20%.', 'Everyone stays on watch.']
-        },
-        effect: st => { st.overload = 'materials'; st.materials -= 20; },
-        record: {
-          ru: 'Второй контур воды собирают полгода — из того, что везли строить дом.',
-          en: 'The second water loop takes half a year to build — from what they were carrying to build a home.'
-        }
-      }] : []).concat([{
-        id: 'hold',
-        label: { ru: 'Тянуть на запасе', en: 'Run on the reserve' },
-        known: {
-          ru: ['Ни циклов, ни материалов.', 'Запаса на два года; дальше — как выдержит контур.'],
-          en: ['No cycles, no materials.', 'Reserves for two years; after that — as long as the loop holds.']
-        },
-        effect: st => { st.overload = 'hold'; if (st.watch - 11 < 20) st.dutchman = true; },
-        record: {
-          ru: 'Совет решает тянуть. Через два года контур воды отказывает в обоих кольцах сразу.',
-          en: 'The council decides to hold on. Two years later the water loop fails in both rings at once.'
-        }
-      }])
-    },
-    {
-      id: 'a2.collapse', scene: 'ring', kind: 'instrument', year: s => Y(s, 0.75) + 2, when: s => s.overload === 'hold' && !s.dutchman && !loopV1(s),
-      effect: s => { s.dead += 31; s.loopDead = 31; s.watch = Math.max(0, s.watch - 11); },
-      title: { ru: 'Медицинский журнал · отказ контура', en: 'Medical log · the loop fails' },
-      text: {
-        ru: s => `Контур воды отказал. Группа Б и одиннадцать человек вахты погибли, пока остальные перекрывали кольцо. На вахте осталось ${ppl(s.watch)}.`,
-        en: s => `The water loop has failed. Group B and eleven of the watch died while the others sealed the ring. ${s.watch} people remain on watch.`
-      }
-    },
-    sosDrift('d.sos.drift', s => s.overload === 'hold' && !s.dutchman && !loopV1(s)),
-    sosEnd('drift', 'vault'),
-    dutchmanEnd('x.dutchman', s => s.dutchman && !loopV1(s), s => Y(s, 0.75) + 2, s => { s.dead += 31; s.loopDead = 31; s.watch = Math.max(0, s.watch - 11); }),
     {
       id: 'a2.probe', scene: 'drift', kind: 'instrument',
       year: s => Math.max(s.year, Y(s, 0.75), Math.min(probeTimes(s, s.scout).data, Y(s, 0.87))),
@@ -5680,14 +5460,14 @@ One of the engineers demands the error be put down to Dan. Selina opens the inst
       id: 'a3.check', scene: 'dark', kind: 'transcript', year: warnAt, when: src,
       title: { ru: 'Совет смены · поток', en: 'Watch council · the stream' },
       text: {
-        ru: s => (v1(s) ? `Окно для манёвра — ${s.riskVersion >= 5 ? days(win(s), 'ru') : 'тридцать суток'}; прежняя задержка вахты уже учтена. Измерение может и не захватить опасную полосу.\n\n` : '') + `Научная модель оценивает проход по краю потока как безопасный — 91%, при условии, что модель верна и набор гипотез полон. Селина поднимает архивный отчёт другой экспедиции Кольца: там верно определили природу похожего объекта и ошиблись в плотности потока вокруг. Спектр рассеянного света с такого расстояния не различает, мелкая там пыль или крупная.
+        ru: s => `Окно для манёвра — ${days(win(s), 'ru')}; прежняя задержка вахты уже учтена. Измерение может и не захватить опасную полосу.\n\nНаучная модель оценивает проход по краю потока как безопасный — 91%, при условии, что модель верна и набор гипотез полон. Селина поднимает архивный отчёт другой экспедиции Кольца: там верно определили природу похожего объекта и ошиблись в плотности потока вокруг. Спектр рассеянного света с такого расстояния не различает, мелкая там пыль или крупная.
 
 — Разбудить Кору, — говорит Селина. — Она увидит неоднозначность раньше нас.
 
 Врач называет цену: у Коры один полный цикл. Пробуждение будет последним, три недели до работоспособности.
 
 — Не надо будить, — говорит Тамир. — Нужна не догадка, а измерение. ${probesLeft(s) ? (eqOf(s).probes === 'inspect' ? 'Инспекционный зонд ещё в трюме' : 'Второй зонд из комплекта ещё в трюме') : 'Малый зонд с прямыми детекторами частиц соберём из материалов'}.`,
-        en: s => (v1(s) ? `The manoeuvre window is ${s.riskVersion >= 5 ? days(win(s), 'en') : 'thirty days'}; the watch's earlier delay is already counted. A measurement may not catch the dangerous band.\n\n` : '') + `The science model rates passage along the stream's edge as safe — 91%, given the model is correct and the hypothesis set complete. Selina pulls an archived report from another Ring expedition: they identified the nature of a similar object correctly and got the density of the stream around it wrong. From this range the spectrum of scattered light cannot tell fine dust from coarse.
+        en: s => `The manoeuvre window is ${days(win(s), 'en')}; the watch's earlier delay is already counted. A measurement may not catch the dangerous band.\n\nThe science model rates passage along the stream's edge as safe — 91%, given the model is correct and the hypothesis set complete. Selina pulls an archived report from another Ring expedition: they identified the nature of a similar object correctly and got the density of the stream around it wrong. From this range the spectrum of scattered light cannot tell fine dust from coarse.
 
 "Wake Kora," says Selina. "She'll see the ambiguity sooner than we will."
 
@@ -5703,79 +5483,28 @@ The physician names the price: Kora has one full cycle left. This waking will be
         ru: 'Через несколько дней поток будет ближе. Решение не отложить.',
         en: 'In a few days the stream will be closer. The decision cannot wait.'
       },
-      rec: s => !v1(s) ? null : probeOK(s) ? { id: 'probe', why: { ru: 'прямое измерение быстрее всего', en: 'a direct measurement is fastest' } }
+      rec: s => probeOK(s) ? { id: 'probe', why: { ru: 'прямое измерение быстрее всего', en: 'a direct measurement is fastest' } }
         : (s.taught || s.koraYear) ? { id: 'student', why: { ru: 'зонда нет; Кору бережём для цели', en: 'no probe; Kora is kept for the target' } }
         : { id: 'kora', why: { ru: 'зонда нет, читать спектр больше некому', en: 'no probe and no one else to read the spectrum' } },
-      options: s => v1(s) ? streamOptions1(s) : [
-        {
-          id: 'probe',
-          label: { ru: 'Зонд Тамира', en: "Tamir's probe" },
-          known: {
-            ru: s => [probesLeft(s) ? (eqOf(s).probes === 'inspect' ? 'Инспекционный зонд: прямые детекторы, без трат материалов.' : 'Второй зонд из комплекта: прямые детекторы, без трат материалов.') : 'Зонд из материалов для высадки: −5% запаса.', 'Кора остаётся для цели.', windowLine(s, 'probe', 'ru')],
-            en: s => [probesLeft(s) ? (eqOf(s).probes === 'inspect' ? 'The inspection probe: direct detectors, no materials spent.' : 'The second kit probe: direct detectors, no materials spent.') : 'A probe from landing materials: −5% of stock.', 'Kora is kept for the target.', windowLine(s, 'probe', 'en')]
-          },
-          effect: st => { if (!probesLeft(st)) st.materials -= 5; strike(st, 'probe'); },
-          record: {
-            ru: 'Зонд идёт в поток на полдня раньше корабля. Детекторы пишут прямо: крупных частиц больше расчётного. Модель ошиблась, как и у той экспедиции из архива.',
-            en: 'The probe enters the stream half a day ahead of the ship. The detectors say it plainly: there are more coarse particles than calculated. The model was wrong, as it was for that expedition in the archive.'
-          }
-        },
-        {
-          id: 'kora',
-          label: { ru: 'Разбудить Кору', en: 'Wake Kora' },
-          known: {
-            ru: s => ['Её последнее пробуждение: у цели Кору будить будет нельзя.', windowLine(s, 'kora', 'ru'), riskLine(s, 'ru')],
-            en: s => ['Her last waking: at the target Kora cannot be woken again.', windowLine(s, 'kora', 'en'), riskLine(s, 'en')]
-          },
-          effect: st => { st.koraLast = true; st.koraAwake += 1; strike(st, 'kora'); },
-          record: {
-            ru: 'Через три недели Кора садится к телескопу и находит за потоком фоновую звезду. Звезда гаснет сильнее, чем от мелкой пыли: крупных частиц больше расчётного. Дан Осгер держит для неё журнал, как сорок лет назад.',
-            en: 'Three weeks later Kora sits down at the telescope and finds a background star behind the stream. It dims more than fine dust would dim it: there are more coarse particles than calculated. Dan Osger keeps the log for her, as he did forty years ago.'
-          }
-        }
-      ].concat(s.taught || s.koraYear ? [{
-        id: 'student',
-        label: { ru: s => s.taught ? 'Разбудить учеников Коры' : 'Разбудить Наю Сорн', en: s => s.taught ? "Wake Kora's students" : 'Wake Naya Sorn' },
-        known: {
-          ru: s => ['Кора остаётся для цели.', s.taught ? 'Двое, кого она учила в дрейфе, прочтут неоднозначный спектр — медленнее её, но прочтут.' : 'Ная читала спектры одна весь год Коры.', windowLine(s, 'student', 'ru'), riskLine(s, 'ru')],
-          en: s => ['Kora is kept for the target.', s.taught ? 'The two she trained in the drift can read an ambiguous spectrum — slower than her, but they can.' : "Naya read the spectra alone through Kora's year.", windowLine(s, 'student', 'en'), riskLine(s, 'en')]
-        },
-        effect: st => { strike(st, 'student'); },
-        record: {
-          ru: s => `${s.taught ? 'Ученики Коры' : 'Ная Сорн'} ищут за потоком фоновую звезду — так, как Кора проверяла край облака на четвёртом году.${checkDays(s, 'student') < 26 ? ` С расширенной спектрометрией — за ${checkDays(s, 'student')} суток.` : ''} Через месяц ответ: крупных частиц больше расчётного.`,
-          en: s => `${s.taught ? "Kora's students" : 'Naya Sorn'} look for a background star behind the stream — the way Kora checked the cloud's edge in year four.${checkDays(s, 'student') < 26 ? ` With extended spectrometry it takes ${checkDays(s, 'student')} days.` : ''} A month later, the answer: more coarse particles than calculated.`
-        }
-      }] : []).concat([{
-        id: 'model',
-        label: { ru: 'Довериться модели', en: 'Trust the model' },
-        known: {
-          ru: s => ['91% за безопасный проход — если модель верна и набор гипотез полон.', 'Ни циклов, ни материалов, ни времени.', riskLine(s, 'ru')],
-          en: s => ['91% for a safe passage — if the model is correct and the hypothesis set complete.', 'No cycles, no materials, no time.', riskLine(s, 'en')]
-        },
-        effect: st => { strike(st, 'model'); },
-        record: {
-          ru: 'Корабль идёт по краю потока. Модель ошиблась, как и у той экспедиции из архива.',
-          en: 'The ship runs along the edge of the stream. The model was wrong, as it was for that expedition in the archive.'
-        }
-      }])
+      options: streamOptions
     },
     {
-      id: 'd.streamRoute', scene: 'dark', kind: 'decision', when: s => src(s) && v1(s) && !!s.streamCheck && !s.streamRoute,
-      year: s => s.riskVersion >= 5 ? Math.min(streamTimes(s).warn + (s.streamDays || 0) / 365.25, streamTimes(s).core) : s.arrive - 5,   // v5: решение — когда проверка закончена
+      id: 'd.streamRoute', scene: 'dark', kind: 'decision', when: s => src(s) && !!s.streamCheck && !s.streamRoute,
+      year: s => Math.min(streamTimes(s).warn + (s.streamDays || 0) / 365.25, streamTimes(s).core),   // решение — когда проверка закончена
       title: { ru: 'Уходить из потока?', en: 'Leave the stream?' },
       context: {
-        ru: s => `${s.streamFound ? 'Опасная полоса пересекает курс.' : 'Опасной полосы на курсе не видно — метод видит её не всегда.'} ${windowLine1(s, 'ru')}`,
-        en: s => `${s.streamFound ? 'The dangerous band crosses our course.' : 'No dangerous band on our course — the method does not always see it.'} ${windowLine1(s, 'en')}`
+        ru: s => `${s.streamFound ? 'Опасная полоса пересекает курс.' : 'Опасной полосы на курсе не видно — метод видит её не всегда.'} ${windowLine(s, 'ru')}`,
+        en: s => `${s.streamFound ? 'The dangerous band crosses our course.' : 'No dangerous band on our course — the method does not always see it.'} ${windowLine(s, 'en')}`
       },
-      rec: s => s.streamFound ? (canEvade(s) && !lateV1(s) ? { id: 'evade', why: { ru: 'полоса на курсе, уйти успеваем', en: 'the band is on our course and we are in time' } }
-        : canEvade(s) && s.riskVersion >= 5 && streamTimes(s).warn + ((s.streamDays || 0) + burnDays(s)) / 365.25 < streamTimes(s).exit ? { id: 'evade', why: { ru: 'до ядра не успеваем, но манёвр сократит время в нём', en: 'we cannot clear the core in time, but the manoeuvre shortens the time inside it' } }
+      rec: s => s.streamFound ? (canEvade(s) && !streamLate(s) ? { id: 'evade', why: { ru: 'полоса на курсе, уйти успеваем', en: 'the band is on our course and we are in time' } }
+        : canEvade(s) && streamTimes(s).warn + ((s.streamDays || 0) + burnDays(s)) / 365.25 < streamTimes(s).exit ? { id: 'evade', why: { ru: 'до ядра не успеваем, но манёвр сократит время в нём', en: 'we cannot clear the core in time, but the manoeuvre shortens the time inside it' } }
         : { id: 'pass', why: { ru: 'уйти уже не успеваем: удар будет тем же, резерв сбережём', en: 'we can no longer leave in time: the strike will be the same, so the reserve is kept' } })
         : { id: 'pass', why: { ru: 'полосы на курсе не видно', en: 'no band seen on our course' }, assume: { ru: 'опасная полоса не пересекает курс', en: 'the dangerous band does not cross our course' } },
       options: s => (canEvade(s) ? [{
         id: 'evade', label: { ru: 'Уходить', en: 'Leave' },
         known: {
-          ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine1(s, 'ru')],
-          en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine1(s, 'en')]
+          ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine(s, 'ru')],
+          en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine(s, 'en')]
         },
         cost: st => { st.reserve -= streamDv(st); },
         effect: st => { st.reserve -= streamDv(st); st.streamRoute = 'evade'; },
@@ -5791,21 +5520,12 @@ The physician names the price: Kora has one full cycle left. This waking will be
       }])
     },
     {
-      id: 'a3.hit1', scene: 'dark', kind: 'instrument', year: s => s.riskVersion >= 5 ? streamPlan(s).coreEnd : s.arrive - 5,
-      when: s => src(s) && v1(s) && (s.riskVersion >= 5 ? streamPlan(s).hit : streamHitNow(s)),
-      effect: s => { if (s.riskVersion >= 5) return;                     // v5: удар и последствия считает модель щита
-        const lv = hitLevel(s); s.streamHit = lv; s.streamCause = breached(s) ? 'shield' : 'power';   // причина — до пробоя у кромки
-        if (lv >= 3) { incident(s, 'stream', 0, { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, lost: true, aboard: aliveOf(s), year: s.arrive - 5 }); s.lostShip = true; return; }
-        s.dead += STREAM.dead[lv]; s.materials -= STREAM.mat[lv]; s.streamDead = STREAM.dead[lv]; s.shieldBreach = true; s.shieldFixed = false;
-        incident(s, 'stream', STREAM.dead[lv], { check: s.streamCheck, found: s.streamFound, route: s.streamRoute, year: s.arrive - 5 }); },
+      id: 'a3.hit1', scene: 'dark', kind: 'instrument', year: s => streamPlan(s).coreEnd,   // удар и последствия считает модель щита
+      when: s => src(s) && streamPlan(s).hit,
       title: { ru: 'Журнал вахты · удар потока', en: 'Watch log · the stream hits' },
       text: {
-        ru: s => s.riskVersion >= 5 ? streamLogV5(s, 'ru') : (s.streamRoute === 'evade' ? 'Манёвр опоздал: корабль ещё в потоке. ' : 'Корабль идёт по краю потока — и полоса крупных частиц на курсе. ') + (s.lostShip ? '' : s.streamHit === 1
-          ? `Щит пробит у кромки: в носовом отсеке гибнут ${ppl(s.streamDead)}. Заплата — из материалов для высадки, −${STREAM.mat[1]}%.`
-          : (s.streamCause === 'shield' ? `Сектор щита, пробитый ещё у облака, не держит: удар проходит в зал анабиоза. Погибли ${ppl(s.streamDead)}; −${STREAM.mat[2]}% материалов.` : `Без резерва мощности слабые коррекции тянутся сутками: поток успевает пройти по корпусу. Погибли ${ppl(s.streamDead)}; −${STREAM.mat[2]}% материалов.`)),
-        en: s => s.riskVersion >= 5 ? streamLogV5(s, 'en') : (s.streamRoute === 'evade' ? 'The manoeuvre came too late: the ship is still in the stream. ' : 'The ship runs along the edge of the stream — and the band of coarse particles is on its course. ') + (s.lostShip ? '' : s.streamHit === 1
-          ? `The shield is breached at the rim: ${s.streamDead} die in the forward compartment. The patch comes from the landing materials, −${STREAM.mat[1]}%.`
-          : (s.streamCause === 'shield' ? `The shield sector breached back at the cloud does not hold: the strike reaches the anabiosis hall. ${s.streamDead} are dead; −${STREAM.mat[2]}% materials.` : `Without the high-power reserve the weak corrections drag on for days: the stream has time to sweep the hull. ${s.streamDead} are dead; −${STREAM.mat[2]}% materials.`))
+        ru: s => streamLogV5(s, 'ru'),
+        en: s => streamLogV5(s, 'en')
       }
     },
     {
@@ -5829,34 +5549,17 @@ The expedition is over. The next one — to another target — will receive the 
       }
     },
     {
-      id: 'a3.hit', scene: 'dark', kind: 'instrument', year: s => s.arrive - 5, when: s => src(s) && s.streamHit > 0 && !s.lostShip && !v1(s),
-      title: { ru: 'Журнал вахты · удар потока', en: 'Watch log · the stream hits' },
-      text: {
-        ru: s => s.streamHit === 1
-          ? 'Корабль в потоке раньше, чем уходит из него. Крупная частица пробивает щит у кромки: в носовом отсеке гибнут двое ремонтников. Заплата — из материалов для высадки, −10%.'
-          : (breached(s) ? 'Корабль в потоке раньше, чем уходит из него. Сектор щита, пробитый ещё у облака, не держит: удар проходит в зал анабиоза.' : 'Корабль в потоке раньше, чем уходит из него. Без резерва мощности слабые коррекции тянутся днями: поток успевает пройти по залу анабиоза.') + ' Группа из двадцати пяти капсул потеряна, в носовом отсеке гибнут двое ремонтников. Материалы для высадки −15%.' + (eqOf(s).energy === 'reactor5' ? ' Реактор поселения в грузовом отсеке разбит.' : eqOf(s).energy === 'dual' ? ' Один из двух блоков поселения разбит; второй цел.' : ''),
-        en: s => s.streamHit === 1
-          ? 'The ship is in the stream before it can leave it. A coarse particle punches through the shield at the rim: two repair hands die in the forward compartment. The patch comes from the landing materials, −10%.'
-          : (breached(s) ? 'The ship is in the stream before it can leave it. The shield sector breached back at the cloud does not hold: the strike reaches the anabiosis hall.' : 'The ship is in the stream before it can leave it. Without the high-power reserve the weak corrections drag on for days: the stream has time to sweep the anabiosis hall.') + ' A group of twenty-five capsules is lost; two repair hands die in the forward compartment. Landing materials −15%.' + (eqOf(s).energy === 'reactor5' ? ' The settlement reactor in the cargo bay is smashed.' : eqOf(s).energy === 'dual' ? ' One of the two settlement units is smashed; the other is whole.' : '')
-      }
-    },
-    {
-      id: 'a3.burn', scene: 'dark', kind: 'instrument', year: s => s.riskVersion >= 5 && s.streamRoute === 'evade' ? streamPlan(s).done : s.arrive - 5, when: s => src(s) && (!v1(s) || s.streamRoute === 'evade'),
-      effect: s => { if (!v1(s)) s.reserve -= dvPct(s, s.highPower ? DV.stream : DV.streamWeak); },
+      id: 'a3.burn', scene: 'dark', kind: 'instrument', year: s => s.streamRoute === 'evade' ? streamPlan(s).done : s.arrive - 5, when: s => src(s) && s.streamRoute === 'evade',
       title: { ru: 'Инженерный журнал · манёвр', en: 'Engineering log · manoeuvre' },
       text: {
-        ru: s => v1(s) && !s.highPower ? `Безопасный манёвр — короткий и мощный, но резерв повышенной мощности отдан группе Б ${yrs(heatAgo(s))} назад. Остаётся серия слабых коррекций: двенадцать суток.${s.streamHit ? '' : ' Корабль уходит с края потока.'}
+        ru: s => !s.highPower ? `Безопасный манёвр — короткий и мощный, но резерв повышенной мощности отдан группе Б ${yrs(heatAgo(s))} назад. Остаётся серия слабых коррекций: двенадцать суток.${s.streamHit ? '' : ' Корабль уходит с края потока.'}
 Резерв манёвров: −${f1(dvPct(s, DV.streamWeak), 'ru')}%.
-Траектория изменена: корабль пройдёт у самого карлика.` : (s.highPower
-          ? `Безопасный манёвр один — короткий и мощный. Контур с резервом повышенной мощности держит его: корабль уходит с края потока за шесть часов.\nРезерв манёвров: −${f1(dvPct(s, DV.stream), 'ru')}%.`
-          : `Безопасный манёвр один — короткий и мощный. Именно его исключил компромисс Ирсона ${yrs(heatAgo(s))} назад: резерв повышенной мощности отдан группе Б. Это было известно заранее и лежит в открытом архиве. Остаётся серия слабых коррекций с потерями между ними.\nРезерв манёвров: −${f1(dvPct(s, DV.streamWeak), 'ru')}% — ниже того, что нужно для работы в системе и посадки.`) +
-          `\nТраектория изменена: корабль пройдёт у самого карлика.`,
-        en: s => v1(s) && !s.highPower ? `The safe manoeuvre is short and powerful, but the high-power reserve went to group B ${yrsEn(heatAgo(s))} ago. What remains is a series of weak corrections: twelve days.${s.streamHit ? '' : ' The ship leaves the edge of the stream.'}
+Траектория изменена: корабль пройдёт у самого карлика.`
+          : `Безопасный манёвр один — короткий и мощный. Контур с резервом повышенной мощности держит его: корабль уходит с края потока за шесть часов.\nРезерв манёвров: −${f1(dvPct(s, DV.stream), 'ru')}%.\nТраектория изменена: корабль пройдёт у самого карлика.`,
+        en: s => !s.highPower ? `The safe manoeuvre is short and powerful, but the high-power reserve went to group B ${yrsEn(heatAgo(s))} ago. What remains is a series of weak corrections: twelve days.${s.streamHit ? '' : ' The ship leaves the edge of the stream.'}
 Manoeuvre reserve: −${f1(dvPct(s, DV.streamWeak), 'en')}%.
-Trajectory changed: the ship will pass close by the dwarf.` : (s.highPower
-          ? `There is one safe manoeuvre — short and powerful. The loop with the high-power reserve holds it: the ship leaves the stream edge in six hours.\nManoeuvre reserve: −${f1(dvPct(s, DV.stream), 'en')}%.`
-          : `There is one safe manoeuvre — short and powerful. Exactly the one Irson's compromise ruled out ${yrsEn(heatAgo(s))} ago: the high-power reserve went to group B. This was known in advance and sits in the open archive. What remains is a series of weak corrections, with losses between them.\nManoeuvre reserve: −${f1(dvPct(s, DV.streamWeak), 'en')}% — below what is needed for work in the system and for landing.`) +
-          `\nTrajectory changed: the ship will pass close by the dwarf.`
+Trajectory changed: the ship will pass close by the dwarf.`
+          : `There is one safe manoeuvre — short and powerful. The loop with the high-power reserve holds it: the ship leaves the stream edge in six hours.\nManoeuvre reserve: −${f1(dvPct(s, DV.stream), 'en')}%.\nTrajectory changed: the ship will pass close by the dwarf.`
       }
     },
     {
@@ -6296,86 +5999,6 @@ They decide together; a delivery signature cannot replace local acceptance.`
       }
     },
     {
-      id: 'a3s.outpost', illus: 'xylona-lock', scene: 'arrival', kind: 'transcript', year: s => s.arrive, when: s => s.mission === 'supply' && !supplyS(s),
-      title: { ru: 'Ксилона Ир', en: 'Xylona Ir' },
-      text: {
-        ru: s => { const L = roadDead(s); return `— Сорок первая, Ксилона Ир слышит вас. Подождите, мы доводим антенну вручную.
-
-Свет идёт две секунды в одну сторону. Селина Вей отвечает и оставляет каналу время вернуться.
-
-— Привезли архив Кольца. Сначала передадим оглавление.
-
-Форпост не слышал Кольцо ${yrs(s.arrive - xyl().relayYears)}. Капсульный запас иссяк ${yrs(Math.max(1, s.arrive - xyl().capsuleYears))} назад; сеть на сто шестьдесят держит двести пятьдесят.
-
-Позднее у шлюза их встречает старший форпоста; на его рукаве закреплён ключ ручного привода.
-
-${L > 0 ? `— До нас дошли не все, — говорит Селина. — В пути умерли ${ppl(L)}. Имена передадим вместе с журналом.` : '— Все наши дошли, — говорит Селина.'}
-
-Старший пропускает их внутрь:
-
-— Расскажите, что было в Кольце, пока мы не слышали.`; },
-        en: s => { const L = roadDead(s); return `"Forty-First, Xylona Ir hears you. Give us a moment; we are aiming the antenna by hand."
-
-Light takes two seconds each way. Selina Vei answers, then leaves time for the reply.
-
-"We brought the Ring archive. We'll send the contents first."
-
-The outpost has not heard the Ring for ${yrsEn(s.arrive - xyl().relayYears)}. Capsule spares ran out ${yrsEn(Math.max(1, s.arrive - xyl().capsuleYears))} ago; a system built for a hundred and sixty supports two hundred and fifty.
-
-Later, the outpost's senior meets them at the airlock, a hand-crank key clipped to his sleeve.
-
-${L > 0 ? `"Not all of us made it," Selina says. "${L} died on the way. We'll send their names with the log."` : '"All of us made it," Selina says.'}
-
-He lets them through.
-
-"Tell us what happened in the Ring while we couldn't hear."`; }
-      }
-    },
-    {
-      id: 'a3s.activity', scene: 'arrival', kind: 'instrument', year: s => s.arrive, when: s => s.mission === 'supply' && !supplyS(s),
-      title: { ru: 'Журнал вахты · звезда Барнарда', en: "Watch log · Barnard's Star" },
-      text: {
-        ru: s => `Звезда в активной фазе: вспышки — раз в несколько суток. Антенна передатчика и холодильники капсул ставятся снаружи; электроника монтажа под вспышкой выгорает.${hasIR(s) ? ' ИК-обсерватория видела эту фазу ещё на подлёте: защиту заготовили заранее.' : ''} Временный контур форпоста перегружен — двести пятьдесят человек на сто шестьдесят мест — и держит ещё около сорока пяти суток; дальше форпост живёт на воде корабля, в тесноте, пока не поставят свои системы.`,
-        en: s => `The star is in an active phase: flares every few days. The transmitter antenna and the capsule coolers go up outside; installation electronics burn out under a flare.${hasIR(s) ? ' The IR observatory saw this phase on approach: the shielding was prepared in advance.' : ''} The outpost's temporary loop is overloaded — two hundred and fifty people on a hundred and sixty places — and holds about forty-five more days; after that the outpost lives crowded on the ship's water until its own systems are in.`
-      }
-    },
-    {
-      id: 'd.supplyApproach', scene: 'arrival', kind: 'decision', when: s => s.mission === 'supply' && !supplyS(s),
-      title: { ru: 'Монтаж под вспышками', en: 'Installation under the flares' },
-      context: {
-        ru: 'Ждать сколько угодно нельзя: временный контур форпоста кончается через сорок пять суток.',
-        en: "Waiting indefinitely is not an option: the outpost's temporary loop runs out in forty-five days."
-      },
-      options: s => [{
-        id: 'protect',
-        label: { ru: 'Защитить монтаж', en: 'Shield the installation' },
-        known: {
-          ru: [`Материалы для высадки −${hasIR(s) ? 5 : 10}%: экраны для наружных работ.`, 'Четырнадцать суток — и работа идёт под любой вспышкой.'],
-          en: [`Landing materials −${hasIR(s) ? 5 : 10}%: screens for the outside work.`, 'Fourteen days — and the work goes on under any flare.']
-        },
-        effect: st => { st.approach = 'protect'; st.materials -= hasIR(st) ? 5 : 10; },
-        record: { ru: 'Экраны из материалов для высадки встают над площадкой. Монтаж идёт и под вспышками.', en: 'Screens made from the landing materials go up over the site. The work goes on under the flares too.' }
-      }, {
-        id: 'wait',
-        label: { ru: 'Переждать активность', en: 'Wait out the activity' },
-        known: {
-          ru: ['Не меньше тридцати суток ожидания; после — пятнадцать суток запаса у форпоста.', 'В перегруженном форпосте за это время погибнут трое самых слабых.'],
-          en: ['At least thirty days of waiting; afterwards, fifteen days of margin at the outpost.', 'In the overloaded outpost the three weakest will die meanwhile.']
-        },
-        effect: st => { st.approach = 'wait'; st.deadHere += 3; st.outpostDead += 3; },
-        record: { ru: 'Совет решает ждать. Через тридцать два дня звезда успокаивается. На склоне у антенны — три новые могилы.', en: 'The council decides to wait. Thirty-two days later the star quiets. Three new graves on the slope by the antenna.' }
-      }, {
-        id: 'block',
-        label: { ru: 'Отдать резервный блок корабельной сети', en: "Give the ship's reserve power block" },
-        known: {
-          ru: ['Трое суток: резервный блок питает защитное поле над площадкой и выгорает.', 'У корабля остаётся одна сеть из двух: второй бригады и колец для переселенцев питать будет нечем.'],
-          en: ['Three days: the reserve block powers a protective field over the site and burns out.', "The ship is left with one grid of two: there will be nothing to power a second crew or rings for settlers."]
-        },
-        effect: st => { st.approach = 'block'; st.gridBlocks = 1; },
-        record: { ru: 'Резервный блок отдаёт поле за трое суток и гаснет. Монтаж закончен до первой большой вспышки.', en: 'The reserve block gives its field for three days and dies. The installation is done before the first big flare.' }
-      }]
-    },
-    {
       id: 'd.deliver2', scene: 'arrival', kind: 'decision', year: opYear, when: supplyS,
       title: { ru: 'План работ', en: 'The work plan' },
       context: {
@@ -6387,66 +6010,6 @@ He lets them through.
         return ids.includes('capsules') ? Object.assign(pick('capsules', 'сначала устойчивое жизнеобеспечение', 'stable life support first'), { assume: { ru: 'испытанная схема сохранит работоспособность до приёмки', en: 'the tested system will remain functional until acceptance' } })
           : ids.includes('shelter') ? pick('shelter', 'на капсулы материалов нет — сначала места', 'no materials for capsules — berths first') : pick(ids[0], 'других работ нет', 'no other work is possible'); },
       options: s => deliverOptions(s)
-    },
-    {
-      id: 'd.deliver', scene: 'arrival', kind: 'decision', year: s => s.arrive, when: s => s.mission === 'supply' && !supplyS(s),
-      title: { ru: 'Что ставить первым', en: 'What to install first' },
-      context: {
-        ru: s => `Монтажная бригада одна. Энергии форпоста хватает на одну большую работу за раз. ${supplySrc(s, 'ru')}`,
-        en: s => `There is one installation crew. The outpost's power covers one big job at a time. ${supplySrc(s, 'en')}`
-      },
-      options: s => supplyOptions(s, [
-        {
-          id: 'relay',
-          label: { ru: 'Сначала связь', en: 'The link first' },
-          known: {
-            ru: s => { const f = supplyForecast(s, 'relay'); return ['Специалист и передатчик: форпост снова слышит Кольцо через полгода.', f.capsOK ? 'Капсулы и вода — через три года: пока форпост живёт в тесноте на воде корабля, шестеро самых слабых не доживут.' : 'Капсульный блок собрать уже не из чего: капсулы не будут восстановлены, шестеро самых слабых не доживут, остальные — на пределе.']; },
-            en: s => { const f = supplyForecast(s, 'relay'); return ['The specialist and the transmitter: the outpost hears the Ring again in half a year.', f.capsOK ? "Capsules and water in three years: while the outpost lives crowded on the ship's water, six of the weakest will not survive." : 'There will be nothing left to build the capsule unit from: the capsules will not be restored, six of the weakest will not survive, the rest at the limit.']; }
-          },
-          effect: st => { st.deliver = 'relay'; st.deadHere += 6; st.outpostDead += 6; supplyBuild(st, 'relay'); },
-          record: {
-            ru: s => 'Через полгода форпост слышит Кольцо. Сводки за семьдесят лет читают вслух в столовой, неделю подряд.' + (s.capsOK ? '' : ' Капсульного блока не будет: собрать его не из чего.'),
-            en: s => 'Half a year later the outpost hears the Ring. Seventy years of bulletins are read aloud in the mess hall, a week on end.' + (s.capsOK ? '' : ' There will be no capsule unit: there is nothing to build it from.')
-          }
-        },
-        {
-          id: 'capsules',
-          label: { ru: 'Сначала капсулы и вода', en: 'Capsules and water first' },
-          known: {
-            ru: s => { const f = supplyForecast(s, 'caps'); return ['Всем хватает воды и капсул; лишних будят реже.', f.relayOK ? 'Связь — через три года: ещё три года форпост не слышит Кольцо.' : 'Передатчик собрать уже не из чего: форпост так и не услышит Кольцо.']; },
-            en: s => { const f = supplyForecast(s, 'caps'); return ['Water and capsules for everyone; fewer need to stay awake.', f.relayOK ? 'The link in three years: three more years without the Ring.' : 'There will be nothing left to build the transmitter from: the outpost will never hear the Ring.']; }
-          },
-          effect: st => { st.deliver = 'capsules'; supplyBuild(st, 'caps'); },
-          record: {
-            ru: s => 'Бригада начинает с контура воды и капсул.' + (s.relayOK ? ' Передатчик ждёт своей очереди три года.' : ' Передатчика не будет: материалы кончились на капсулах.'),
-            en: s => 'The crew starts with the water loop and the capsules.' + (s.relayOK ? ' The transmitter waits its turn for three years.' : ' There will be no transmitter: the materials ran out on the capsules.')
-          }
-        }
-      ].concat(supplyBothCost(s) != null ? [{
-        id: 'both',
-        label: { ru: 'И то и другое сразу', en: 'Both at once' },
-        known: {
-          ru: [`Материалы для высадки −${supplyBothCost(s)}%: второй монтажный комплект${['tools', 'printQC'].includes(eqOf(s).prod) ? ' — со станков' : ''}.`, 'Связь через полгода, капсулы — сразу.'],
-          en: [`Landing materials −${supplyBothCost(s)}%: a second installation kit${['tools', 'printQC'].includes(eqOf(s).prod) ? ' — from the machine tools' : ''}.`, 'The link in half a year, capsules at once.']
-        },
-        effect: st => { st.deliver = 'both'; st.materials -= supplyBothCost(st); supplyBuild(st, 'relay'); },
-        record: {
-          ru: 'Второй комплект собирают из того, что везли для себя. Через полгода форпост и слышит Кольцо, и спит спокойно.',
-          en: 'The second kit is built from what they carried for themselves. Half a year later the outpost both hears the Ring and sleeps safely.'
-        }
-      }] : []).concat([{
-        id: 'shelter',
-        label: { ru: 'Переселить девяносто на корабль', en: 'Move ninety aboard the ship' },
-        known: {
-          ru: s => { const f = supplyForecast(s, 'relay', SHELTER); return [`Материалы для высадки −${SHELTER}%: койки и регенерация воздуха для девяноста; их кольца питает вторая сеть корабля.`, 'Давка кончается сразу, без смертей. Форпост будет зависеть от корабля: его кольца станут частью форпоста навсегда.', f.relayOK && f.capsOK ? 'Монтаж — по очереди, без спешки: обе системы.' : `Монтаж — по очереди: ${f.relayOK ? 'только связь' : f.capsOK ? 'только капсулы' : 'систем собрать не из чего'}.`]; },
-          en: s => { const f = supplyForecast(s, 'relay', SHELTER); return [`Landing materials −${SHELTER}%: berths and air regeneration for ninety; the ship's second grid powers their rings.`, 'The crush ends at once, with no deaths. The outpost will depend on the ship: its rings become part of the outpost for good.', f.relayOK && f.capsOK ? 'The installation goes in turn, without haste: both systems.' : `The installation goes in turn: ${f.relayOK ? 'the link only' : f.capsOK ? 'the capsules only' : 'nothing to build the systems from'}.`]; }
-        },
-        effect: st => { st.deliver = 'shelter'; st.shelter = true; st.materials -= SHELTER; supplyBuild(st, 'relay'); },
-        record: {
-          ru: 'Девяносто человек переходят в кольца сорок первой. Форпост впервые за годы спит не по очереди.',
-          en: "Ninety people move into the Forty-First's rings. For the first time in years the outpost sleeps without taking turns."
-        }
-      }]))
     },
     {
       id: 'a3r.store', scene: 'arrival', kind: 'instrument', year: s => rescueS(s) ? arriveX(s) : s.arrive, when: s => s.mission === 'rescue',
@@ -6741,7 +6304,7 @@ Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}${s.dea
             ru: [L ? 'Расширенная посадка: первая волна — сто человек, база за два года.' : 'Без расширенной посадки: первая волна — сорок человек, база за пять лет.', low ? 'Резерв манёвров мал: челноки — к одному участку, без запасного.' : 'Челноки выбирают из нескольких участков.'],
             en: [L ? 'Extended landing kit: a first wave of a hundred, a base in two years.' : 'No extended landing kit: a first wave of forty, a base in five years.', low ? 'The manoeuvre reserve is small: shuttles to one site, no fallback.' : 'The shuttles can choose among several sites.']
           },
-          effect: st => { st.home = 'land'; },
+          effect: st => { st.home = 'land'; st.homeReadyAt = st.year + (L ? 2 : 5); },
           record: {
             ru: 'Совет решает спускаться. Первая волна уходит к участку, который выбрала разведка с орбиты за первые недели. Остальные спят, пока внизу не построят жильё.',
             en: 'The council decides to go down. The first wave leaves for the site the orbital survey chose in the first weeks. The rest sleep until housing is built below.'
@@ -6754,7 +6317,7 @@ Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}${s.dea
             ru: [s.materials >= 60 ? 'Материалы для высадки: −30% на купола.' : 'Материалов мало: купол на сорок человек, остальные ждут на орбите.', L ? 'Расширенная посадка: купола собирают за три года.' : 'Без расширенной посадки: купола — за шесть лет.'],
             en: [s.materials >= 60 ? 'Landing materials: −30% for the domes.' : 'Materials are short: a dome for forty, the rest wait in orbit.', L ? 'Extended landing kit: the domes go up in three years.' : 'No extended landing kit: the domes take six years.']
           },
-          effect: st => { st.home = 'domes'; st.materials -= Math.min(30, st.materials); },
+          effect: st => { if (st.materials >= 60) st.homeReadyAt = st.year + (L ? 3 : 6); st.home = 'domes'; st.materials -= Math.min(30, st.materials); },   // купол на сорок — остальные на орбите
           record: {
             ru: 'Совет решает строить купола на полосе между вечным днём и вечной ночью. Ветер там не стихает никогда.',
             en: 'The council decides to build domes on the strip between endless day and endless night. The wind there never stops.'
@@ -6778,7 +6341,7 @@ Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}${s.dea
             ru: ['Твёрдая опора, лёд и металл под рукой; материалы для высадки −30%.', L ? 'Расширенная посадка: база за три года.' : 'Без расширенной посадки: база — за семь лет.'],
             en: ['Solid ground, ice and metal at hand; landing materials −30%.', L ? 'Extended landing kit: a base in three years.' : 'No extended landing kit: a base in seven years.']
           },
-          effect: st => { st.home = 'moons'; st.materials -= 30; },
+          effect: st => { st.home = 'moons'; st.materials -= 30; st.homeReadyAt = st.year + (L ? 3 : 7); },
           record: {
             ru: 'Совет решает садиться туда, где есть твёрдое. Дом будет маленьким и тяжёлым, зато из местного камня.',
             en: 'The council decides to land wherever there is solid ground. The home will be small and heavy, but built of local stone.'
@@ -6947,7 +6510,7 @@ Dasser is still the expedition leader, but he too is asked as the eldest, and he
           ru: ['Надёжное укрытие сейчас.', 'Модуль больше не поднимется. Ни он, ни что-либо подобного размера.'],
           en: ['A reliable shelter now.', 'The lander will never lift again. Neither will anything of its size.']
         },
-        effect: st => { st.settle = 'surface'; },
+        effect: st => { st.settle = 'surface'; if (st.home === 'orbit') st.homeReadyAt = st.year + (st.kits.includes('landing') ? 2 : 5); },   // с орбиты — стройка с этого решения
         record: {
           ru: 'Совет выбирает поверхность. Модуль разбирают за месяц: его рёбра становятся каркасом укрытия. Путь наверх закрыт — это и есть решение.',
           en: 'The council chooses the surface. The lander is taken apart in a month: its ribs become the shelter\'s frame. The way up is closed — that is the decision.'
@@ -7030,19 +6593,6 @@ Naya separates observations of the signal sector from guesses about their meanin
 The joint report lists working systems, remaining dependencies and everyone who died, by name.
 
 The ship transmits the selected letters and the report; every packet keeps its sending date.`
-      }
-    },
-    {
-      id: 'a4.supply', scene: 'home', kind: 'note', year: s => Y4(s), when: s => s.mission === 'supply' && !supplyS(s),
-      act: { ru: 'Акт IV · Форпост', en: 'Act IV · The outpost' },
-      author: { ru: 'Бортовой архив', en: "Ship's archive" },
-      text: {
-        ru: s => `Корабль остаётся у форпоста: его кольца — второй жилой модуль, его реакторы — вторая сеть. Экипаж сорок первой и люди Ксилоны Ир служат одной вахтой.` + (s.deliver === 'relay' ? ' Шестерых, не дождавшихся капсул, похоронили на склоне у антенны.' : s.deliver === 'capsules' ? ' Три года без связи форпост пережил спокойнее, чем семьдесят до этого: теперь было ради чего ждать.' : s.shelter ? ' Девяносто человек форпоста живут в кольцах корабля: уйти ему теперь некуда.' : '')
-          + (!s.relayOK ? ' Передатчика нет: форпост по-прежнему не слышит Кольцо, и Земля узнает о нас только по нашему передатчику.' : '') + (!s.capsOK ? ' Капсульного блока нет: спящих не уложить, жизнеобеспечение работает на пределе.' : '')
-          + (s.gridBlocks < 2 ? ' У корабля одна сеть из двух: резервный блок сгорел под вспышками.' : ''),
-        en: s => `The ship stays at the outpost: its rings a second habitat, its reactors a second grid. The Forty-First's crew and the people of Xylona Ir stand one watch.` + (s.deliver === 'relay' ? ' The six who did not live to the capsules were buried on the slope by the antenna.' : s.deliver === 'capsules' ? ' The outpost bore three years without the link more calmly than the seventy before: now there was something to wait for.' : s.shelter ? " Ninety of the outpost's people live in the ship's rings: it has nowhere to go now." : '')
-          + (!s.relayOK ? ' There is no transmitter: the outpost still cannot hear the Ring, and Earth will learn of us only through our own transmitter.' : '') + (!s.capsOK ? ' There is no capsule unit: the sleepers cannot be laid down, and life support runs at its limit.' : '')
-          + (s.gridBlocks < 2 ? ' The ship has one grid of two: the reserve block burned out under the flares.' : '')
       }
     },
     // ---- мир, где высадиться нельзя
@@ -7256,13 +6806,15 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     sosPass: { view: 'distress', fallback: 'assets/drift.jpg', label: { ru: 'Лакайль 9352 · совет Перевала', en: 'Lacaille 9352 · council of the Pass' }, side: 'right' },
     sosEarth: { view: 'distress', img: 'assets/council.jpg', fallback: 'assets/depart.jpg', label: { ru: 'Земля · Совет Звездоплавания', en: 'Earth · Council of Star Navigation' }, side: 'right' },
     sosLocal: { view: 'distress', fallback: 'assets/drift.jpg', label: { ru: 'Колония у звезды цели · совет', en: 'The colony at the target star · council' }, side: 'right' },
-    rescue: { view: 'home', fallback: 'assets/drift.jpg', label: { ru: 'У цели · корабль сорок первой', en: 'At the target · the Forty-First' }, side: 'right' }
+    rescue: { view: 'home', fallback: 'assets/drift.jpg', label: { ru: 'У цели · корабль сорок первой', en: 'At the target · the Forty-First' }, side: 'right' },
+    // корабль поддержки: камера — к его расчётному положению позади нас (прямой видеосвязи нет)
+    support: { view: 'support', fallback: 'assets/drift.jpg', label: { ru: 'Корабль поддержки · расчётное положение', en: 'The support ship · estimated position' }, side: 'right' }
   };
   Object.assign(ui.ru, {
     archiveBtn: 'Архив', encBtn: 'Энциклопедия', close: 'Закрыть', skipIntro: 'Пропустить', nextShot: 'Дальше', speed: 'скорость', lag: 'задержка связи с Землёй', months: 'мес.',
     earth: 'Земля', sleepers: 'Зал анабиоза', asleep: 'спят', onWatch: 'на вахте', lost: 'погибли в пути',
     model: 'модель: проход безопасен · 94%', manual: 'ручная проверка Орина: край плотнее на 6%',
-    pathStraight: 'без коррекции', pathAround: 'манёвр', edgeTrust: 'удары пыли ×1,4 прогноза · щит −1,5 года',
+    pathStraight: 'без коррекции', pathAround: 'манёвр',
     edgeMan: 'край плотнее модели', measured: 'затмение: пыль крупная, ×1,4', lives: 'Годы бодрствования',
     probeTitle: 'Две записи · один сектор неба', probeA: 'последняя передача 32-й', probeB: 'новый сигнал · каждые 40 мин',
     probeMatch: 'совпадают в пределах погрешности · код неизвестен',
@@ -7320,7 +6872,7 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     archiveBtn: 'Archive', encBtn: 'Encyclopedia', close: 'Close', skipIntro: 'Skip', nextShot: 'Next', speed: 'velocity', lag: 'signal delay to Earth', months: 'mo',
     earth: 'Earth', sleepers: 'Anabiosis hall', asleep: 'asleep', onWatch: 'on watch', lost: 'died on the road',
     model: 'model: passage safe · 94%', manual: "Orin's manual check: edge 6% denser",
-    pathStraight: 'no correction', pathAround: 'manoeuvre', edgeTrust: 'dust impacts ×1.4 forecast · shield −1.5 yr',
+    pathStraight: 'no correction', pathAround: 'manoeuvre',
     edgeMan: 'edge denser than model', measured: 'occultation: coarse dust, ×1.4', lives: 'Years awake',
     probeTitle: 'Two recordings · one sector of sky', probeA: "32nd's last transmission", probeB: 'new signal · every 40 min',
     probeMatch: 'match within the error · code unknown',
@@ -7483,10 +7035,10 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     && inc.alive === inc.sleepers + inc.watch && inc.deadline === inc.sent + inc.hold);
   // решения, добавленные в сюжет позже: старые сохранения проходят их вариантом по умолчанию (engine.migrate)
   // (id варианта не 'go': иначе старая перемотка молча съедалась бы решением и ответы сдвигались)
-  const INSERTED = { 'd.sos.drift': 'carry', 'd.sos.stream': 'carry', 'd.supplyApproach': 'protect', 'd.rescuePrep': 'defer', 'd.rescueShelter': 'direct', 'd.newInfo': 'stay' };
+  const INSERTED = { 'd.sos.stream': 'carry', 'd.rescuePrep': 'defer', 'd.rescueShelter': 'direct', 'd.newInfo': 'stay' };
   const marginLine = (c, dl, lang) => lang === 'ru'
-    ? `Капсулы держат до года ${dl}: ` + (c <= dl ? `запас — ${yrs(dl - c)}.` : c < dl + 5 ? `опоздание ${yrs(Math.max(1, c - dl))} — часть блоков откажет.` : 'не успеть.')
-    : `The capsules hold until year ${dl}: ` + (c <= dl ? `margin ${yrsEn(dl - c)}.` : c < dl + 5 ? `${yrsEn(Math.max(1, c - dl))} late — some blocks will fail.` : 'too late.');
+    ? `Капсулы держат до года ${Math.round(dl)}: ` + (c <= dl ? `запас — ${yrs(dl - c)}.` : c < dl + 5 ? `опоздание ${yrs(Math.max(1, c - dl))} — часть блоков откажет.` : 'не успеть.')
+    : `The capsules hold until year ${Math.round(dl)}: ` + (c <= dl ? `margin ${yrsEn(dl - c)}.` : c < dl + 5 ? `${yrsEn(Math.max(1, c - dl))} late — some blocks will fail.` : 'too late.');
   const capLine = (r, lang) => {
     const ru = lang === 'ru', c = yr(r.complete);
     if (r.id === 'local') return ru ? `помощь внутри системы — к году ${c}` : `help within the system by year ${c}`;
@@ -7513,12 +7065,12 @@ Died on the road: ${lossesOf(s, s.arrive).total + s.dead}. Of the crew at the ta
     return ru
       ? `${head} Сигнал бедствия шёл сюда ${dt < 0.1 ? 'считаные недели' : `${f1(dt, 'ru')} ${Math.round(dt * 10) % 10 ? 'года' : plural(Math.round(dt), ['год', 'года', 'лет'])}`}.
 
-Сорок первая, экспедиция к ${nmD(s)}: ${CAUSE[inc.cause].ru}. Живы ${ppl(inc.alive)}: двенадцать на вахте, остальные спят в законсервированном зале. Капсулы рассчитаны до года ${inc.deadline}. ${shipWhere(s, c.hear, 'ru')}
+Сорок первая, экспедиция к ${nmD(s)}: ${CAUSE[inc.cause].ru}. Живы ${ppl(inc.alive)}: двенадцать на вахте, остальные спят в законсервированном зале. Капсулы рассчитаны до года ${Math.round(inc.deadline)}. ${shipWhere(s, c.hear, 'ru')}
 
 ${tail}`
       : `${head} The distress signal took ${dt < 0.1 ? 'a few weeks' : `${f1(dt, 'en')} years`} to get here.
 
-The Forty-First, the expedition to ${nm(s, 'en')}: ${CAUSE[inc.cause].en}. ${inc.alive} are alive: twelve on watch, the rest asleep in the conserved hall. The capsules are rated to year ${inc.deadline}. ${shipWhere(s, c.hear, 'en')}
+The Forty-First, the expedition to ${nm(s, 'en')}: ${CAUSE[inc.cause].en}. ${inc.alive} are alive: twelve on watch, the rest asleep in the conserved hall. The capsules are rated to year ${Math.round(inc.deadline)}. ${shipWhere(s, c.hear, 'en')}
 
 ${tail}`; };
 
@@ -7556,10 +7108,10 @@ ${tail}`; };
       title: { ru: 'Карта сигнала', en: 'Signal map' },
       text: {
         ru: s => { const R = plan(s), c = R.council, L = passEarthLy();
-          return R.list.map(r => `${cap(place(r, 'ru'))}: сигнал — год ${yr(r.hear)}; ${capLine(r, 'ru')}.`).join('\n') + `\nКапсулы держат до года ${s.inc.deadline}.`
+          return R.list.map(r => `${cap(place(r, 'ru'))}: сигнал — год ${yr(r.hear)}; ${capLine(r, 'ru')}.`).join('\n') + `\nКапсулы держат до года ${Math.round(s.inc.deadline)}.`
             + (c.id === 'pass' ? `\n\nРешение Перевала дойдёт до Земли в год ${yr(c.hear + L)}; её ответ вернётся сюда в год ${yr(c.hear + 2 * L)}. Первым услышать — не значит первым успеть.` : ''); },
         en: s => { const R = plan(s), c = R.council, L = passEarthLy();
-          return R.list.map(r => `${cap(place(r, 'en'))}: signal in year ${yr(r.hear)}; ${capLine(r, 'en')}.`).join('\n') + `\nThe capsules hold until year ${s.inc.deadline}.`
+          return R.list.map(r => `${cap(place(r, 'en'))}: signal in year ${yr(r.hear)}; ${capLine(r, 'en')}.`).join('\n') + `\nThe capsules hold until year ${Math.round(s.inc.deadline)}.`
             + (c.id === 'pass' ? `\n\nThe Pass's decision will reach Earth in year ${yr(c.hear + L)}; Earth's answer will come back here in year ${yr(c.hear + 2 * L)}. Hearing first does not mean arriving first.` : ''); }
       }
     },
@@ -7567,8 +7119,8 @@ ${tail}`; };
       id: 'd.r.launch', scene: 'distress', kind: 'decision',
       title: { ru: 'Кого посылать', en: 'Whom to send' },
       context: {
-        ru: s => `Живы ${ppl(s.inc.alive)}; капсулы держат до года ${s.inc.deadline}. Каждый вариант — чей-то аппарат, чьё-то топливо и чьи-то люди.`,
-        en: s => `${s.inc.alive} are alive; the capsules hold until year ${s.inc.deadline}. Every option is someone's vessel, someone's fuel and someone's people.`
+        ru: s => `Живы ${ppl(s.inc.alive)}; капсулы держат до года ${Math.round(s.inc.deadline)}. Каждый вариант — чей-то аппарат, чьё-то топливо и чьи-то люди.`,
+        en: s => `${s.inc.alive} are alive; the capsules hold until year ${Math.round(s.inc.deadline)}. Every option is someone's vessel, someone's fuel and someone's people.`
       },
       options: s => {
         const e = rsc(s, 'earth'), p = rsc(s, 'pass'), c = plan(s).council, dl = s.inc.deadline;
@@ -7594,8 +7146,8 @@ ${tail}`; };
             en: [`Ten years to build${e.launch - 10 > e.hear + 0.01 ? ', and building can start only when epoch III comes' : ''}; launch in year ${yr(e.launch)}, twelve rescuers at 0.2c. The repair by year ${yr(e.complete)}.`, marginLine(e.complete, dl, 'en'), 'The cost: the laser stations work on the rescue for ten years — the next epoch III expedition leaves later.']
           }, { ru: 'Совет решает строить парус. Сорок первую снова снаряжают из этого зала — теперь за ней самой.', en: 'The Council decides to build the sail. The Forty-First is fitted out from this hall again — this time for its own sake.' }),
           pick('none', { ru: 'Не посылать', en: 'Send nothing' }, {
-            ru: [e.complete >= dl + M.CASCADE ? `Парус не успеет: ремонт к году ${yr(e.complete)}, капсулы держат до года ${dl}.` : `Парус успел бы: ремонт к году ${yr(e.complete)}, капсулы держат до года ${dl}.`, 'Сорок первой уйдёт ответ: имена, расчёт, решение.'],
-            en: [e.complete >= dl + M.CASCADE ? `A sail would not make it: the repair by year ${yr(e.complete)}, the capsules hold until year ${dl}.` : `A sail would make it: the repair by year ${yr(e.complete)}, the capsules hold until year ${dl}.`, 'The Forty-First will receive an answer: the names, the calculation, the decision.']
+            ru: [e.complete >= dl + M.CASCADE ? `Парус не успеет: ремонт к году ${yr(e.complete)}, капсулы держат до года ${Math.round(dl)}.` : `Парус успел бы: ремонт к году ${yr(e.complete)}, капсулы держат до года ${Math.round(dl)}.`, 'Сорок первой уйдёт ответ: имена, расчёт, решение.'],
+            en: [e.complete >= dl + M.CASCADE ? `A sail would not make it: the repair by year ${yr(e.complete)}, the capsules hold until year ${Math.round(dl)}.` : `A sail would make it: the repair by year ${yr(e.complete)}, the capsules hold until year ${Math.round(dl)}.`, 'The Forty-First will receive an answer: the names, the calculation, the decision.']
           }, { ru: 'Совет решает не посылать. Ответ сорок первой пишут вслух, при всех.', en: 'The Council decides to send nothing. The answer to the Forty-First is written aloud, before everyone.' })
         ];
         const col = M.colony(c.colony), pctUp = Math.round(s.inc.alive / col.awake * 100), yrsWake = Math.ceil(s.inc.sleepers / 50);
@@ -7734,8 +7286,8 @@ The rescuer secures a bag to the handrail.
       effect: s => { s.outcome = 'remain'; },
       title: { ru: OUTCOME_R.remain.ru, en: OUTCOME_R.remain.en },
       text: {
-        ru: s => `Совет не посылает спасателей. Сорок первой уходит ответ: имена, расчёт, решение. Спящие остаются в законсервированном зале до года ${s.inc.deadline}; маяк передаёт эту дату всем, кто услышит.`,
-        en: s => `The Council sends no rescuers. An answer goes to the Forty-First: the names, the calculation, the decision. The sleepers stay in the conserved hall until year ${s.inc.deadline}; the beacon transmits that date to anyone who hears.`
+        ru: s => `Совет не посылает спасателей. Сорок первой уходит ответ: имена, расчёт, решение. Спящие остаются в законсервированном зале до года ${Math.round(s.inc.deadline)}; маяк передаёт эту дату всем, кто услышит.`,
+        en: s => `The Council sends no rescuers. An answer goes to the Forty-First: the names, the calculation, the decision. The sleepers stay in the conserved hall until year ${Math.round(s.inc.deadline)}; the beacon transmits that date to anyone who hears.`
       }
     }
   ];
@@ -7757,7 +7309,7 @@ The rescuer secures a bag to the handrail.
   }
 
   const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
-  const content = { beats, initialState, ui, scenes, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, shipHealth, calPick, wearHooks: { respond: (s, rec) => wearRespond(s, rec), decision: (s, ev) => wearDecision(s, ev), jobsLine: (s, l) => jobsLine(s, l) }, events: EV, navDeparture, epoch3, lossFuture: () => LOSS_FUTURE, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
+  const content = { beats, initialState, ui, scenes, supportPlan, supportWorld, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, shipHealth, calPick, wearHooks: { respond: (s, rec) => wearRespond(s, rec), decision: (s, ev) => wearDecision(s, ev), jobsLine: (s, l) => jobsLine(s, l) }, events: EV, navDeparture, epoch3, lossFuture: () => LOSS_FUTURE, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld: () => WORLD, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

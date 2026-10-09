@@ -296,6 +296,87 @@
     shipScene.add(ship);
   }
 
+  // ---------------------------------------------------------------- корабль поддержки (DOC «Корабль поддержки — проект v1»)
+  // Болванка того же уровня, что наш корабль (детализация — потом): щит R 70, корпус R 8, капсульный блок на 9 мест
+  // (семь спят весь путь, два — резерв), пеналы материалов высадки, криобаки ³He и дейтерия, теплообменники, поворотная
+  // антенна дальней связи (смотрит на Землю — назад), радиаторы, неподвижная петля магнита, ступень торможения; ступень
+  // разгона — восемь шаров цепочкой вдоль оси (наш корабль — поперечные группы), отделяется через 8 лет. Нос — +x.
+  // В рейсе он в световых годах от нас — своя локальная сцена и камера, синхронные с общей; при встрече — в сцене корабля
+  const sup = { g: null, stage: null, plume: null, engines: [], floods: [], scene: null, cam: null, hemi: null, key: null, farM: Infinity, mode: null, qWant: new THREE.Quaternion(), qInit: false };
+  function supEngine(p, x, r) {
+    coneX(p, x - r * 1.1, x, r, r * 0.25, M.nozzle, true);
+    torusX(p, x - r * 1.1, r, r * 0.07, M.gold, 64);
+    sup.engines.push(engineGlow(p, x - r * 1.1, r));
+  }
+  function buildSupport() {
+    const g = new THREE.Group(); sup.g = g; g.visible = false;
+    const diag = k => Math.PI / 4 + k * Math.PI / 2;
+    coneX(g, -16, 0, 70, 8, M.shield);                                        // щит
+    cylX(g, -20, -285, 8, M.hull, 0, 0, 24);                                    // корпус
+    cylX(g, -48, -72, 9, M.hull, 0, 0, 24); torusX(g, -51, 11, 1.2, M.shield, 48); torusX(g, -69, 11, 1.2, M.shield, 48);   // капсулы
+    for (let k = 0; k < 4; k++) cylX(g, -45, -85, 8, M.hull, 19 * Math.cos(diag(k)), 19 * Math.sin(diag(k)), 24);   // материалы высадки
+    sphere(g, -110, 0, 15, 6, M.tank); sphere(g, -110, 0, -15, 6, M.tank); sphere(g, -130, 0, 0, 6.5, M.tank);   // ³He и дейтерий
+    for (const z of [18, -18]) add(g, new THREE.BoxGeometry(20, 10, 12), M.hull, m => m.position.set(-155, 0, z));   // теплообменники
+    add(g, new THREE.CylinderGeometry(1.4, 1.8, 30, 12), M.hull, m => m.position.set(-170, 24, 0));   // опора антенны
+    sphere(g, -170, 40, 0, 2.6, M.gold);                                        // привод
+    if (!M.dish) M.dish = Object.assign(M.shield.clone(), { side: THREE.DoubleSide });
+    add(g, new THREE.SphereGeometry(15, 40, 8, 0, Math.PI * 2, 0, 0.9), M.dish, m => { m.rotation.z = -Math.PI / 2; m.position.set(-185, 40, 0); });   // тарелка R 11,7 — к Земле
+    for (let k = 0; k < 4; k++) fin(g, -100, -170, 30, 55, diag(k), M.rad);   // радиаторы энергетики
+    for (let k = 0; k < 4; k++) fin(g, -180, -275, 12, 40, diag(k), M.rad);   // радиаторы двигателя торможения
+    torusX(g, -285, 46, 2, M.gold, 96);                                         // петля плазменного магнита
+    for (let k = 0; k < 4; k++) sphere(g, -314.5, 22 * Math.cos(diag(k)), 22 * Math.sin(diag(k)), 14.5, M.tank);   // баки торможения
+    supEngine(g, -340, 16);
+    const st = new THREE.Group(); sup.stage = st; g.add(st);                    // ступень разгона
+    cylX(st, -358, -390, 4, M.truss, 0, 0, 12);
+    for (let i = 0; i < 8; i++) sphere(st, -433.5 - 95 * i, 0, 0, 43.5, M.drop);
+    for (let k = 0; k < 4; k++) cylX(st, -390, -1150, 1.5, M.truss, 48 * Math.cos(k * Math.PI / 2), 48 * Math.sin(k * Math.PI / 2), 8);
+    cylX(st, -1140, -1162, 6, M.truss, 0, 0, 12);
+    for (let k = 0; k < 4; k++) fin(st, -1160, -1990, 8, 63, diag(k), M.rad);
+    cylX(st, -1988, -2012, 6, M.truss, 0, 0, 12);
+    supEngine(st, -2010, 40);
+    sup.plume = add(st, new THREE.CylinderGeometry(26, 220, 1500, 40, 1, true), plume.material, m => { m.rotation.z = -Math.PI / 2; m.position.set(-2054 - 750, 0, 0); });
+    // свои огни: два прожектора с кромки щита вдоль корпуса
+    for (const y of [60, -60]) { const l = new THREE.SpotLight(0xfff1dc, 0, 700, 0.6, 0.7, 1); l.position.set(-18, y, 0); l.target.position.set(-220, y / 6, 0);
+      l.userData.base = 1.6; g.add(l, l.target); sup.floods.push(l); }
+    sup.scene = new THREE.Scene();
+    sup.hemi = new THREE.HemisphereLight(0x8a9bb0, 0x1a1c22, 0.25); sup.key = new THREE.DirectionalLight(0xfff4e6, 3.4);
+    sup.scene.add(sup.hemi, sup.key, sup.key.target, g);
+    sup.cam = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
+  }
+  // пройденное поддержкой расстояние, св. лет: разгон a, дрейф, магнит m (b → u), двигатель e (u → 0) — DOC, п. 4
+  function supX(S, y) {
+    const t = y - S.launch, a = S.acc, m = S.mag, e = S.brake, b = S.beta, u = S.u, q = S.arrive - S.launch - a - m - e, xc = b * a / 2 + b * q;
+    if (t <= 0) return 0;
+    if (t < a) return b * t * t / (2 * a);
+    if (t < a + q) return b * a / 2 + b * (t - a);
+    if (t < a + q + m) { const z = t - a - q; return xc + b * z - (b - u) * z * z / (2 * m); }
+    if (t < a + q + m + e) { const w = t - a - q - m; return S.D - u * (e - w) * (e - w) / (2 * e); }
+    return S.D;
+  }
+  const supPos = () => { const S = world.support; return S && sup.mode === 'route' ? pathPoint(supX(S, world.year)) : shipPos(); };
+  // режим: в пути — своя сцена; встреча (нашли, год встречи) — рядом с нашим; до старта, потерян после даты встречи — нет
+  function stepSupport(dt) {
+    const S = world.support, y = world.year;
+    const mode = !S || y < S.launch ? null : S.meet && y >= S.arrive - 1e-6 ? 'meet' : y >= S.arrive - 1e-6 ? null : 'route';
+    if (mode !== sup.mode) { sup.mode = mode; if (mode === 'meet') shipScene.add(sup.g); else sup.scene.add(sup.g);
+      // встреча: в 800 м слева в кадре от нашего (как смотрит камера в этот момент) — и там остаётся, кадр его не двигает
+      if (mode === 'meet') sup.meetOff = new THREE.Vector3().crossVectors(offsetDir(), E3).normalize().multiplyScalar(800).addScaledVector(E3, 120); }
+    sup.g.visible = !!mode;
+    if (!mode) return;
+    const tau = y - S.launch, brakeAt = S.arrive - S.brake, flip = mode === 'route' && y >= brakeAt;   // последние 4 года — кормой вперёд
+    sup.qWant.copy(shipQBase); if (flip) sup.qWant.multiply(QFLIP);
+    if (!sup.qInit || sup.farM > 1e7) { sup.g.quaternion.copy(sup.qWant); sup.qInit = true; }   // вне кадра — сразу
+    else sup.g.quaternion.slerp(sup.qWant, 1 - Math.exp(-dt * 1.2));          // в кадре — плавный разворот
+    sup.stage.visible = mode === 'route' && tau < S.acc + 0.05;              // ступень разгона уходит после разгона
+    sup.engines[1].on = mode === 'route' && tau < S.acc; sup.plume.visible = sup.engines[1].on;
+    sup.engines[0].on = flip && y < S.arrive && sup.g.quaternion.angleTo(sup.qWant) < 0.035;   // двигатель торможения — развернувшись
+    for (const e of sup.engines) { e.a += ((e.on ? 1 : 0) - e.a) * (1 - Math.exp(-dt * 2.2));
+      e.discMat.uniforms.a.value = e.a; e.core.material.opacity = 0.3 * e.a; e.halo.material.opacity = 0.38 * e.a; e.core.visible = e.halo.visible = e.a > 0.01; e.light.intensity = 1.1 * e.a; }
+    sup.floods.forEach(f => { f.intensity = f.userData.base * lux.own; });
+    if (mode === 'meet') sup.g.position.copy(ship.position).add(sup.meetOff);
+    else sup.g.position.set(0, 0, 0);
+  }
+
   // ---------------------------------------------------------------- щит: 64 панели и нос H0 (осмотр, шаг 6)
   // Та же поверхность, что у прежнего конуса (x = −28 у кромки r = 172, x = 0 у носа r = 18); радиусы модели щита
   // (shield.js: 18/60/105/142/175) ложатся на неё как r3 = 18 + (r − 18)·154/157 — нос остаётся 18 м. Швы — зазор 0,8 м
@@ -1855,7 +1936,8 @@
     relic: { focus: 'ship', dist: 3600, yaw: 1.2, pitch: 0.3, pivot: -900 },
     arrival: { focus: 'ship', dist: 2600, yaw: 2.5, pitch: 0.16, pivot: -900, fit: 'arrival' },
     home: { focus: 'ship', dist: 3200, yaw: 2.5, pitch: 0.16, pivot: -900, fit: 'home' },
-    shield: { focus: 'ship', dist: 950, yaw: 0.35, pitch: 0.22, pivot: -14, aim: 'shield' }   // осмотр щита: углы — от нормали щита
+    shield: { focus: 'ship', dist: 950, yaw: 0.35, pitch: 0.22, pivot: -14, aim: 'shield' },   // осмотр щита: углы — от нормали щита
+    support: { focus: 'support', dist: 3600, yaw: 2.2, pitch: 0.28, pivot: -1000 }   // корабль поддержки: щит, цепочка баков, антенна
   };
   // направление камеры пресета в осях курса — к нему привязаны планета и находка, чтобы они стояли в кадре за кораблём
   const presetDir = (name) => { const p = PRESETS[name], cp = Math.cos(p.pitch);
@@ -2126,6 +2208,7 @@
     if (kind === 'distress') return distressFrame().F;
     if (kind === 'epoch3') return ep3Frame(performance.now()).F;
     if (kind === 'ship') return shipPos();
+    if (kind === 'support') return supPos();
     if (kind === 'target') return T.clone();
     if (kind === 'route') return T.clone().multiplyScalar(0.5);
     return new THREE.Vector3();
@@ -2182,22 +2265,25 @@
   function pathLength(a, b) { return zoomPath(a.F, b.F, a.dist / LY, b.dist / LY).S; }
   const wrapPi = x => { while (x > Math.PI) x -= 2 * Math.PI; while (x < -Math.PI) x += 2 * Math.PI; return x; };
   function stepTween(now) {
-    if (!tween) { if (cam.focus === 'ship') cam.F.copy(shipPos()); else if (cam.focus === 'epoch3') followEpoch3(now); return; }
+    if (!tween) { if (cam.focus === 'ship') cam.F.copy(shipPos()); else if (cam.focus === 'support') cam.F.copy(supPos()); else if (cam.focus === 'epoch3') followEpoch3(now); return; }
     const k = ease(Math.max(0, Math.min(1, (now - tween.t0) / tween.dur))), a = tween.from, b = tween.to;   // кадр мог начаться чуть раньше перелёта
     if (tween.fit) { const f = arrivalLook(tween.fit); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; tween.upTo = arrivalAxes().up; }   // звезда движется — ракурс вслед
     if (b.aim === 'shield') { const f = shieldAngles(); b.yaw = a.yaw + wrapPi(f.yaw - a.yaw); b.pitch = f.pitch; }   // корабль поворачивается — ракурс вслед
     if (cam.focus === 'ship') b.F = shipPos();
+    if (cam.focus === 'support') b.F = supPos();                           // он летит — точка взгляда вслед
     if (cam.focus === 'ship' && a.focus === 'ship') {
       // с корабля на корабль фокус не отстаёт: корабль может двигаться во время промотки
       cam.F.copy(b.F); cam.dist = Math.exp(Math.log(a.dist) + (Math.log(b.dist) - Math.log(a.dist)) * k);
     } else {
       const P = zoomPath(a.F, b.F, a.dist / LY, b.dist / LY), sp = P.S * k;
       if (P.u1 > 0) cam.F.copy(a.F).lerp(b.F, Math.min(1, P.u(sp) / P.u1)); else cam.F.copy(b.F);
+      if (k > 0.96) cam.F.lerp(b.F, ease((k - 0.96) / 0.04));                 // последние доли — точно в фокус: численный остаток пути без скачка
       cam.dist = P.w(sp) * LY;
     }
     cam.yaw = a.yaw + (b.yaw - a.yaw) * k; cam.pitch = a.pitch + (b.pitch - a.pitch) * k;
     cam.pivot = a.pivot + (b.pivot - a.pivot) * k;
     if (tween.upFrom) camUp.copy(tween.upFrom).lerp(tween.upTo, k).normalize();   // верх — по ходу перелёта
+    tween.k = k;                                                            // ход перелёта (смещение взгляда поддержки гаснет вместе с ним)
     if (k >= 1) { cam.dist = b.dist; tween = null; if (cam.focus === 'epoch3') ep3.lock = true; }   // долетели до вылета паруса — слежение
   }
   const ZUP = new THREE.Vector3(0, 0, 1);
@@ -2466,6 +2552,7 @@
     stepEngines(dt, now);
     stepPlasmaMagnet(dt, Number.isFinite(shipFarM) ? shipFarM : cam.dist);   // фактическая дальность камеры до корабля (прошлый кадр): тускнеет плавно при любом перелёте
     stepArrival();
+    stepSupport(dt);
     stepThaw(dt); stepOutpost(dt);
     // Облако на курсе: с Земли его не видно — маленькое и ничем не освещено. Появляется, когда его находят приборы
     // корабля на подлёте (год 4, world.cloudSeen), и проявляется плавно. Курс сменился (цель, поворот) — облако
@@ -2488,7 +2575,9 @@
     const clamp01 = x => Math.max(0, Math.min(1, x));
     U_.galaxy.value = clamp01((lg - 2.2) / 1.0);
     U_.dust.value = 0.15 * clamp01((lg - 3.2) / 0.8);
-    U_.ring.value = Math.max(shotRing, clamp01((lg - 2.8) / 0.8));
+    // сеть Кольца (связи и бегущие по ним огни): на виде всей Галактики её нет — проявляется, когда камера подлетает
+    // (с 100 тыс. до 30 тыс. св. лет), и гаснет у Солнца (ближе 4 тыс. св. лет), если кадр заставки не держит её сам
+    U_.ring.value = clamp01((5.0 - lg) / 0.5) * Math.max(shotRing, clamp01((lg - 2.8) / 0.8));
     U_.local.value = clamp01(1 - (lg - 2.2) / 0.8) * clamp01((lg + 2.0) / 1.0);   // у корабля (< 0,01 св. года) — скрыты
     galaxy.children[0].visible = galaxy.children[1].visible = U_.galaxy.value > 0.002;
     galaxy.children[2].visible = U_.dust.value > 0.002;
@@ -2552,6 +2641,23 @@
 
     renderer.clear(); shown = true;
     renderer.render(starScene, starCam);
+    // корабль поддержки в пути: своя сцена, камера — та же мировая (смещение фокуса от него — в метрах)
+    const supP = sup.mode === 'route' ? supPos() : null;
+    sup.farM = supP ? camLy.distanceTo(supP) * LY : Infinity;
+    if (supP && sup.farM < 2e11) {
+      const dS = cam.focus === 'support' ? cam.dist : Math.max(1, sup.farM);
+      const pw = cam.focus === 'support' ? 1 : tween && tween.from.focus === 'support' ? 1 - (tween.k || 0) : 0;   // уходим с него — смещение гаснет с перелётом
+      const piv = new THREE.Vector3(cam.pivot * pw, 0, 0).applyQuaternion(sup.g.quaternion);
+      sup.cam.position.copy(dir).multiplyScalar(cam.dist).add(piv).add(camOff.copy(cam.F).sub(supP).multiplyScalar(LY));
+      sup.cam.up.copy(vUp); sup.cam.near = Math.max(1, dS * 1e-3); sup.cam.far = Math.max(dS * 10 + 2e4, 2e9);
+      sup.cam.lookAt(camOff.copy(sup.cam.position).sub(dir)); sup.cam.updateProjectionMatrix();
+      sup.key.color.copy(sunLight.color); sup.key.intensity = sunLight.intensity; sup.hemi.intensity = hemi.intensity;
+      sup.key.position.copy(KEY).multiplyScalar(4500); sup.key.target.position.set(0, 0, 0);
+      renderer.clearDepth(); renderer.render(sup.scene, sup.cam);
+    }
+    // вдали — блик, как у нашего корабля
+    const supA = supP ? band(sup.farM, 4e4, 4e5, 1e30, 1e30) : 0, supS = band(sup.farM, 4e5, 4e6, 3e7, 3e10);
+    const supFlare = src => { if (supA > 0.01) { const v = supP.clone().sub(cam.F).project(starCam); if (v.z < 1) src.push(shipFlare(v, supA, supS, sup.engines.some(e => e.a > 0.2) ? 0x9cc8ff : 0xafd5bd)); } };
     // Корабль рисуется, пока он может быть в кадре, а не только при фокусе на нём: перелёт с корабля на маршрут или карту
     // уводит камеру плавно — корабль уменьшается и сменяется далёким огоньком (marker), а не пропадает в первом кадре.
     // Камера корабля стоит там же, где звёздная: смещение фокуса от корабля (cam.F − shipPos) — в метрах; при фокусе на
@@ -2607,11 +2713,13 @@
           occluded: () => occludedShip(shipCam.position, toE, dE - e.r * 1.6) });
       }
       if (mA > 0.01) { const v = shipLocal(-900).project(shipCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }   // корабль вдали
+      supFlare(src);
       sysFlares(src, 1 - glareA);                                         // звёзды систем — когда блики с корабля погасли
       drawFlares(src, cen);
     } else {
       const src = [];
       if (mA > 0.01) { const v = relGroup.position.clone().add(marker.position).project(starCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }
+      supFlare(src);
       sysFlares(src, 1);
       drawFlares(src, new THREE.Vector3(0, 0, 0).project(starCam));       // центр кадра — как у ближней ветки вдали
     }
@@ -2621,13 +2729,13 @@
   function resize() {
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
     renderer.setSize(w, h, false);
-    [starCam, shipCam].forEach(c => { c.aspect = w / h; });
+    [starCam, shipCam, sup.cam].forEach(c => { c.aspect = w / h; });
     applyShift();
   }
   // карточки справа закрывают часть карты — центр кадра сдвигается в видимую часть (только камеры, без перестройки холста)
   function applyShift() {
     const w = container.clientWidth || 1, h = container.clientHeight || 1;
-    [starCam, shipCam].forEach(c => { if (viewShift) c.setViewOffset(w, h, viewShift, 0, w, h); else c.clearViewOffset(); c.updateProjectionMatrix(); });
+    [starCam, shipCam, sup.cam].forEach(c => { if (viewShift) c.setViewOffset(w, h, viewShift, 0, w, h); else c.clearViewOffset(); c.updateProjectionMatrix(); });
   }
   let viewShift = 0, shiftTween = null;
   api.setViewShift = function (px) {
@@ -2666,6 +2774,7 @@
     shipScene.add(sunLight, sunLight.target, rim, hemi);
     ship.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.castShadow = true; o.receiveShadow = true; } });
     buildOwnLights();
+    buildSupport();
     buildPlasmaMagnet();
     buildArrival(); buildThawStore(); buildOutpost();
     buildTargetSystem();
@@ -2685,7 +2794,9 @@
     if (visible && view) go(view, !shown);      // до первого кадра перелетать неоткуда — ставим ракурс сразу
   };
   api.hide = function () { visible = false; };
-  api.debugJump = function (view) { go(view, true); };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
+  api.debugJump = function (view) { go(view, true); };
+  api.debugSupport = function () { const P = sup.mode === 'route' ? supPos() : null, o = sup.g.getWorldPosition(new THREE.Vector3()).project(sup.cam);
+    return { S: world.support, year: world.year, mode: sup.mode, farM: sup.farM, dF: P ? cam.F.clone().sub(P).length() * LY : null, ndc: [+o.x.toFixed(3), +o.y.toFixed(3), +o.z.toFixed(3)], pivot: cam.pivot, dist: cam.dist, focus: cam.focus, shift: viewShift }; };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
   // отладка: где центр масс в кадре (−1…1) и как идёт поворот корпуса — проверка «поворот вокруг центра масс»
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
   const goLog = []; api.debugGoLog = () => goLog.slice();

@@ -28,27 +28,25 @@
   // экспедиция — своя у каждой партии: id аварии включает её, чтобы одинаковые аварии разных партий не сливались в мире
   const newExp = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   let exp = typeof saved.exp === 'string' ? saved.exp : newExp();
-  // правила цены ошибки: новая экспедиция — версия C.RISK, сид — её id; старая партия без версии — версия 0 до конца
-  // (уже сыгранное не получает задним числом погибших); версия без сида — повреждение: копия и новая экспедиция
+  // правила одни — C.RISK (старые версии удалены: сохранения не святы); сид экспедиции — её id. Партия прежних правил,
+  // без сида или без модели износа — копия и новая экспедиция (ниже)
   const fresh0 = tokens.every(t => t === 'go');                      // ни одного решения — прошлого, которое могло бы измениться, нет
   const seedOK = x => typeof x === 'string' && x.length > 0;
-  let riskVersion, riskSeed, hashWorld = null;
-  if (fresh0) { riskVersion = C.RISK; riskSeed = seedOK(saved.riskSeed) ? saved.riskSeed : exp; }   // без решений — прошлого нет: новые правила
-  else if (saved.riskVersion >= 1) { riskVersion = saved.riskVersion; riskSeed = saved.riskSeed; }   // заданные правила не перезаписываем
-  else { riskVersion = 0; riskSeed = null; }
+  const riskVersion = C.RISK;
+  let riskSeed = seedOK(saved.riskSeed) ? saved.riskSeed : fresh0 ? exp : null, hashWorld = null;
   if (fromHash) { let sd = ''; try { sd = decodeURIComponent(hashArg('seed') || ''); } catch (e) { sd = ''; }
-    const v = Number(hashArg('risk')) || 0; riskVersion = v >= 1 && seedOK(sd) ? v : 0; riskSeed = riskVersion ? sd : null;
+    riskSeed = seedOK(sd) ? sd : null;                                  // отладочная ссылка без сида — без скрытых бросков
     try { hashWorld = decodeURIComponent(hashArg('world') || '') || null; } catch (e) { hashWorld = null; } }   // сид мира партии из адреса: те же события Кольца
-  // модель износа закреплена за экспедицией: прежняя партия (с решениями, без отметки) доигрывается без неё — её ходы
-  // писались без карточек износа; новая экспедиция — с моделью. Отладка: #wear=0 — партия без модели
-  const wearNew = () => hashArg('wear') !== '0';                      // новая экспедиция — с моделью, кроме #wear=0
-  let wear = hashArg('wear') === '0' ? false : fromHash || fresh0 ? true : saved.wear === true;
+  // модель износа — всегда; отладка: #wear=0 — партия без модели
+  const wearNew = () => hashArg('wear') !== '0';
+  let wear = wearNew();
   // повестка Совета — снимок мира на старт экспедиции: итог партии меняет мир, но не её собственное голосование
   // снимок меняется с новой экспедицией; пока в партии нет ни одного решения, повестка собирается заново — новые
   // заявки мира (например, добавленные в игру) видны без новой экспедиции. Отладочная ссылка — полная повестка без
   // памяти мира, как у проверок (токены могут вести к уже выполненной заявке)
   let agenda = fromHash ? C.requests.agenda(null) : Array.isArray(saved.agenda) && !fresh0 ? saved.agenda : null;
-  if (riskVersion >= 1 && !seedOK(riskSeed)) { backup('сид экспедиции повреждён'); tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); }
+  if (!fromHash && !fresh0 && (saved.riskVersion !== C.RISK || !seedOK(riskSeed) || saved.wear !== true)) {   // прежние правила или повреждение
+    backup('партия прежних правил'); tokens = []; relief = null; exp = newExp(); riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); }
   if (!agenda) agenda = C.requests.agenda(world);
   const ctx = () => ({ riskVersion, riskSeed, agenda, worldSeed: hashWorld || world.seed, wear });
   C.setWorld(world);
@@ -265,10 +263,10 @@
     const u = C.ui[lang], b = stop.beat, st = stop.state, d = M.star(st.target).d;
     // черновик: рычаги, комплекты и оснащение (с рекомендации Совета для миссии); утверждает разбор id — тот же, что в движке
     // рекомендация Совета: снабженцу — груз заявки; спасателю — 0,1c и спасательный сектор (иначе к сроку не успеть)
-    if (!draft) draft = { b: st.mission === 'rescue' ? 0.1 : 0.08, r: 0.005, kits: st.mission === 'supply' ? ['request'] : st.mission === 'rescue' ? ['berths'] : [], eq: M.eqDefault(st.mission, st.riskVersion) };
+    if (!draft) draft = { b: st.mission === 'rescue' ? 0.1 : 0.08, r: 0.005, kits: st.mission === 'supply' ? ['request'] : st.mission === 'rescue' ? ['berths'] : [], eq: M.eqDefault(st.mission) };
     const eqMass = M.eqMass(draft.eq), cap = M.capacity(draft.b, draft.r), used = M.kitMass(draft.kits) + eqMass;
     const tMag = M.magYears(M.brakeMass(draft.b, draft.r, used), draft.b), Tx = M.trip(d, draft.b, tMag), T = Math.round(Tx), aw = M.awake(T, 48, M.crewOf(draft.kits));
-    const swaps = M.eqSwaps(draft.eq, st.mission, st.riskVersion), def = M.eqDefault(st.mission, st.riskVersion), E = C.eq;
+    const swaps = M.eqSwaps(draft.eq, st.mission), def = M.eqDefault(st.mission), E = C.eq;
     const id = `${draft.b}|${draft.r}|${M.kitsFor(st.mission).filter(k => draft.kits.includes(k)).join('+')}|${M.eqCode(draft.eq)}`;
     const ok = !!b.option(st, id), fits = cap >= 0 && used <= cap + 1e-9;
     const seg = (key, vals, fmt) => vals.map(v => `<button class="seg" data-draft="${key}" data-v="${v}" aria-pressed="${draft[key] === v}">${fmt(v)}</button>`).join('');
@@ -283,7 +281,7 @@
     const diffNames = M.EQUIP.filter(p => draft.eq[p.id] !== def[p.id]).map(p => p[lang].toLowerCase());
     const eqRows = M.EQUIP.filter(p => !p.fixed && !E.eqPosHidden(st, p.id)).map(p => {
       const cur = draft.eq[p.id], opts = p.opts.filter(o => !o.era && (!E.eqHidden(st, p.id, o.id) || o.id === cur)).map(o => {
-        const on = cur === o.id, can = M.eqSwaps(Object.assign({}, draft.eq, { [p.id]: o.id }), st.mission, st.riskVersion) <= M.SWAPS;
+        const on = cur === o.id, can = M.eqSwaps(Object.assign({}, draft.eq, { [p.id]: o.id }), st.mission) <= M.SWAPS;
         const tag = o.t ? ` +${num(o.t, o.t % 1 ? 2 : 0)}` : '';
         return `<button class="seg eqopt" data-eq="${p.id}" data-v="${o.id}" aria-pressed="${on}" title="${esc(E.eqCard(st, o.id, lang)[0] || '')}" ${on || can ? '' : 'disabled'}>${esc(o[lang])}<i>${esc(tag)}</i></button>`;
       }).join('');
@@ -482,7 +480,7 @@
     for (const i of ORDER) { if (awake.size >= total) break; awake.add(i); }
     // погибшие в пути — погасшие капсулы (медицинский журнал Акта III)
     const crew = result.state.crew || 500, dead = new Set();
-    const lost = result.state.riskVersion >= 5 ? Math.max(0, crew - C.aliveOf(result.state)) : result.state.lost || 0;   // v5: нынешний счёт (поздние потери пути, у цели)
+    const lost = !result.state.relief ? Math.max(0, crew - C.aliveOf(result.state)) : result.state.lost || 0;   // нынешний счёт (поздние потери пути, у цели)
     const thaw = result.state.rescueOp === 'move' ? result.state.rescued : 0;   // спасённые Оттепели в спасательном секторе
     for (const i of [...awake]) if (i >= crew) awake.delete(i);
     for (const i of ORDER) { if (awake.size >= total) break; if (i < crew) awake.add(i); }
@@ -512,8 +510,8 @@
     const modelMsg = () => { const h = s.cloudHit, ru = lang === 'ru';
       if (!h) return ru ? 'край чистый · удары пыли в прогнозе' : 'clean edge · dust within forecast';
       return ru ? `полоса крупной пыли · ${h.panel}: ${h.breached ? 'пробой' : 'выбоина'}` : `coarse-dust band · ${h.panel}: ${h.breached ? 'breach' : 'scar'}`; };
-    const passed = s.riskVersion >= 5 ? (ch === 'trust' && !!s.cloudHit) || (!!s.beta && y >= C.edgeOut(s) - 1e-9) : y >= 4.5;
-    const msg = ch && passed ? (ch === 'trust' ? (s.riskVersion >= 5 ? modelMsg() : u.edgeTrust) : (s.measured ? u.measured : u.edgeMan)) : (s.measured ? u.measured : '');
+    const passed = (ch === 'trust' && !!s.cloudHit) || (!!s.beta && y >= C.edgeOut(s) - 1e-9);
+    const msg = ch && passed ? (ch === 'trust' ? modelMsg() : (s.measured ? u.measured : u.edgeMan)) : (s.measured ? u.measured : '');
     if (msg) res = `<text x="16" y="222" class="res">${esc(msg)}</text>`;
     return `<svg viewBox="0 0 520 240" class="panel-svg traj">
       <defs><radialGradient id="cl" cx="70%" cy="50%" r="60%"><stop offset="0" stop-color="#c4895f" stop-opacity=".55"/><stop offset="1" stop-color="#c4895f" stop-opacity="0"/></radialGradient></defs>
@@ -613,7 +611,7 @@
       legend: '✕ breach · ▣ patch · • scar · ◇ replaced', note: 'Front view, sectors 00–15 clockwise. Marks are schematic: size and position on the panel are not to scale.' }
   };
   let insp = null, shieldSel = null, selFor = null, inspClosed = null, inspKey = null;
-  const shieldOf = st => !relief && st && st.riskVersion >= 5 && st.shield ? st.shield : null;
+  const shieldOf = st => !relief && st && st.shield ? st.shield : null;
   const shieldScreen = beat => beat && beat.overlay === 'shield' && inspClosed !== beat.id;
   const screenStop = result => result && result.stop && result.stop.beat;           // решение экрана (осмотр — по нему, не по прокрутке)
   const inspOn = result => !!(insp || shieldScreen(screenStop(result)));
@@ -881,7 +879,7 @@
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
       M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target),
-        burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0, epoch3: null,
+        burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0, epoch3: null, support: null,
         relief: { P: R.P, sent: inc.sent, council: R.council.id, list: R.list.map(r => ({ id: r.id, colony: r.colony || null, hear: r.hear, launch: r.launch, complete: r.complete })),
           voyages: res ? res.voyages : [] }, legacy: { passTug: relief.world.passTug !== false, settled: relief.world.settled || [] } });
     } else if (window.M31Space && M31Space.ok) {
@@ -897,15 +895,16 @@
         target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
         // голосование по заявкам: курса ещё нет — звезда только осматривается; кольца у звёзд заявок повестки
         knee: st.route ? st.route.knee : null,                          // излом траектории после поворота (совет «Новые сведения»)
+        support: C.supportWorld(st, ids),                               // корабль поддержки: после сводки о нём (только контакт)
         epoch3: ids.has('a3.epoch3') ? C.epoch3(st) : null, epoch3Go: e3go,   // парус эпохи III: на карте — со сводки о вылете
         preview: atStop('agenda') && !st.target, inspect: !!(atStop('agenda') && mapPick), requestStars: atStop('agenda') ? view.result.stop.options.map(o => (C.requests.get(o.id) || {}).star).filter(Boolean) : [],
         cargo: cargo3d(atStop('passport') && draft ? draft : st), cargoLabels: atStop('passport'), tMag: st.tMag,
         scout: st.scout, scoutV: st.scout === 6 ? st.beta * 0.75 + 0.085 : st.beta + 0.07,
         // склад Оттепели (спасатель v3): с ближней диагностики до перехода к дому
-        store: st.riskVersion >= 3 && st.mission === 'rescue' && st.sectionEnd != null && !ids.has('s.e6') && !st.lostShip
+        store: st.mission === 'rescue' && st.sectionEnd != null && !ids.has('s.e6') && !st.lostShip
           ? { key: st.riskSeed, docked: !!st.dockMethod, stable: !!st.thawStable, safe: !!st.sectionSafe, torn: !!st.pipeTorn, op: st.rescueOp || null } : null,
         // форпост Ксилона Ир (снабженец): от первой связи у звезды Барнарда до перехода к дому
-        outpost: st.mission === 'supply' && (ids.has('a3s.outpost2') || ids.has('a3s.outpost')) && !ids.has('s.e6') && !st.lostShip
+        outpost: st.mission === 'supply' && ids.has('a3s.outpost2') && !ids.has('s.e6') && !st.lostShip
           ? { key: st.riskSeed || 'v0', deliver: st.deliver || null, relay: !!st.relayOK, caps: !!st.capsOK, capsLost: !!st.capsLost } : null });
     }
     const cam = view.cam || beat;
@@ -985,7 +984,7 @@
       const fixed = relief ? null : E.migrate(C, tokens, C.INSERTED, ctx());
       if (fixed) tokens = fixed;
       // сброс основной партии — новая экспедиция целиком: новые правила и сид, а не прежние версии старого сохранения
-      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); mapPick = null; draft = null; votePick = null; } }
+      else { backup(err.message); if (relief) relief = null; else { tokens = []; exp = newExp(); riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); mapPick = null; draft = null; votePick = null; } }
       save(); result = E.run(story(), cur(), ctx());
     }
     // интерфейс видит только публичные снимки (журнал, HUD, таймлайн, 3D, итог): сид — в ctx() партии, не в состоянии
@@ -1054,7 +1053,7 @@
     if (window.M31Space && M31Space.ok && M31Space.resetVoyage) { M31Space.resetVoyage(); const sp = $('space'); sp.classList.remove('fresh'); void sp.offsetWidth; sp.classList.add('fresh'); }
     camView = null; sceneId = null; clearTimeout(viewTimer);
     world = { passTug: true, seed: newExp() }; C.setWorld(world);                        // повтор сорок первой — только в новом мире
-    tokens = []; relief = null; exp = newExp(); riskVersion = C.RISK; riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); ffStop(); mapPick = null; draft = null; votePick = null;
+    tokens = []; relief = null; exp = newExp(); riskSeed = exp; agenda = C.requests.agenda(world); wear = wearNew(); ffStop(); mapPick = null; draft = null; votePick = null;
   }
 
   document.addEventListener('click', e => {

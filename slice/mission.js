@@ -334,10 +334,10 @@
   // рекомендации Совета: контакт — читать слабые спектры; снабженец — подключиться к форпосту и чинить; спасатель — надёжные капсулы
   const EQ_MISSION = { contact: { sensors: 'ir' }, supply: { energy: 'grid', prod: 'tools' }, rescue: { caps: 'capsSafe' } };
   // версия 4: снабженцу — без подключения к колонии (в сюжете v2 оно монтажу не помогает); старые паспорта — по своей версии
-  const eqDefault = (mission, version = 0) => Object.assign({}, EQ_BASE, EQ_MISSION[mission] || {}, mission === 'supply' && version >= 4 ? { energy: 'shipOnly' } : {});
+  const eqDefault = mission => Object.assign({}, EQ_BASE, EQ_MISSION[mission] || {}, mission === 'supply' ? { energy: 'shipOnly' } : {});
   const eqOpt = (pos, id) => { const p = EQUIP.find(x => x.id === pos); return p && p.opts.find(o => o.id === id) || null; };
   const eqMass = eq => EQUIP.reduce((a, p) => a + eqOpt(p.id, eq[p.id]).t, 0);
-  const eqSwaps = (eq, mission, version = 0) => { const d = eqDefault(mission, version); return EQUIP.filter(p => eq[p.id] !== d[p.id]).length; };
+  const eqSwaps = (eq, mission) => { const d = eqDefault(mission); return EQUIP.filter(p => eq[p.id] !== d[p.id]).length; };
   const eqCode = eq => EQUIP.map(p => eq[p.id]).join('.');
   // код из паспорта: восемь вариантов по порядку позиций; эпоха II и сдвинутые зафиксированные позиции не принимаются
   function eqParse(code) {
