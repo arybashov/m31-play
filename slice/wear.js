@@ -168,18 +168,18 @@
   // занятость всех групп за один проход: спящие (тепловая нагрузка и люди под угрозой), места бодрствующих,
   // свободные исправные, обещанные чужим, отказавшие капсулы
   function census(w) {
-    const c = {}, taken = new Set();
+    const c = {}, N = NG * SEATS, taken = new Uint8Array(N), broken = new Uint8Array(N), ps = w.ps, moved = w.moved;
     for (const g of GIDS) c[g] = { sleep: [], awake: [], free: [], reserved: 0, broken: 0 };
     for (let i = 0; i < w.crew; i++) {
-      if (w.ps[i] === 'D') continue;
-      const k = seatOf(w, i), g = groupOfSeat(k); taken.add(k);
-      (w.ps[i] === 'S' ? c[g].sleep : c[g].awake).push(i);
+      const p = ps[i]; if (p === 'D') continue;
+      const m = moved[i], k = m != null ? m : i; taken[k] = 1;
+      const g = c[GIDS[(k / SEATS) | 0]]; (p === 'S' ? g.sleep : g.awake).push(i);
     }
-    const broken = new Set(w.broken);
-    for (let k = 0; k < NG * SEATS; k++) {
-      if (taken.has(k)) continue;
-      const g = groupOfSeat(k);
-      if (broken.has(k)) c[g].broken++; else if (k >= w.crew && k < w.crew + w.reserved) c[g].reserved++; else c[g].free.push(k);
+    for (const k of w.broken) broken[k] = 1;
+    for (let k = 0; k < N; k++) {
+      if (taken[k]) continue;
+      const g = c[GIDS[(k / SEATS) | 0]];
+      if (broken[k]) g.broken++; else if (k >= w.crew && k < w.crew + w.reserved) g.reserved++; else g.free.push(k);
     }
     return c;
   }
@@ -196,7 +196,12 @@
   }
   // контур работает: насос и коллектор исправны, шина под напряжением, радиатор исправен
   const loopRuns = (w, L) => ok(w, L + '.pump') && ok(w, L + '.coll') && ok(w, w.link.rad[L]) && busPowered(w, w.link.loop[L]);
-  const activeMap = (w, c) => { c = c || census(w); const a = {}; for (const g of GIDS) a[g] = c[g].sleep.length > 0; return a; };
+  // активна группа, где спит хоть один живой (то же, что census: спящие по местам), — без полной переписи
+  const activeMap = (w, c) => { const a = {}; if (c) { for (const g of GIDS) a[g] = c[g].sleep.length > 0; return a; }
+    for (const g of GIDS) a[g] = false;
+    const ps = w.ps, moved = w.moved;
+    for (let i = 0; i < w.crew; i++) if (ps[i] === 'S') { const m = moved[i]; a[GIDS[((m != null ? m : i) / SEATS) | 0]] = true; }
+    return a; };
   // нагрузка контура — число активных групп на нём (одна группа — единица тепловой нагрузки)
   function loopLoad(w, L, act) { act = act || activeMap(w); let n = 0; for (const g of GIDS) if (w.link.group[g] === L && act[g]) n++; return n; }
   // бюджет: постоянная нагрузка (ядро + кольца), доля на работающий контур, групп на контур (gcap), номер группы на её контуре
@@ -605,9 +610,9 @@
       alive: w.ps.split('').filter(c => c !== 'D').length, asleep: w.ps.split('').filter(c => c === 'S').length, dead: w.ps.split('').filter(c => c === 'D').length };
   }
   // публичная проекция: пороги не хранятся (считаются по ключам), накопленная интенсивность — скрытая величина
-  function publicOf(w) {
+  function publicOf(w, own) {                                           // own — w уже своя копия (проекция партии): без второго копирования
     if (!w) return w;
-    const p = JSON.parse(JSON.stringify(w));
+    const p = own ? w : JSON.parse(JSON.stringify(w));
     for (const id of Object.keys(p.nodes)) delete p.nodes[id].h0;
     return p;
   }

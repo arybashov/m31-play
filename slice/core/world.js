@@ -205,8 +205,20 @@
   const RISK = 5;                                                       // версия правил новых экспедиций: 1 — цена ошибки контакта, 2 — сюжет снабженца, 3 — сюжет спасателя, 4 — оснащение (Совет снабженцу без сети колонии; станки и печать удешевляют разделение платы); 5 — симулятор: время, щит, облако и поток на модели
   // публичное состояние — то, что знает экипаж: без сида скрытое недоступно (hidden → null). По нему строятся
   // тексты карточки, «Что известно», рекомендация Совета и «После»; исход — только эффектом на полном состоянии.
-  const publicOf = s => { const p = JSON.parse(JSON.stringify(s)); p.riskSeed = null; if (p.wear) p.wear = W.publicOf(p.wear); return EV.strip(p); };
-  const hidden = (s, key) => s.riskSeed ? hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296 : null;
+  const publicOf = s => { const p = M.copy(s); p.riskSeed = null; if (p.wear) p.wear = W.publicOf(p.wear, true); return EV.strip(p); };   // копия уже своя
+  // бросок — чистая функция правил, сида и ключа: запоминается (несколько последних сидов)
+  const HIDDEN = new Map();
+  let hidSeed = null, hidVer = null, hidMap = null;                      // последний сид — без поиска
+  const hidden = (s, key) => {
+    if (!s.riskSeed) return null;
+    let m = s.riskSeed === hidSeed && s.riskVersion === hidVer ? hidMap : null;
+    if (!m) { const id = s.riskVersion + '|' + s.riskSeed; m = HIDDEN.get(id);
+      if (!m) { if (HIDDEN.size >= 8) HIDDEN.clear(); HIDDEN.set(id, m = new Map()); }
+      hidSeed = s.riskSeed; hidVer = s.riskVersion; hidMap = m; }
+    let v = m.get(key);
+    if (v === undefined) { v = hashU32(JSON.stringify([s.riskVersion, s.riskSeed, key])) / 4294967296; if (m.size >= 4096) m.clear(); m.set(key, v); }   // ключи со счётчиками — предел
+    return v;
+  };
 
   function initialState(ctx) {
     const st = {
