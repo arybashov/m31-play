@@ -456,7 +456,7 @@ There are no longer years of waiting between question and answer.`;
     g('probes', ru ? 'зонды' : 'probes', `${probesOf(s)}`, probesOf(s));
     g('power', ru ? 'энергия у цели' : 'power at target', s.support === 'found' ? (ru ? 'топливо поддержки' : 'support fuel') : powerOK(s) ? M.eqOpt('energy', eqOf(s).energy)[lang].toLowerCase() : (ru ? 'только корабль' : 'the ship only'));
     if (s.support) g('support', ru ? 'поддержка' : 'support', s.support === 'found' ? (ru ? 'найдена' : 'found') : (ru ? 'потеряна' : 'lost'));
-    if (s.mission === 'supply' && !s.deliver) g('request', ru ? 'груз заявки' : 'request cargo', !capsKit(s) ? (ru ? 'нет' : 'none') : relayKit(s) ? (ru ? 'передатчик и капсулы' : 'transmitter and capsules') : (ru ? 'только капсулы' : 'capsules only'));
+    if (s.mission === 'supply' && !s.deliver) g('request', ru ? 'груз заявки' : 'request cargo', relayKit(s) && capsKit(s) ? (ru ? 'передатчик и капсулы' : 'transmitter and capsules') : relayKit(s) ? (ru ? 'только передатчик' : 'transmitter only') : capsKit(s) ? (ru ? 'только капсулы' : 'capsules only') : (ru ? 'нет' : 'none'));   // C2 потерян — только передатчик
     if (s.mission === 'supply' && (s.deliver || s.outpostDead)) g('outpost', ru ? 'форпост' : 'outpost', (s.deliver ? [s.relayOK ? (ru ? 'связь есть' : 'link up') : (ru ? 'без связи' : 'no link'), s.capsOK ? (ru ? 'капсулы есть' : 'capsules up') : (ru ? 'без капсул' : 'no capsules')] : [])
       .concat(s.shelter ? [ru ? 'люди на корабле' : 'people aboard'] : []).concat(s.outpostDead ? [ru ? `погибли ${s.outpostDead}` : `${s.outpostDead} dead`] : []).join(', '));
     if (s.mission === 'supply' && s.gridBlocks < 2) g('grid', ru ? 'сеть корабля' : 'ship grid', ru ? 'один блок из двух' : 'one block of two');

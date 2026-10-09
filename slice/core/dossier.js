@@ -325,7 +325,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   // передатчик −35%, капсульный блок −40% (без груза заявки обе системы — три четверти запаса).
   const BUILD = { relay: 35, caps: 40 };                                 // из своих материалов: передатчик, капсульный блок
   const relayKit = s => s.kits.includes('request');
-  const capsKit = s => s.kits.includes('request');
+  const capsKit = s => s.kits.includes('request') && !s.capsUnitLost;   // 4г: партия C2 потеряна — блок строят из материалов
   const supplyNeed = s => (relayKit(s) ? 0 : BUILD.relay) + (capsKit(s) ? 0 : BUILD.caps);   // материалов на обе системы
   // второй монтажный комплект: 30% материалов, со станками — 10%; нужен запас и на сами системы
   // вторую бригаду питает вторая сеть корабля: отданный под вспышками блок закрывает «всё сразу»
@@ -333,7 +333,7 @@ The expedition is over. What happens to the sleepers will be decided by whoever 
   // переселение: койки и регенерация воздуха для девяноста (−15%), отдельная сеть для их колец
   const SHELTER = 15;
   // прогноз: что будет поставлено при выбранном порядке (для «Что известно» — те же правила, что у эффекта)
-  const supplyForecast = (s, first, extra = 0) => { const t = { kits: s.kits, materials: s.materials - extra, relayOK: false, capsOK: false }; supplyBuild(t, first); return t; };
+  const supplyForecast = (s, first, extra = 0) => { const t = { kits: s.kits, capsUnitLost: s.capsUnitLost, materials: s.materials - extra, relayOK: false, capsOK: false }; supplyBuild(t, first); return t; };   // потеря C2 — в прогнозе тоже
   // поставить системы: из груза заявки или из своих материалов, пока их хватает (сначала связь, потом капсулы — порядок работ в тексте)
   // порядок — выбранный: при нехватке материалов достаётся то, что ставят первым
   function supplyBuild(st, first) {

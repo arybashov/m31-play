@@ -3,12 +3,12 @@
 (function (root) {
   'use strict';
   const wearCards = __core => {
-    let DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter,
-    dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl,
-    prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs,
-    wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop,
-    wearStart, wearStop, wearSyncDead, wearTerminal;
-    const __link = () => { ({ DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
+    let CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan,
+    cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf,
+    offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan,
+    tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick,
+    wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -115,7 +115,39 @@
       options: x => dangerOwn(id, (can(x) ? [repair] : []).concat(open ? [isolate, cont] : [leave]))
     };
   }
+  // опасный груз (шаг «хрупкость» 4г): аномалия партии — локализовать (функция партии потеряна, источник убран) или продолжать
+  // (функция до исчерпания допуска, потом потеряна; возможна разгерметизация и удар по соседнему узлу)
+  function wearCargoDecision(s, ev) {
+    const id = ev.id, open = ev.stage === 'open' || ev.stage === 'warn', Dg = W.DANGER.hazCargo, nb = W.CARGO_NEXT[id];
+    const left = x => Math.max(0, (Dg.tol - W.defectAt(x.wear.nodes[id], x.year)) / Math.max(0.2, x.wear.nodes[id].r));
+    const loss = ru => id === 'C1' ? (ru ? 'Запасного аккумуляторного блока не будет: при отказе энергоблока заменить нечем.' : 'There will be no spare battery block: if a power block fails there is nothing to replace it with.')
+      : (ru ? 'Готового капсульного блока заявки не будет: форпосту его соберут из своих материалов (−40%).' : 'There will be no ready capsule unit for the request: it will be built for the outpost from our own materials (−40%).');
+    const nbName = ru => /^T\d$/.test(nb) ? (ru ? `бак ${nb}` : `tank ${nb}`) : (ru ? `коллектор контура ${nb.split('.')[0]}` : `loop ${nb.split('.')[0]}'s collector`);
+    const recipe = (x, ru) => { const kit = (x.wear.inv.isoKit || 0) >= 1, w = Dg.repair.work * (kit ? 1 : 2);
+      return ru ? `${kit ? `Комплект изоляции (в запасе ${x.wear.inv.isoKit}), ` : 'Комплектов изоляции нет — подручными средствами, '}${w} чел.-сут и ${Dg.repair.hold} сут контроля.` : `${kit ? `An isolation kit (${x.wear.inv.isoKit} in stock), ` : 'No isolation kits — with what is at hand, '}${w} person-days and ${Dg.repair.hold} day of monitoring.`; };
+    const isolate = { id: 'isolate', label: { ru: 'Локализовать партию', en: 'Isolate the batch' },
+      known: { ru: y => [recipe(y, true), 'Партия списывается сразу; опасность для соседнего узла снята. ' + loss(true)], en: y => [recipe(y, false), 'The batch is written off at once; the risk to the neighbouring node is removed. ' + loss(false)] },
+      effect: y => { W.isolate(y.wear, id, y.year); cargoSync(y, y.year); wearOp(y, 'cargo', id, y.year, false); (y.danger = y.danger || {})[id] = 'isolate'; },
+      record: { ru: `Партию ${id} локализуют и списывают.`, en: `Batch ${id} is isolated and written off.` } };
+    const cont = { id: 'continue', label: { ru: 'Продолжать, следить', en: 'Carry on, under watch' },
+      known: { ru: y => [`Партия служит ещё около ${nf(left(y), 0, 'ru')} суток, затем потеряна всё равно. ` + loss(true), `Партия может разгерметизироваться и задеть соседний узел — ${nbName(true)}.`, 'Решение окончательное: дальше — только запись прибора.'],
+        en: y => [`The batch lasts about ${nf(left(y), 0, 'en')} more days, then it is lost anyway. ` + loss(false), `The batch may vent and hit the neighbouring node — ${nbName(false)}.`, 'The decision is final: from here on, only an instrument record.'] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
+      record: { ru: `Партия ${id} остаётся на месте; за ней следят.`, en: `Batch ${id} stays in place, under watch.` } };
+    const leave = { id: 'leave', label: { ru: 'Принять потерю', en: 'Accept the loss' },
+      known: { ru: () => [loss(true), 'Партию уже не вернуть.'], en: () => [loss(false), 'The batch cannot be brought back.'] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'leave'; }, record: { ru: `Партия ${id} потеряна.`, en: `Batch ${id} is lost.` } };
+    return {
+      id: 'd.wear.danger', key: id, stage: ev.stage, scene: 'vault', kind: 'decision',
+      title: { ru: `Опасный узел: груз ${id}`, en: `A dangerous node: cargo ${id}` },
+      rec: () => ({ id: open ? 'isolate' : 'leave', why: { ru: 'партия потеряна в любом случае; локализация убирает опасность для соседнего узла', en: 'the batch is lost either way; isolating it removes the risk to the neighbouring node' } }),
+      context: { ru: x => `Груз ${id} — ${CARGO_NAME[id].ru}: аномалия, растёт температура, газоанализ показывает выделение. Рядом — ${nbName(true)}.`,
+        en: x => `Cargo ${id} — ${CARGO_NAME[id].en}: an anomaly, the temperature is rising, the gas analysis shows outgassing. Next to it is ${nbName(false)}.` },
+      options: () => dangerOwn(id, open ? [isolate, cont] : [leave])
+    };
+  }
   function wearDangerDecision(s, ev) {
+    if (/^C\d$/.test(ev.id)) return wearCargoDecision(s, ev);
     if (/^T\d$/.test(ev.id)) return wearTankDecision(s, ev);
     if (/\.bearing$/.test(ev.id)) return wearRingDecision(s, ev);
     const id = ev.id, stage = ev.stage, Dg = W.DANGER.radiator, open = stage === 'open' || stage === 'warn';
@@ -435,8 +467,8 @@
 
     return {
       names: {
-        wearRingDecision, dangerOwn, wearTankDecision, wearDangerDecision, wearNext, wearDecision, wearReviseDecision, wearShopDecision,
-        wearDonorDecision, inSpan, CAL, CAL_EPS, calPick, calNext, simAdvance
+        wearRingDecision, dangerOwn, wearTankDecision, wearCargoDecision, wearDangerDecision, wearNext, wearDecision, wearReviseDecision,
+        wearShopDecision, wearDonorDecision, inSpan, CAL, CAL_EPS, calPick, calNext, simAdvance
       },
       link: __link
     };
