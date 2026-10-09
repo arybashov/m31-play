@@ -4,9 +4,9 @@
   'use strict';
   const ledger = __core => {
     let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf,
-    observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, src, storeNow, supplyS, taskName,
-    terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
-    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
+    observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS,
+    taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
+    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
     __link();
 
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
@@ -261,8 +261,8 @@ The log's last entry is a woman's voice: to those who come after — do not open
         ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine(s, 'ru'), 'Опасна ли полоса — так и не узнаем.'],
         en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine(s, 'en'), 'Whether the band was dangerous we will never know.']
       },
-      cost: st => { st.reserve -= streamDv(st); },
-      effect: st => { st.reserve -= streamDv(st); st.streamRoute = 'evade'; },
+      cost: st => { spendPct(st, streamDv(st)); },
+      effect: st => { spendPct(st, streamDv(st)); st.streamRoute = 'evade'; },
       record: { ru: 'Совет решает уходить, не дожидаясь измерений.', en: 'The council decides to leave without waiting for measurements.' }
     });
     out.push({

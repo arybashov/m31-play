@@ -4,10 +4,11 @@
   'use strict';
   const wearCards = __core => {
     let DONOR, EV, JB, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter,
-    dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail,
-    pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn, wearDonor,
-    wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead;
-    const __link = () => { ({ DONOR, EV, JB, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead } = __core); };
+    dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelBurn, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf,
+    pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn,
+    wearDonor, wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop,
+    wearSyncDead;
+    const __link = () => { ({ DONOR, EV, JB, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelBurn, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRefit, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -198,14 +199,14 @@
         known: {
           ru: y => [`Все свободные техники: около ${nf(auralDays(y) * 24, 0, 'ru')} ч; насос из запаса (останется ${y.wear.inv.pump - 1}), материалы −${WEAR_OPS.pump}%.`,
             ev.core ? (inTime(y) ? 'Ядро дождётся монтажа.' : `До исчерпания запаса ядра не успеть: рейс окончится через ${nf(W.coreAt(y.wear, y.year), 0, 'ru')} ч.`)
-              : inTime(y) ? 'Группы на тепловом резерве дождутся монтажа.' : 'До исчерпания резерва не успеть — группы на резерве погибнут и так.', 'Политика меняется: насосы ставят из запаса, прежде оставленные контуры восстанавливают.'],
+              : inTime(y) ? 'Группы на тепловом резерве дождутся монтажа.' : 'До исчерпания резерва не успеть — группы на резерве погибнут и так.', 'Ставят насос только на этот контур. Прежде оставленные контуры так и стоят, политика «беречь запас» сохраняется: следующий отказ — снова это решение, если будут насос и материалы.'],
           en: y => [`Every free technician: about ${nf(auralDays(y) * 24, 0, 'en')} h; a pump from stock (${y.wear.inv.pump - 1} left), materials −${WEAR_OPS.pump}%.`,
             ev.core ? (inTime(y) ? 'The core holds out until it is fitted.' : `It cannot be done before the core's reserve runs out: the voyage ends in ${nf(W.coreAt(y.wear, y.year), 0, 'en')} h.`)
-              : inTime(y) ? 'The groups on thermal reserve hold out until it is fitted.' : 'It cannot be done before the reserve runs out — the groups on reserve die anyway.', 'The policy changes: pumps are fitted from stock, loops left off earlier are restored.']
+              : inTime(y) ? 'The groups on thermal reserve hold out until it is fitted.' : 'It cannot be done before the reserve runs out — the groups on reserve die anyway.', 'Only this loop gets a pump. Loops left off earlier stay off and the stock-saving policy stands: the next failure brings this decision again if a pump and materials are there.']
         },
         cost: y => { y.materials -= WEAR_OPS.pump; },
-        effect: y => { y.wearPolicy = 'replace'; wearOp(y, 'pump', `${L}.pump`, y.year, true); wearRefit(y, y.year); wearShop(y, y.year); },
-        record: { ru: `Насос ${L} ставят авралом; совет отказывается от экономии запаса.`, en: `The ${L} pump is fitted all-hands; the council drops the stock-saving policy.` }
+        effect: y => { wearOp(y, 'pump', `${L}.pump`, y.year, true); wearShop(y, y.year); },   // только этот контур: политика прежняя (решение значит то, что сказано)
+        record: { ru: `Насос ${L} ставят авралом; остальное — по прежней политике экономии запаса.`, en: `The ${L} pump is fitted all-hands; everything else stays on the stock-saving policy.` }
       }, {
         id: 'keep',
         label: { ru: 'Беречь запас дальше', en: 'Keep saving the stock' },
@@ -357,7 +358,7 @@
         if (s.wear && s.jobs && s.wear.shop && s.wear.shop.machine)        // станки заняты работой — привод стареет (с этой границы)
           W.setShop(s.wear, W.shopMachine(s.wear) && JB.active(s.jobs).some(j => j.equip === 'shop' && j.status === 'work'), t0);
         const nx = calNext(s, t0, target), t1 = nx ? nx.at : target;
-        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
+        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); fuelBurn(s, t0, t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
         wearRegTick(s, t0);                                                // регламент списан по t1 — события шага видят настоящий запас
         if (!nx) break;
         const ev = nx.go();

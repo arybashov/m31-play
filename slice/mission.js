@@ -2,7 +2,7 @@
    Чистые расчёты без DOM, для браузера и Node. Физика эпохи I — эскиз A
    (ART/starship/v3-sketches): импульсный термояд D–³He, истечение 0,04c, доля
    конструкции ступени 4%, торможение плазменным магнитом до 0,01c, затем термояд.
-   Проект: DOC/Старт партии — карта и конструктор v1.md. */
+   Проект: DOC/Архив/Старт партии — карта и конструктор v1.md (прежняя версия; старт — Совет по заявкам). */
 (function (root) {
   'use strict';
 
@@ -426,7 +426,7 @@
     RESCUERS, WORK, CASCADE, WATCH_TAIL, incidentPos, localColony, rescuers, survivors, lightYears,
     kitsFor, crewOf, LEGACY_KITS, ENGINE, MAG_F, brakeMass, magYears, stdMag, brakeStart, brakeDist, actIII,
     EQUIP, SWAPS, EQ_BASE, EQ_MISSION, eqDefault, eqOpt, eqMass, eqSwaps, eqCode, eqParse, eqLegacy,
-    YEAR_S, C_MS, flightProfile, sampleFlight, timeAtDistance, toSec, toYears, copy };
+    YEAR_S, C_MS, flightProfile, sampleFlight, timeAtDistance, toSec, toYears, copy, STOP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Mission = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

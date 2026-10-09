@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
   const council = __core => {
-    let M, R, crewOf, hashU32, hidden, nf, nmG, plural, thawDeadline;
-    const __link = () => { ({ M, R, crewOf, hashU32, hidden, nf, nmG, plural, thawDeadline } = __core); };
+    let M, R, crewOf, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline;
+    const __link = () => { ({ M, R, crewOf, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline } = __core); };
     __link();
 
   // ---------------------------------------------------------------- совет «Новые сведения» (ранний поворот, год 3)
@@ -99,11 +99,11 @@
           `Manoeuvre reserve: ${fk(qt.reserveBefore, 'en')} → ${fk(qt.reserveAfter, 'en')} km/s; ${fk(qt.stageKms, 'en')} km/s of the rest goes to clearing the stage.`,
           `Arrival around year ${qt.arrive} (${yd(qt.delta, 'en')} yr); waking time at a watch of ${s.watch} — ${yd(qt.awakeDelta, 'en')} yr per person.`]
       },
-      cost: st => { st.reserve -= qt.reservePct; },                      // «После»: только публичная цена манёвра
+      cost: st => { spendPct(st, qt.reservePct); },                      // «После»: только публичная цена манёвра
       effect: st => {
         const t2 = earlyTurnQuote(st, q); if (!t2) return;               // повторная проверка на полном состоянии
         const from = st.target;
-        st.reserve -= t2.reservePct;
+        spendPct(st, t2.reservePct);
         (st.taskHistory = st.taskHistory || []).push(Object.assign({}, st.task, { status: 'abandoned', at: st.year }));
         st.requestId = q.id; st.target = q.star; st.task = { work: q.work, star: q.star, done: false, found: null, reportAt: null };
         st.arriveExact = t2.arriveExact; st.arrive = t2.arrive;

@@ -74,19 +74,19 @@
             label: L('Принять консервативную коррекцию', 'Accept a conservative correction'),
             known: lang => lang === 'ru' ? [`Резерв манёвров −10 км/с (−${H.nf(H.dvPct(s, 10), 2, 'ru')}% паспортного).`, 'Коррекция сразу, без дополнительной серии наблюдений.']
               : [`Manoeuvre reserve −10 km/s (−${H.nf(H.dvPct(s, 10), 2, 'en')}% of rated).`, 'A correction now, without an additional observation series.'],
-            effect: x => { x.reserve -= H.dvPct(x, 10); },
+            effect: x => { H.spendPct(x, H.dvPct(x, 10)); },
             record: L('Выполнена коррекция на 10 км/с с запасом на расхождение двух навигационных решений.', 'A 10 km/s correction has been made, with allowance for the difference between the two navigation solutions.')
           }, {
             id: 'baseline',
             label: L('Набрать длинную базу наблюдений', 'Build a long observation baseline'),
             known: lang => lang === 'ru' ? [`${dd(dur(s, 'navigation', H.sensors(s) === 'spectraPlus' ? 90 : 180), 'ru')} наблюдений на ходу${qualNote(s, 'navigation', 'ru')}; прибор занят — научные сверки ждут.`, `Затем коррекция −4 км/с (−${H.nf(H.dvPct(s, 4), 2, 'ru')}% паспортного).`]
               : [`${dd(dur(s, 'navigation', H.sensors(s) === 'spectraPlus' ? 90 : 180), 'en')} of observing on the move${qualNote(s, 'navigation', 'en')}; the instrument is busy — science checks wait.`, `Then a correction of −4 km/s (−${H.nf(H.dvPct(s, 4), 2, 'en')}% of rated).`],
-            cost: x => { x.reserve -= H.dvPct(x, 4); },                      // предпросмотр: коррекция после серии
+            cost: x => { H.spendPct(x, H.dvPct(x, 4)); },                      // предпросмотр: коррекция после серии
             effect: x => { job(x, e, 'baseline', dur(x, 'navigation', H.sensors(x) === 'spectraPlus' ? 90 : 180) * DAY, ['ai']); },
             record: L(`${e.who.ru} ставит длинную серию наблюдений; коррекция — после неё.`, `${e.who.en} sets up a long observing series; the correction comes after it.`)
           }]
         }),
-        done: (s, e, j) => { const d = H.dvPct(s, 4); s.reserve -= d; move(s, e, 'reserve', -d);
+        done: (s, e, j) => { const d = H.dvPct(s, 4); H.spendPct(s, d); move(s, e, 'reserve', -d);
           note(s, e, L('Навигационный журнал', 'Navigation log'), L(`По длинной серии наблюдений траектория уточнена; выполнена коррекция на 4 км/с.`, `The extended observation series has refined the trajectory; a 4 km/s correction has been made.`), 'done'); }
       },
 
@@ -216,7 +216,7 @@
             label: L('Сместить траекторию', 'Shift the trajectory'),
             known: lang => lang === 'ru' ? [`Резерв манёвров −10 км/с (−${H.nf(H.dvPct(s, 10), 2, 'ru')}% паспортного).`, 'Волокно остаётся в стороне; дополнительного износа от него не будет.']
               : [`Manoeuvre reserve −10 km/s (−${H.nf(H.dvPct(s, 10), 2, 'en')}% of rated).`, 'The ship bypasses the filament, avoiding the additional erosion it would cause.'],
-            effect: x => { x.reserve -= H.dvPct(x, 10); },
+            effect: x => { H.spendPct(x, H.dvPct(x, 10)); },
             record: L('Коррекция на 10 км/с: волокно проходит в стороне.', 'A 10 km/s correction: the filament passes to one side.')
           }]
         }),
@@ -403,7 +403,7 @@
             label: L('Принять верхнюю границу опасности', 'Assume the upper bound of danger'),
             known: lang => lang === 'ru' ? [`Резерв манёвров −6 км/с (−${H.nf(H.dvPct(s, 6), 2, 'ru')}% паспортного) на консервативную коррекцию.`, 'Новых измерений нет.']
               : [`Manoeuvre reserve −6 km/s (−${H.nf(H.dvPct(s, 6), 2, 'en')}% of rated) for a conservative correction.`, 'No new measurements.'],
-            effect: x => { x.reserve -= H.dvPct(x, 6); },
+            effect: x => { H.spendPct(x, H.dvPct(x, 6)); },
             record: L('Коррекция на 6 км/с по верхней границе опасности.', 'A 6 km/s correction for the upper bound of danger.')
           }]
         }),

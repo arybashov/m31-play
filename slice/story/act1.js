@@ -6,7 +6,7 @@
     const {
       CLOUD, DV, M, NEWS, W, bandBreach, bandHit, brake, cloudBand, crewOf, crewWord, dvPct, edgeLogV5, edgeMonths, edgeOut, eqOf, f1, fb, hasScouts,
       hidden, kms, nameAt, newsCandidates, newsPlan, newsText, nm, nmD, pct, plural, ppl, probeTimes, regHands, reqOf, rescueS, shieldGaugeV5,
-      sleepersAt2, stageOff, stageYears, stayOption, taskLabel, thinWatch, turnOption, yrs, yrsEn, yrsG
+      sleepersAt2, spendPct, stageOff, stageYears, stayOption, taskLabel, thinWatch, turnOption, yrs, yrsEn, yrsG
     } = K;
     return [
     // ------------------------------------------------------------ АКТ I
@@ -305,7 +305,7 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
                            : "Agro module assembly slips two years: Teya's seedlings won't live to see it.",
               s.measured ? 'The edge is measured dangerous: the manoeuvre avoids a known risk.' : 'Whether there was any danger, we will most likely never know.']
           },
-          effect: s => { s.reserve -= 3.2 * 0.01 / s.reserveDv; s.agroAtRisk = true; s.agroDelay = s.repairQual || s.kits.includes('agro') ? 0 : 2; },
+          effect: s => { spendPct(s, 3.2 * 0.01 / s.reserveDv); s.agroAtRisk = true; s.agroDelay = s.repairQual || s.kits.includes('agro') ? 0 : 2; },
           record: {
             ru: 'Совет голосует за манёвр.',
             en: 'The council votes for the manoeuvre.'
@@ -427,7 +427,7 @@ Default programme: general survey, no line priority.`
               'Planetary spectra arrive about forty years before we do.',
               s.koraYear ? "Spectrometer programme by Kora: oxygen, water, methane." : 'Spectrometer programme: general, no line priority.'].concat(rescueS(s) ? ['Medium data will help check the braking; they predict neither the state of the store nor the future site.'] : [])
           },
-          effect: s => { const kit = hasScouts(s); if (!kit) s.materials -= 10; s.scout = s.repairQual ? 6 : 8; if (!s.repairQual && !kit) s.reserve -= dvPct(s, DV.probe); s.scoutTuned = s.koraYear; },
+          effect: s => { const kit = hasScouts(s); if (!kit) s.materials -= 10; s.scout = s.repairQual ? 6 : 8; if (!s.repairQual && !kit) spendPct(s, dvPct(s, DV.probe)); s.scoutTuned = s.koraYear; },
           record: {
             ru: s => `Совет отдаёт материалы. ${s.repairQual ? 'Дан и ещё пятеро собирают зонд у кормы под тягой, на магнитных подошвах.' : 'Сборку откладывают до окна в конце разгона: без допуска снаружи под тягой не работают.'}
 
@@ -672,7 +672,7 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
     { id: 's.y8', kind: 'skip', toYear: 8, label: { ru: 'Промотать до года 8 · конец разгона', en: 'Skip ahead to year 8 · end of acceleration' } },
     {
       id: 'a1.stage', scene: 'stage', kind: 'instrument', year: 8,
-      effect: s => { s.reserve -= stageOff(s).reservePct; },
+      effect: s => { spendPct(s, stageOff(s).reservePct); },
       title: { ru: 'Инженерный журнал', en: 'Engineering log' },
       text: {
         ru: s => `Тяга ступени разгона снята. Скорость ${fb(s.beta, 'ru')}.

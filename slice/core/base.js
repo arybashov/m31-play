@@ -40,6 +40,50 @@
   // трата резерва манёвров в км/с → % паспортного резерва (reserveDv — доля c)
   const dvPct = (s, kms) => kms / (s.reserveDv * 299792.458) * 100;
   const DV = { probe: 120, stream: 250, streamWeak: 900 };   // км/с
+  // ---- топливо по бакам (шаг «хрупкость» 4а; спецификация Codex — «Ревью Codex — хрупкость корабля и регламент», шаг 4).
+  // Четыре тормозных бака T1–T4 по четверти F0 = M.stage(P, STOP + reserveDv); сухая масса D = P + K·F0 (с конструкцией баков)
+  // не уменьшается. Доступное Δv — VE·ln((D + Fп + Fи)/(D + Fи)): подключённые баки — топливо, изолированные — балласт.
+  // При постоянном VE Δv аддитивна: манёвр dv уменьшает доступное ровно на dv, поэтому резерв в % паспортного (s.reserve)
+  // ведётся прежними вычитаниями, а масса — параллельно, по формуле ракеты (fuelSpent = m·(1 − e^(−dv/VE))). Расходятся они
+  // только при потере топлива и изоляции баков (4в) — тогда резерв пересчитывается из массы (fuelSync).
+  // Двигательное торможение STOP → 0 — последние M.ENGINE лет до s.arrive, топливо расходуется по времени (fuelBurn).
+  const TANKS = ['T1', 'T2', 'T3', 'T4'];
+  function fuelInit(s) {
+    const P = M.CORE + cargoOf(s.kits, s.eq), F0 = M.stage(P, M.STOP + s.reserveDv);
+    s.fuel = { D: P + M.K * F0, burned: 0, tanks: {} };
+    for (const id of TANKS) s.fuel.tanks[id] = { fuel0: F0 / 4, fuel: F0 / 4, feed: 'connected' };
+  }
+  const fuelOn = (s, f) => Object.values(s.fuel.tanks).filter(x => (x.feed === 'connected') === f).reduce((a, x) => a + x.fuel, 0);
+  const dvLeft = s => { const Fi = fuelOn(s, false); return M.VE * Math.log1p(fuelOn(s, true) / (s.fuel.D + Fi)); };
+  // оставшееся двигательное торможение принятого графика: STOP до его начала, линейно до нуля к фактическому прибытию
+  // (у спасателя — точная дата стыковки arriveExact, она уточняется торможением у склада)
+  const brakeLeft = (s, t) => M.STOP * Math.max(0, Math.min(1, (arriveView(s) - t) / M.ENGINE));
+  const brakeReq = s => s.fuel ? M.STOP - s.fuel.burned : M.STOP;     // ещё не сожжённое Δv двигательного торможения
+  // расход dv из подключённых баков пропорционально содержимому; вернуть фактически израсходованное Δv (нехватка — меньше)
+  function fuelSpendDv(s, dv) {
+    if (!s.fuel || !(dv > 0)) return 0;
+    const Fc = fuelOn(s, true); if (!(Fc > 0)) return 0;
+    const m = s.fuel.D + Fc + fuelOn(s, false), use = Math.min(dv, dvLeft(s)), spent = Math.min(Fc, -m * Math.expm1(-use / M.VE));
+    for (const x of Object.values(s.fuel.tanks)) if (x.feed === 'connected') x.fuel -= spent * x.fuel / Fc;
+    return use;
+  }
+  // пополнение: масса топлива, дающая ещё dv (в подключённые баки поровну)
+  function fuelAddDv(s, dv) {
+    if (!s.fuel || !(dv > 0)) return;
+    const on = Object.values(s.fuel.tanks).filter(x => x.feed === 'connected'); if (!on.length) return;
+    const add = (s.fuel.D + fuelOn(s, true) + fuelOn(s, false)) * Math.expm1(dv / M.VE);
+    for (const x of on) x.fuel += add / on.length;
+  }
+  // манёвр в % паспортного резерва: прежнее вычитание и та же Δv из баков
+  const spendPct = (s, pct) => { s.reserve -= pct; fuelSpendDv(s, pct / 100 * s.reserveDv); };
+  const addPct = (s, pct) => { s.reserve += pct; fuelAddDv(s, pct / 100 * s.reserveDv); };
+  // двигательное торможение к дате t1 (календарь модели): сожжено должно быть STOP − остаток графика; учёт — по сожжённому,
+  // поэтому повторный отрезок и сдвиг даты прибытия не списывают дважды и не пропускают
+  function fuelBurn(s, t0, t1) {
+    if (!s.fuel || s.arrive == null) return;
+    const dv = M.STOP - brakeLeft(s, t1) - s.fuel.burned;
+    if (dv > 1e-15) { fuelSpendDv(s, dv); s.fuel.burned += dv; }
+  }
   const pctDv = (r, lang) => (lang === 'ru' ? String(r * 100).replace('.', ',') : String(r * 100)) + '% c';
   const eachAwake = (T, w) => M.awake(T, w);
 
@@ -147,6 +191,7 @@
         s.beta = b; s.reserveDv = r; s.kits = kits.slice(); s.eq = Object.assign({}, eq); s.arrive = T;
         s.brakeMass = bm; s.tMag = tMag; s.arriveExact = Tx == null ? T : Tx; s.crew = M.crewOf(kits);
         s.materials = kits.includes('materials') ? 140 : 100;
+        fuelInit(s);                                                    // тормозные баки T1–T4 (шаг 4а)
       },
       record: {
         ru: s => `Ирсон зачитывает паспорт: ${fb(b, 'ru')}, резерв манёвров ${pctDv(r, 'ru')}, груз — ${kitList(kits, 'ru')}; оснащение — ${eqList(s0, eq, 'ru')}. Прибытие к ${nmD(s)} — около года ${T}.
@@ -194,7 +239,8 @@ Kassel signs for the Council last.`
       names: {
         pct, pctM, M, SH, EVM, W, JB, R, RQ, nm, nmG, nmD, f1, fb, plural, yrs, yrsG, yrsEn, ppl, dvPct, DV, pctDv, eachAwake, STATUS, yrsAgo, yr1,
         archiveShort, archiveLines, legacyLines, colonyTie, subsets, cargoOf, passportParse, passportOptions, kitList, eqList, passportOption,
-        probeTimes, brake, stageOff, kms, Y, lag, supportPlan, supportWorld, src, vAt, heatAgo
+        probeTimes, brake, stageOff, kms, Y, lag, supportPlan, supportWorld, src, vAt, heatAgo, TANKS, fuelInit, fuelOn, dvLeft, brakeLeft,
+        fuelSpendDv, fuelAddDv, spendPct, addPct, fuelBurn, brakeReq
       },
       link: __link
     };

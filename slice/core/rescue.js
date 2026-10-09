@@ -4,8 +4,8 @@
   'use strict';
   const rescue = __core => {
     let M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural,
-    popName, ppl, rescueS, thawN, xyl, yr;
-    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, thawN, xyl, yr } = __core); };
+    popName, ppl, rescueS, spendPct, thawN, xyl, yr;
+    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr } = __core); };
     __link();
 
   // ---- спасатель v3 (rescueS): реестр Оттепели, тепловой срок секции, торможение, крепление, площадка
@@ -67,7 +67,7 @@
   function brakeApply(st, method) {
     st.brakeMethod = method; st.arrivePlan = arriveX(st);
     st.brakeFound = method === 'measure' && brakeLong(st) && (hidden(st, 'rescue.brake.check') ?? 1) < RESCUE.longSense;
-    if (method === 'burn' || st.brakeFound) st.reserve -= dvPct(st, RESCUE.burn);
+    if (method === 'burn' || st.brakeFound) spendPct(st, dvPct(st, RESCUE.burn));
   }
   // навигационная сверка: протяжённость участка установлена по факту, поправка — к точному прибытию
   function brakeSettle(st) {

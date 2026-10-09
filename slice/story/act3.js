@@ -4,12 +4,12 @@
   'use strict';
   const act3 = K => {
     const {
-      DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, agroLost, aliveOf, arriveX, bad, brakeApply,
+      DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arriveX, bad, brakeApply,
       brakeSettle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, connectNeed, connectOptions, contactRun, crewOf, darkAt, days,
       daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dvPct, eqOf, f1, f2, fb, greetR, hasIR, heatAgo, homeOptionsR, housedOf, incident,
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
-      rescueOptions, rescueS, riskLine, roadDead, sectionHolds, sectionLine, siteRecord, sosEnd, sosKnown, sosOption, src, stagePass, storeLine,
-      storeNow, storeR, stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc,
+      rescueOptions, rescueS, riskLine, roadDead, sectionHolds, sectionLine, siteRecord, sosEnd, sosKnown, sosOption, spendPct, src, stagePass,
+      storeLine, storeNow, storeR, stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc,
       taskReportText, taskResult, thawAdvance, thawAlive, thawDeadline, thawN, thawNames, vAt, warnAt, win, windowLine, yrs, yrsEn
     } = K;
     return [
@@ -149,8 +149,8 @@ The physician names the price: Kora has one full cycle left. This waking will be
           ru: s => [`Резерв манёвров −${f1(streamDv(s), 'ru')}% паспортного.`, windowLine(s, 'ru')],
           en: s => [`Manoeuvre reserve −${f1(streamDv(s), 'en')}% of rated.`, windowLine(s, 'en')]
         },
-        cost: st => { st.reserve -= streamDv(st); },
-        effect: st => { st.reserve -= streamDv(st); st.streamRoute = 'evade'; },
+        cost: st => { spendPct(st, streamDv(st)); },
+        effect: st => { spendPct(st, streamDv(st)); st.streamRoute = 'evade'; },
         record: { ru: 'Совет решает уходить с края потока.', en: 'The council decides to leave the edge of the stream.' }
       }] : []).concat([{
         id: 'pass', label: { ru: 'Пройти по краю', en: 'Pass along the edge' },
@@ -297,7 +297,7 @@ ${s.scout ? "The probe's forward measurements sit in the archive, unprocessed." 
         if (burn) out.push({ id: 'burn', label: { ru: 'Добавить тормозной импульс', en: 'Add a braking impulse' },
           known: { ru: [`Резерв манёвров −${pct('ru')}.`, 'Поправка на разрежение снята: прибытие — по паспорту, каким бы ни оказался участок. Потерянного времени и людей импульс не вернёт.'],
             en: [`Manoeuvre reserve −${pct('en')}.`, 'The sparse-medium correction is removed: arrival as in the passport, whatever the stretch turns out to be. The impulse cannot recover time or people already lost.'] },
-          cost: st => { st.reserve -= dvPct(st, RESCUE.burn); },
+          cost: st => { spendPct(st, dvPct(st, RESCUE.burn)); },
           effect: st => brakeApply(st, 'burn'), record });
         out.push({ id: 'wait', label: { ru: 'Ждать магнит', en: 'Wait for the magnet' },
           known: { ru: ['Без расхода.', `Если разрежение протяжённое, прибытие позже на ${RESCUE.delay} суток: каждые сутки опоздания вычитаются из запаса склада, каким бы он ни оказался.`],
@@ -890,7 +890,7 @@ Teya closes the sampler.
     {
       id: 'a3.wait', illus: s => s.support === 'found' ? null : 'council-at-target', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: s => !ownStory(s),
       effect: s => { s.lost = lossesOf(s, s.arrive).total + s.dead;
-        if (s.support === 'found') { s.materials += 30; s.reserve += dvPct(s, 900); s.highPower = true; } },
+        if (s.support === 'found') { s.materials += 30; addPct(s, dvPct(s, 900)); s.highPower = true; } },
       title: { ru: 'Совет у цели', en: 'Council at the target' },
       text: {
         ru: s => (s.support === 'found'

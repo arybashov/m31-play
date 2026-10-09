@@ -4,9 +4,9 @@
   'use strict';
   const notes = __core => {
     let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arriveView, beats, book, cloudSpan, cloudThrough, crewName,
-    crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, streamOn,
-    streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
-    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
+    crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, spendPct,
+    streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
+    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
     __link();
 
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -358,7 +358,7 @@
   const aliveIds = s => { const dead = new Set((s.incidents || []).filter(x => (x.pop || 'crew') === 'crew').flatMap(x => x.ids || []).concat(s.deadIds || []));
     return [...Array(crewOf(s)).keys()].filter(i => !dead.has(i)); };
   const EV = EVM.create({ hidden: (s, k) => hidden(s, k), name: (s, i) => ({ ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }), alive: aliveIds, window: evWindow,
-    dvPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40,
+    dvPct, spendPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40,
     caps: s => eqOf(s).caps, probes: s => eqOf(s).probes, highPower: s => !!s.highPower, taught: s => !!s.taught, repairQual: s => !!s.repairQual,
     cargo: s => s.kits.includes('request') ? 'request' : s.kits.includes('berths') ? 'berths' : 'none',
     pickName: (s, u, not) => { const a = aliveIds(s).filter(i => i !== not), i = a.length ? a[Math.floor(u * a.length) % a.length] : 0; return { ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }; },   // not — номер, который исключить
