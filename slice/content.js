@@ -653,10 +653,14 @@ There are no longer years of waiting between question and answer.`;
       if (warm.length) add(0.3, `на тепловом резерве: ${warm.map(g => g.id).join(', ')}`, `on thermal reserve: ${warm.map(g => g.id).join(', ')}`);
       if (w.inv.pump === 0 && !pumpProspect(s)) add(0.5, 'запасных насосов нет', 'no spare pumps');
       if (w.shop && w.shop.lost) add(0.55, 'станков больше нет', 'no machine tools left');
+      for (const r of (o.danger || []).filter(x => x.fam === 'bearing')) { const H = r.id.split('.')[0], rep = pendingFor(w, r.id);   // опора кольца
+        if (r.ok && r.defect) add(0.5 - 0.35 * r.used / r.tol, `опора кольца ${H}: износ дорожки, израсходовано ${Math.round(100 * r.used / r.tol)}% допуска`, `ring ${H}'s bearing: track wear, ${Math.round(100 * r.used / r.tol)}% of margin used`);
+        else if (!r.ok) add(rep ? 0.6 : r.defect === 'heavy' ? 0.3 : 0.4, rep ? `кольцо ${H} остановлено на ремонт опоры` : `кольцо ${H} ${r.defect === 'heavy' ? 'заклинило навсегда' : 'остановлено'}: в невесомости ${ppl(o.zeroG.n)}`,
+          rep ? `ring ${H} stopped for a bearing repair` : `ring ${H} ${r.defect === 'heavy' ? 'seized for good' : 'stopped'}: ${o.zeroG.n} people in zero-g`); }
       for (const r of o.rads || []) { if (!r.defect) continue; const rep = pendingFor(w, r.id);   // опасный узел: секция радиатора
         if (r.ok) add(0.5 - 0.35 * r.used / r.tol, `течь секции радиатора ${r.id}: израсходовано ${Math.round(100 * r.used / r.tol)}% допуска`, `radiator section ${r.id} leaking: ${Math.round(100 * r.used / r.tol)}% of margin used`);
-        else add(rep ? 0.6 : r.defect === 'heavy' ? 0.35 : 0.45, rep ? `секция радиатора ${r.id} в ремонте` : `секция радиатора ${r.id} ${r.defect === 'heavy' ? 'разрушена' : 'изолирована'}`,
-          rep ? `radiator section ${r.id} under repair` : `radiator section ${r.id} ${r.defect === 'heavy' ? 'ruptured' : 'isolated'}`); }
+        else add(rep ? 0.6 : r.defect === 'heavy' ? 0.35 : 0.45, rep ? `секция радиатора ${r.id} в ремонте` : `секция радиатора ${r.id} ${r.defect === 'heavy' ? 'разрушена навсегда' : 'изолирована'}`,
+          rep ? `radiator section ${r.id} under repair` : `radiator section ${r.id} ${r.defect === 'heavy' ? 'ruptured for good' : 'isolated'}`); }
       if (o.reg) { const b = o.reg.B / W.REG.D0;                         // отставание в годовых объёмах регламента
         if (b > 0.05) add(b < 0.25 ? 0.6 + 0.4 * (0.25 - b) / 0.2 : b < 0.5 ? 0.35 + 0.25 * (0.5 - b) / 0.25 : b < 1.5 ? 0.15 + 0.2 * (1.5 - b) : Math.max(0, 0.15 * (3 - b) / 1.5),
           `регламент: отставание ${nf(o.reg.B, 0, 'ru')} чел.-сут, старение ×${nf(o.reg.m, 2, 'ru')}`, `maintenance: ${nf(o.reg.B, 0, 'en')} person-days behind, ageing ×${nf(o.reg.m, 2, 'en')}`); }
@@ -788,7 +792,9 @@ There are no longer years of waiting between question and answer.`;
     coll: { work: 28, hold: 2 } };                                       // вставка коллектора: 28 чел.-сут и 48 ч опрессовки (шаг 3e)
   // специалисты вахты: вахта/6 (полная 48 — восемь, тонкая 26 — четверо). Регламент — постоянная работа очереди: после спасения
   // людей и восстановления пути, до запаса; аврал забирает людей у регламента и честно копит отставание (шаг «хрупкость»)
-  const techs = s => Math.max(0, Math.floor(s.watch / 6) - (s.trainees ? s.trainees.n : 0));   // разбуженные учатся — ещё не в счёте
+  // разбуженные учатся — ещё не в счёте; кольцо остановлено — лишние в невесомости, вахта слабее (шаг «хрупкость» 3в)
+  const zgFactor = s => { const w = s.wear; if (!w || !wearOn(s) || !(s.year >= 8) || s.year >= arriveView(s)) return 1; const z = W.zeroG(w); return z.awake ? 1 - W.RING.zeroG * z.n / z.awake : 1; };
+  const techs = s => Math.max(0, Math.floor((Math.floor(s.watch / 6) - (s.trainees ? s.trainees.n : 0)) * zgFactor(s) + 1e-9));
   const pools = s => ({ tech: techs(s), shop: !s.wear || W.shopOpen(s.wear) ? 1 : 0 });   // мастерская — один производственный слот (3b); привод в ремонте — закрыта (3c)
   const auralN = s => techs(s);
   const auralDays = s => { const n = auralN(s); return n ? WEAR_WORK.pump.work / n + WEAR_WORK.pump.hold : Infinity; };   // насос авралом, сутки
@@ -920,20 +926,20 @@ There are no longer years of waiting between question and answer.`;
   // шестерых и полсуток опрессовки — 64 часа). Холодильник, управление и перекладка группы на резерве — тоже спасение.
   // Материалов не хватает — работы нет (null)
   function wearOp(s, kind, id, t, urgent, paid) {                       // paid — материалы оплачены заранее (донор агромодуля)
-    const w = s.wear, R = kind === 'rad' ? W.dangerRecipe(w, id) : null;   // ремонт секции радиатора — по стадии дефекта (шаг «хрупкость» 3)
+    const w = s.wear, R = kind === 'rad' || kind === 'ring' ? W.dangerRecipe(w, id) : null;   // ремонт секции радиатора или опоры кольца — по стадии дефекта (шаг «хрупкость» 3)
     const cost = paid ? 0 : kind === 'coll' ? W.COLL.materials[prodOf(s)] || W.COLL.materials.repair : R ? R.materials : WEAR_OPS[kind];
     if (s.materials < cost - 1e-9) return null;
     if (kind === 'coll' && !(w.inv.valve >= 1)) return null;             // вставка — клапанный комплект из общих восьми
-    if (R && !W.canRepairDefect(w, id, s.materials)) return null;         // секционные комплекты
+    if ((kind === 'rad' || kind === 'ring') && !(R && W.canRepairDefect(w, id, s.materials))) return null;   // комплекты; разрушенное не чинится
     const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t };
-    if (R) op.heavy = w.nodes[id].defect && w.nodes[id].defect.stage === 'heavy';
+    if (R) op.heavy = R === W.DANGER.bearing.alt;                         // опора: дорожка вместо роликов
     w.ops.push(op); s.materials -= cost;
-    const rescue = urgent || (kind !== 'pump' && kind !== 'coll' && kind !== 'rad'), deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
+    const rescue = urgent || (kind !== 'pump' && kind !== 'coll' && kind !== 'rad' && kind !== 'ring'), deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
     JB.enqueue(s.jobs, Object.assign({ owner: 'wear', ref: op.id, type: `wear.${kind}`, prio: rescue ? JB.PRIO.rescue : JB.PRIO.path, deadline: rescue ? deadline : Infinity,
-      pool: 'tech', minW: 1, maxW: urgent ? Infinity : 2 }, R ? { work: R.work, hold: R.hold } : WEAR_WORK[kind]), t, pools(s));
+      pool: 'tech', minW: 1, maxW: urgent ? Infinity : kind === 'ring' ? 4 : 2 }, R ? { work: R.work, hold: R.hold } : WEAR_WORK[kind]), t, pools(s));   // опору — до четырёх
     if (kind === 'coll') w.inv.valve--;
-    if (R) w.inv[W.DANGER.radiator.kit] -= R.kits;
-    const u = id.split('.')[0], NM = { rad: [`ремонт секции радиатора ${u}`, `repairing radiator section ${u}`], coll: [`вставка коллектора ${u}`, `an insert for the ${u} collector`], pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
+    if (R) w.inv[R.kit] -= R.kits;
+    const u = id.split('.')[0], NM = { ring: [`ремонт опоры кольца ${u}`, `repairing ring ${u}'s bearing`], rad: [`ремонт секции радиатора ${u}`, `repairing radiator section ${u}`], coll: [`вставка коллектора ${u}`, `an insert for the ${u} collector`], pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
       control: [`замена управления группы ${u}`, `replacing group ${u}'s control`], move: [`перекладка группы ${u}`, `moving group ${u}`] }[kind];
     if (cost) wearMove$(s, t, -cost, NM[0], NM[1]);
     if (kind === 'pump' || kind === 'cooler') op.sn = W.reservePart(w, kind); else if (kind === 'control') w.inv.control--;   // насос, холодильник — экземпляр из запаса
@@ -1143,7 +1149,7 @@ The expedition is over. The next one will receive the log — which failure was 
     if (j.type === 'wear.reg') return ru ? 'регламент' : 'routine maintenance';
     const op = s.wear && s.wear.ops.find(o => o.id === j.ref); if (!op) return j.type;
     const u = String(op.target).split('.')[0];
-    return { rad: ru ? `ремонт секции радиатора ${u}` : `repairing radiator section ${u}`, coll: ru ? `вставка коллектора ${u}` : `an insert for the ${u} collector`, pump: ru ? `замена насоса ${u}` : `replacing the ${u} pump`, cooler: ru ? `замена холодильника ${u}` : `replacing the ${u} cooler`,
+    return { ring: ru ? `ремонт опоры кольца ${u}` : `repairing ring ${u}'s bearing`, rad: ru ? `ремонт секции радиатора ${u}` : `repairing radiator section ${u}`, coll: ru ? `вставка коллектора ${u}` : `an insert for the ${u} collector`, pump: ru ? `замена насоса ${u}` : `replacing the ${u} pump`, cooler: ru ? `замена холодильника ${u}` : `replacing the ${u} cooler`,
       control: ru ? `замена управления ${u}` : `replacing the ${u} control`, move: ru ? `перекладка группы ${u}` : `moving group ${u}`,
       rebuild: ru ? `переборка ${op.fam === 'pump' ? 'насоса' : 'холодильника'} № ${op.sn}` : `rebuilding ${op.fam} no. ${op.sn}`,
       recover: ru ? 'переработка лома' : 'scrap recovery', drive: ru ? 'ремонт привода станков' : 'machine drive repair',
@@ -1222,9 +1228,14 @@ The expedition is over. The next one will receive the log — which failure was 
         `${L} collector: ${ins === 1 ? 'first' : 'second'} insert, pressure test passed — ${runs ? 'the loop runs' : 'the base is sound, the loop waits for a pump'}${ins >= W.COLL.inserts ? ', one unit weaker; the next base failure cannot be restored' : ''}${home ? '; the groups are back home' : ''}.`);
       if (!runs) wearRefit(s, t);
       wearCheckGroups(s, t); return null; }
+    if (op.kind === 'ring') { W.repairDefect(w, op.target, t); const H = op.target.split('.')[0]; JB.dispatch(s.jobs, t, pools(s));   // кольцо вращается — места и люди вернулись
+      const zg = W.zeroG(w).n;
+      wearNote(s, `Опора кольца ${H} отремонтирована${op.heavy ? ' — новая дорожка' : ''}: кольцо снова вращается${zg ? `; в невесомости остаются ${ppl(zg)}` : ', невесомость кончилась'}. Комплектов роликов — ${w.inv.rollerKit}, дорожек — ${w.inv.trackKit}.`,
+        `Ring ${H}'s bearing repaired${op.heavy ? ' — a new track' : ''}: the ring rotates again${zg ? `; ${zg} people still work in zero-g` : ', the zero-g work is over'}. Roller kits left: ${w.inv.rollerKit}, tracks: ${w.inv.trackKit}.`);
+      return null; }
     if (op.kind === 'rad') { W.repairDefect(w, op.target, t); const home = W.rehome(w, t), L = W.LOOPS.find(x => w.link.rad[x] === op.target);
-      wearNote(s, `Секция радиатора ${op.target} отремонтирована${op.heavy ? ' после разрушения' : ''}, опрессовка пройдена — контур ${L} ${W.loopRuns(w, L) ? 'снова отводит тепло' : 'ждёт насос'}${home ? '; группы вернулись домой' : ''}. Секционных комплектов — ${w.inv[W.DANGER.radiator.kit]}.`,
-        `Radiator section ${op.target} repaired${op.heavy ? ' after its rupture' : ''}, pressure test passed — loop ${L} ${W.loopRuns(w, L) ? 'rejects heat again' : 'waits for a pump'}${home ? '; the groups are back home' : ''}. Section kits left: ${w.inv[W.DANGER.radiator.kit]}.`);
+      wearNote(s, `Секция радиатора ${op.target} отремонтирована, опрессовка пройдена — контур ${L} ${W.loopRuns(w, L) ? 'снова отводит тепло' : 'ждёт насос'}${home ? '; группы вернулись домой' : ''}. Секционных комплектов — ${w.inv.radKit}.`,
+        `Radiator section ${op.target} repaired, pressure test passed — loop ${L} ${W.loopRuns(w, L) ? 'rejects heat again' : 'waits for a pump'}${home ? '; the groups are back home' : ''}. Section kits left: ${w.inv.radKit}.`);
       wearCheckGroups(s, t); return null; }
     if (op.kind === 'drive') { W.install(w, 'SHOP.drive', t); w.shop.fixes++;
       wearNote(s, `Привод станков восстановлен ручным набором (${w.shop.fixes === 1 ? 'первый' : 'второй'} ремонт): машинная работа продолжается.`,
@@ -1313,7 +1324,7 @@ The expedition is over. The next one will receive the log — which failure was 
   }
   function wearFire(s, b) {
     const w = s.wear, t = b.at;
-    if (b.kind === 'awake') { wearSync(s); return null; }
+    if (b.kind === 'awake') { wearSync(s); w.zgDone = t; return null; }   // и производительность вахты (невесомость) — с этой даты
     if (b.kind === 'op') return wearOpDone(s, b.id, t) || dangerReask(s, t);
     if (b.kind === 'capsule') { wearDeaths(s, W.capsuleFail(w, b.id, t, wearRnd(s))); return null; }
     if (b.kind === 'med') { wearDeaths(s, W.bgDeath(w, b.id, t, wearRnd(s))); return null; }
@@ -1324,30 +1335,37 @@ The expedition is over. The next one will receive the log — which failure was 
     // опасный дефект (шаг «хрупкость» 3): обнаружен — карточка; 75% допуска — снова (если работу продолжили); допуск исчерпан —
     // тяжёлый отказ: секция выключена, группы — на другие контуры, карточка о тяжёлом ремонте
     if (b.kind === 'defect') { W.detect(w, b.id, t); return dangerAsk(s, b.id, 'open', t); }
-    if (b.kind === 'warn') { W.warnDefect(w, b.id, t); return dangerAsk(s, b.id, 'warn', t); }
-    if (b.kind === 'heavy') { W.isolate(w, b.id, t, true); wearCheckGroups(s, t); wearCoreWarn(s, t); return dangerAsk(s, b.id, 'heavy', t); }
+    // шаг 4б: 75% — только прибор (решение «эксплуатировать до отказа» принято); исчерпанный допуск — разрушение основания навсегда
+    if (b.kind === 'warn') { W.warnDefect(w, b.id, t); const bear = /\.bearing$/.test(b.id), u = b.id.split('.')[0], d = Math.round(W.DANGER[bear ? 'bearing' : 'radiator'].tol * 0.25 / Math.max(0.2, w.nodes[b.id].r));
+      wearNote(s, bear ? `Опора кольца ${u}: израсходовано три четверти допуска — до заклинивания около ${d} суток.` : `Секция радиатора ${u}: израсходовано три четверти допуска — до разрушения около ${d} суток.`,
+        bear ? `Ring ${u}'s bearing: three quarters of its margin used — about ${d} days before it seizes.` : `Radiator section ${u}: three quarters of its margin used — about ${d} days before it ruptures.`); return null; }
+    if (b.kind === 'heavy') { W.isolate(w, b.id, t, true); wearCheckGroups(s, t); wearCoreWarn(s, t); if (s.jobs) JB.dispatch(s.jobs, t, pools(s));
+      const bear = /\.bearing$/.test(b.id), u = b.id.split('.')[0], L = radLoop(w, b.id);
+      wearNote(s, bear ? `Опора кольца ${u} заклинила и повредила посадочное место: кольцо остановлено до конца рейса — в невесомости ${ppl(W.zeroG(w).n)}.` : `Секция радиатора ${u} разрушена: основание потеряно, контур ${L} без теплоотвода до конца рейса. Схема ${layout(w)}.`,
+        bear ? `Ring ${u}'s bearing seized and damaged its seat: the ring is stopped for the rest of the voyage — ${W.zeroG(w).n} people in zero-g.` : `Radiator section ${u} ruptured: its base is lost, loop ${L} has no heat rejection for the rest of the voyage. Layout ${layout(w)}.`);
+      return dangerReask(s, t); }
     return null;
   }
   // ---- опасный узел (шаг «хрупкость» 3; спецификация Codex — DOC «Ревью Codex — хрупкость корабля и регламент», шаг 3):
   // единая карточка для узлов с развивающимся дефектом. Сейчас — секции радиаторов R1–R4 (секция = теплоотвод своего контура)
   const radLoop = (w, id) => W.LOOPS.find(L => w.link.rad[L] === id);
   // положение для повторов: можно ли ремонтировать и сколько групп без охлаждения (и ядро)
-  const dangerSig = (s, id) => { const o = W.observe(s.wear, Math.max(s.wear.t, s.year)); return { can: dangerCan(s, id), warm: o.groups.filter(g => g.sleep && g.heat).length + (o.core.cooled ? 0 : 100) }; };
+  const dangerSig = (s, id) => { const o = W.observe(s.wear, Math.max(s.wear.t, s.year)); return { can: dangerCan(s, id), warm: o.groups.filter(g => g.sleep && g.heat).length + (o.core.cooled ? 0 : 100), zg: o.zeroG.n }; };
   function dangerAsk(s, id, stage, t) { s.wearAsked = (s.wearAsked || 0) + 1; (s.dangerSeen = s.dangerSeen || {})[id] = dangerSig(s, id); return { kind: 'wear', type: 'danger', id, stage, at: t }; }
   // выключенная и не ремонтируемая секция: совет решает снова, когда ремонт стал возможен (материалы, комплекты) или когда
   // без охлаждения осталось больше групп, чем при прошлом решении (ядро — тоже), — один раз на каждое изменение
   function dangerReask(s, t) {
     const w = s.wear; if (!w || !wearOn(s)) return null;
-    for (const id of W.RADS) { const n = w.nodes[id];
+    for (const id of W.dangerIds(w)) { const n = w.nodes[id];
       if (n.ok || !n.defect || pendingFor(w, id)) continue;
-      const now = dangerSig(s, id), was = (s.dangerSeen || {})[id] || { can: false, warm: 0 };
+      const now = dangerSig(s, id), was = (s.dangerSeen || {})[id] || { can: false, warm: 0, zg: 0 };
       if (!now.can) { (s.dangerSeen = s.dangerSeen || {})[id] = Object.assign({}, was, { can: false }); continue; }   // ремонтировать нечем — запомнить
-      if ((!was.can && now.can) || now.warm > was.warm) return dangerAsk(s, id, n.defect.stage === 'heavy' ? 'heavy' : 'isolated', t);
+      if ((!was.can && now.can) || now.warm > was.warm || now.zg > (was.zg || 0)) return dangerAsk(s, id, n.defect.stage === 'heavy' ? 'heavy' : 'isolated', t);
     }
     return null;
   }
   // ремонт целиком: перестановка (если секция ещё работает и на контуре есть группы) и сам ремонт — хватает ли материалов
-  const dangerCan = (s, id) => { const w = s.wear, L = radLoop(w, id), re = w.nodes[id].ok && W.loopLoad(w, L) > 0 ? WEAR_OPS.reroute : 0;
+  const dangerCan = (s, id) => { const w = s.wear, L = radLoop(w, id), re = L && w.nodes[id].ok && W.loopLoad(w, L) > 0 ? WEAR_OPS.reroute : 0;
     return W.canRepairDefect(w, id, s.materials - re); };
   // срок работы по копии очереди с нынешними приоритетами и людьми (сутки; null — не начнётся за пять лет)
   function queueDays(s, spec, t) {
@@ -1361,7 +1379,64 @@ The expedition is over. The next one will receive the log — which failure was 
     const r = W.reroutePlan(c, L); W.relink(c, r.plan, t);
     return { layout: layout(c), over: W.overAge(c), left: r.left.length };
   }
+  // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
+  function wearRingDecision(s, ev) {
+    const id = ev.id, H = id.split('.')[0], stage = ev.stage, Dg = W.DANGER.bearing, open = stage === 'open' || stage === 'warn';
+    const R = x => W.dangerRecipe(x.wear, id), can = x => dangerCan(x, id);
+    const left = x => Math.max(0, (Dg.tol - W.defectAt(x.wear.nodes[id], x.year)) / Math.max(0.2, x.wear.nodes[id].r));
+    // кольцо остановлено (на копии): сколько в невесомости и сколько специалистов; срок ремонта — по копии очереди
+    const stopped = x => { const c = JSON.parse(JSON.stringify(x)); if (c.wear.nodes[id].ok) W.isolate(c.wear, id, c.year); return { c, zg: W.zeroG(c.wear).n, tech: techs(c), was: techs(x) }; };
+    const days = x => { const r = R(x), st = stopped(x); return queueDays(st.c, { prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 4, work: r.work, hold: r.hold }, st.c.year); };
+    const zgLine = (x, ru, forever) => { const st = stopped(x);
+      return ru ? `${st.zg ? `${ppl(st.zg)} ${forever ? 'до конца рейса' : 'на время ремонта'} работают в невесомости: специалистов вахты ${st.tech} вместо ${st.was}` : 'Мест во втором кольце хватает всем на ногах'}.`
+        : `${st.zg ? `${st.zg} people work in zero-g ${forever ? 'for the rest of the voyage' : 'during the repair'}: ${st.tech} specialists on watch instead of ${st.was}` : 'The other ring has room for everyone awake'}.`; };
+    const cost = (x, ru) => { const r = R(x), d = days(x), heavy = r === Dg.alt, q = d == null ? (ru ? 'по очереди работ не начнётся: людей нет' : 'the work queue will not start it: no people')
+        : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
+      const last = heavy && x.wear.inv.trackKit === 1;
+      return ru ? `Ремонт — ${heavy ? `дорожка с роликами (${last ? 'последняя' : `комплектов дорожки: ${x.wear.inv.trackKit}`})` : `ролики (комплектов: ${x.wear.inv.rollerKit})`}, материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} суток обкатки; ${q}.`
+        : `The repair takes ${heavy ? `a track with rollers (${last ? 'the last one' : `track kits: ${x.wear.inv.trackKit}`})` : `rollers (kits: ${x.wear.inv.rollerKit})`}, materials −${r.materials}%, ${r.work} person-days and ${r.hold} days of running-in; ${q}.`; };
+    const head = (x, ru) => {
+      if (stage === 'open') return ru ? `Опора кольца ${H}: растут вибрация и момент привода, в смазке — частицы износа дорожки. Кольцо ещё вращается, но повреждение развивается — около ${nf(left(x), 0, 'ru')} суток вращения до заклинивания.`
+        : `Ring ${H}'s bearing: vibration and drive torque are rising, the lubricant carries track wear particles. The ring still rotates, but the damage is growing — about ${nf(left(x), 0, 'en')} days of rotation before it seizes.`;
+      if (stage === 'warn') return ru ? `Опора кольца ${H}: три четверти допуска израсходованы, до заклинивания — около ${nf(left(x), 0, 'ru')} суток.` : `Ring ${H}'s bearing: three quarters of its margin are used, about ${nf(left(x), 0, 'en')} days before it seizes.`;
+      const z = W.zeroG(x.wear).n;
+      return (stage === 'heavy' ? (ru ? `Опора кольца ${H} заклинила: кольцо остановлено.` : `Ring ${H}'s bearing has seized: the ring is stopped.`) : (ru ? `Кольцо ${H} остановлено.` : `Ring ${H} is stopped.`))
+        + (ru ? ` В невесомости работают ${ppl(z)}; специалистов вахты — ${techs(x)}.` : ` ${z} people work in zero-g; ${techs(x)} specialists on watch.`); };
+    const repair = { id: 'repair', label: { ru: open ? 'Остановить кольцо и ремонтировать' : 'Ремонтировать опору', en: open ? 'Stop the ring and repair it' : 'Repair the bearing' },
+      known: { ru: y => [cost(y, true), zgLine(y, true, false)], en: y => [cost(y, false), zgLine(y, false, false)] },
+      effect: y => { const w = y.wear; if (w.nodes[id].ok) W.isolate(w, id, y.year);
+        const op = wearOp(y, 'ring', id, y.year, false); (y.danger = y.danger || {})[id] = op ? 'repair' : 'isolate'; JB.dispatch(y.jobs, y.year, pools(y));
+        if (!op) wearNote(y, `Ремонт опоры кольца ${H} не начат: материалов или комплектов не хватило. Кольцо остановлено.`, `The repair of ring ${H}'s bearing did not start: not enough materials or kits. The ring is stopped.`); },
+      record: { ru: `Кольцо ${H} тормозят и ремонтируют опору.`, en: `Ring ${H} is braked and its bearing repaired.` } };
+    const stop = { id: 'isolate', label: { ru: 'Остановить кольцо', en: 'Stop the ring' },
+      known: { ru: y => [zgLine(y, true, true), 'Комплекты и материалы целы; износ дальше не развивается.'], en: y => [zgLine(y, false, true), 'The kits and materials are kept; the wear stops growing.'] },
+      effect: y => { W.isolate(y.wear, id, y.year); (y.danger = y.danger || {})[id] = 'isolate'; JB.dispatch(y.jobs, y.year, pools(y)); },
+      record: { ru: `Кольцо ${H} останавливают; лишние переходят в невесомость.`, en: `Ring ${H} is stopped; the extra people move to zero-g.` } };
+    const cont = { id: 'continue', label: { ru: 'Вращать до отказа', en: 'Rotate it to failure' },
+      known: { ru: y => [`Кольцо вращается около ${nf(left(y), 0, 'ru')} суток; затем опора заклинит и повредит посадочное место — кольцо остановлено до конца рейса, ремонта нет.`, 'Решение окончательное: дальше — только предупреждение прибора.'],
+        en: y => [`The ring rotates for about ${nf(left(y), 0, 'en')} days; then the bearing seizes and damages its seat — the ring is stopped for the rest of the voyage, with no repair.`, 'The decision is final: from here on, only an instrument warning.'] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
+      record: { ru: `Кольцо ${H} вращается; за опорой следят.`, en: `Ring ${H} keeps rotating, its bearing under watch.` } };
+    const leave = { id: 'leave', label: { ru: 'Оставить кольцо остановленным', en: 'Leave the ring stopped' },
+      known: { ru: y => [`Комплекты и материалы — на другое.`, zgLine(y, true, true)], en: y => ['The kits and materials are kept for other work.', zgLine(y, false, true)] },
+      effect: y => { (y.danger = y.danger || {})[id] = 'leave'; },
+      record: { ru: `Опору кольца ${H} не ремонтируют; кольцо стоит.`, en: `Ring ${H}'s bearing is not repaired; the ring stays stopped.` } };
+    return {
+      id: 'd.wear.danger', key: id, stage, scene: 'vault', kind: 'decision',
+      title: { ru: open ? `Опасный узел: опора кольца ${H}` : `Кольцо ${H} остановлено`, en: open ? `A dangerous node: ring ${H}'s bearing` : `Ring ${H} is stopped` },
+      rec: x => can(x) ? { id: 'repair', why: open ? (R(x) === Dg.alt ? { ru: 'износ дорожки сам не остановится; роликов нет — меняют дорожку, пока опора не заклинила', en: 'track wear does not stop by itself; there are no rollers — the track is replaced before the bearing seizes' }
+            : { ru: 'износ дорожки сам не остановится; после заклинивания кольцо не вернуть', en: 'track wear does not stop by itself; after seizure the ring cannot be restored' })
+          : { ru: 'без кольца вахта работает слабее, и регламент отстаёт', en: 'without the ring the watch works slower, and maintenance falls behind' } }
+        : { id: open ? 'isolate' : 'leave', why: { ru: 'ремонтировать нечем — кольцо останавливают, пока опора цела', en: 'there is nothing to repair it with — the ring is stopped while the bearing is intact' } },
+      context: { ru: x => `${head(x, true)}${can(x) ? '' : ' Ремонтировать нечем: ' + ((x.wear.inv[R(x).kit] || 0) < R(x).kits ? 'комплектов не хватает.' : 'материалов не хватает.')}`,
+        en: x => `${head(x, false)}${can(x) ? '' : ' There is nothing to repair it with: ' + ((x.wear.inv[R(x).kit] || 0) < R(x).kits ? 'not enough kits.' : 'not enough materials.')}` },
+      options: x => dangerOwn(id, (can(x) ? [repair] : []).concat(open ? [stop, cont] : [leave]))
+    };
+  }
+  // решение совета по опасному узлу: положение после него запоминается — своя остановка не повод спрашивать снова
+  const dangerOwn = (id, opts) => opts.map(o => Object.assign({}, o, { effect: y => { if (o.effect) o.effect(y); (y.dangerSeen = y.dangerSeen || {})[id] = dangerSig(y, id); } }));
   function wearDangerDecision(s, ev) {
+    if (/\.bearing$/.test(ev.id)) return wearRingDecision(s, ev);
     const id = ev.id, stage = ev.stage, Dg = W.DANGER.radiator, open = stage === 'open' || stage === 'warn';
     const L = x => radLoop(x.wear, id), R = x => W.dangerRecipe(x.wear, id), can = x => dangerCan(x, id);
     const days = x => { const r = R(x), c = JSON.parse(JSON.stringify(x)); if (c.wear.nodes[id].ok) W.isolate(c.wear, id, c.year); wearCheckGroups(c, c.year);
@@ -1377,8 +1452,8 @@ The expedition is over. The next one will receive the log — which failure was 
       return ru ? `Секция ${id} выключена, контур ${l} стоит — а теперь часть зала без охлаждения: схема ${layout(x.wear)}.` : `Section ${id} is off and loop ${l} is down — and now part of the hall is uncooled: layout ${layout(x.wear)}.`; };
     const cost = (x, ru) => { const r = R(x), d = days(x), q = d == null ? (ru ? 'по очереди работ не начнётся: людей нет' : 'the work queue will not start it: no people')
         : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
-      return ru ? `Ремонт — ${r.kits === 1 ? 'секционный комплект' : `${r.kits} секционных комплекта`} (в запасе ${x.wear.inv[Dg.kit]}), материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} суток опрессовки; ${q}.`
-        : `The repair takes ${r.kits === 1 ? 'a section kit' : `${r.kits} section kits`} (${x.wear.inv[Dg.kit]} in stock), materials −${r.materials}%, ${r.work} person-days and ${r.hold} days of pressure testing; ${q}.`; };
+      return ru ? `Ремонт — ${r.kits === 1 ? 'секционный комплект' : `${r.kits} секционных комплекта`} (в запасе ${x.wear.inv.radKit}), материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} суток опрессовки; ${q}.`
+        : `The repair takes ${r.kits === 1 ? 'a section kit' : `${r.kits} section kits`} (${x.wear.inv.radKit} in stock), materials −${r.materials}%, ${r.work} person-days and ${r.hold} days of pressure testing; ${q}.`; };
     // без секции: схема, старение и группы, которым не хватит места (их тепловой резерв короче ремонта — переложат, если есть капсулы)
     const after = (x, ru) => { const a = dangerAfter(x.wear, id, x.year), hrs = W.BUF[x.wear.safe ? 'safe' : 'std'];
       return ru ? `Без секции схема станет ${a.layout}; перегруженные насосы стареют в ${nf(a.over, 1, 'ru')} раза быстрее.${a.left ? ` ${a.left} ${plural(a.left, ['группа', 'группы', 'групп'])} не помещается на другие контуры: тепловой резерв — ${hrs} ч, дольше ремонта не продержится; спасти — только перекладкой в свободные капсулы.` : ''}`
@@ -1395,32 +1470,33 @@ The expedition is over. The next one will receive the log — which failure was 
       known: { ru: y => [after(y, true), 'Комплекты и материалы целы; дефект дальше не развивается.'], en: y => [after(y, false), 'The kits and materials are kept; the damage stops growing.'] },
       effect: y => { W.isolate(y.wear, id, y.year); wearCheckGroups(y, y.year); (y.danger = y.danger || {})[id] = 'isolate'; wearCoreWarn(y, y.year); },
       record: { ru: `Секцию ${id} изолируют; контур остаётся выключенным.`, en: `Section ${id} is isolated; the loop stays off.` } };
-    const cont = { id: 'continue', label: { ru: 'Продолжать работу', en: 'Keep it running' },
-      known: { ru: y => [`Контур работает; до разрушения — около ${nf(left(y), 0, 'ru')} суток.`, `После разрушения ремонт вдвое дороже: ${Dg.heavy.kits} комплекта, материалы −${Dg.heavy.materials}%, ${Dg.heavy.work} чел.-сут.`],
-        en: y => [`The loop keeps running; about ${nf(left(y), 0, 'en')} days before the rupture.`, `After a rupture the repair costs twice as much: ${Dg.heavy.kits} kits, materials −${Dg.heavy.materials}%, ${Dg.heavy.work} person-days.`] },
+    const cont = { id: 'continue', label: { ru: 'Эксплуатировать до отказа', en: 'Run it to failure' },
+      known: { ru: y => [`Контур работает около ${nf(left(y), 0, 'ru')} суток; затем секция разрушится — теплоотвод контура ${L(y)} потерян до конца рейса, ремонта нет.`, 'Решение окончательное: дальше — только предупреждение прибора.'],
+        en: y => [`The loop runs for about ${nf(left(y), 0, 'en')} days; then the section ruptures — loop ${L(y)} loses its heat rejection for the rest of the voyage, with no repair.`, 'The decision is final: from here on, only an instrument warning.'] },
       effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
       record: { ru: `Секция ${id} работает с течью; за ней следят.`, en: `Section ${id} runs with a leak, under watch.` } };
     const leave = { id: 'leave', label: { ru: 'Оставить контур выключенным', en: 'Leave the loop off' },
-      known: { ru: y => [`Комплекты (${y.wear.inv[Dg.kit]}) и материалы — на другое.`, `Схема ${layout(y.wear)}: перегруженные насосы стареют в ${nf(W.overAge(y.wear), 1, 'ru')} раза быстрее.`],
-        en: y => [`The kits (${y.wear.inv[Dg.kit]}) and materials are kept for other work.`, `Layout ${layout(y.wear)}: the overloaded pumps age ${nf(W.overAge(y.wear), 1, 'en')} times faster.`] },
+      known: { ru: y => [`Комплекты (${y.wear.inv.radKit}) и материалы — на другое.`, `Схема ${layout(y.wear)}: перегруженные насосы стареют в ${nf(W.overAge(y.wear), 1, 'ru')} раза быстрее.`],
+        en: y => [`The kits (${y.wear.inv.radKit}) and materials are kept for other work.`, `Layout ${layout(y.wear)}: the overloaded pumps age ${nf(W.overAge(y.wear), 1, 'en')} times faster.`] },
       effect: y => { (y.danger = y.danger || {})[id] = 'leave'; },
       record: { ru: `Секцию ${id} не ремонтируют; контур остаётся выключенным.`, en: `Section ${id} is not repaired; the loop stays off.` } };
     return {
       id: 'd.wear.danger', key: id, stage, scene: 'vault', kind: 'decision',
       title: { ru: open ? `Опасный узел: секция радиатора ${id}` : `Секция радиатора ${id} выключена`, en: open ? `A dangerous node: radiator section ${id}` : `Radiator section ${id} is off` },
-      rec: x => can(x) ? { id: 'repair', why: open ? { ru: 'течь не остановится сама; ремонт до разрушения вдвое дешевле', en: 'a leak does not stop by itself; a repair before the rupture costs half as much' }
+      rec: x => can(x) ? { id: 'repair', why: open ? { ru: 'течь не остановится сама; после разрушения контур не вернуть', en: 'a leak does not stop by itself; after a rupture the loop cannot be restored' }
           : { ru: `без контура остальные насосы перегружены и стареют в ${nf(W.overAge(x.wear), 1, 'ru')} раза быстрее`, en: `without the loop the other pumps are overloaded and age ${nf(W.overAge(x.wear), 1, 'en')} times faster` } }
         : { id: open ? 'isolate' : 'leave', why: { ru: 'ремонтировать нечем — секцию выключают, пока она цела', en: 'there is nothing to repair it with — the section is shut while it is intact' } },
-      context: { ru: x => `${head(x, true)}${can(x) ? '' : ' Ремонтировать нечем: ' + (x.wear.inv[Dg.kit] < R(x).kits ? 'секционных комплектов не хватает.' : 'материалов не хватает.')}`,
-        en: x => `${head(x, false)}${can(x) ? '' : ' There is nothing to repair it with: ' + (x.wear.inv[Dg.kit] < R(x).kits ? 'not enough section kits.' : 'not enough materials.')}` },
-      options: x => (can(x) ? [repair] : []).concat(open ? [isolate, cont] : [leave])
+      context: { ru: x => `${head(x, true)}${can(x) ? '' : ' Ремонтировать нечем: ' + (x.wear.inv.radKit < R(x).kits ? 'секционных комплектов не хватает.' : 'материалов не хватает.')}`,
+        en: x => `${head(x, false)}${can(x) ? '' : ' There is nothing to repair it with: ' + (x.wear.inv.radKit < R(x).kits ? 'not enough section kits.' : 'not enough materials.')}` },
+      options: x => dangerOwn(id, (can(x) ? [repair] : []).concat(open ? [isolate, cont] : [leave]))
     };
   }
   // граница модели износа в [t0, t1]: смена числа бодрствующих (годы 2, 8, прибытие — пока не применена, в том числе на
   // дате, где уже сработал другой источник) — раньше отказов той же даты; затем граница модели
   function wearNext(s, t0, t1) {
     if (!wearOn(s) || !s.wear) return null;
-    const w = s.wear, aw = awakeAt(s).filter(y => y >= t0 - 1e-12 && y <= t1 && awakeNowAt(s, y) !== w.watchN).sort((a, b) => a - b)[0];
+    const zgEdge = y => (Math.abs(y - 8) < 1e-9 || Math.abs(y - arriveView(s)) < 1e-9) && W.RINGS.some(H => !W.ringRuns(w, H)) && !(w.zgDone >= y - 1e-9);   // невесомость начинает или перестаёт считаться
+    const w = s.wear, aw = awakeAt(s).filter(y => y >= t0 - 1e-12 && y <= t1 && (awakeNowAt(s, y) !== w.watchN || zgEdge(y))).sort((a, b) => a - b)[0];
     const b2 = W.nextBoundary(w, t0, aw != null ? aw : t1, wearRnd(s));
     const nx = aw != null && !(b2 && b2.at < aw - 1e-12) ? { at: Math.max(t0, aw), kind: 'awake', id: 'awake' } : b2;
     if (!nx) return null;
@@ -1887,7 +1963,8 @@ The expedition is over. The next one will receive the log — which failure was 
       : ev.kind === 'event' ? (ru ? `Требуется решение совета: ${EV.TYPES[ev.type].name.ru}.` : `Council decision required: ${EV.TYPES[ev.type].name.en}.`)
       : ev.kind === 'wear' ? (ev.type === 'shop' ? (ru ? 'Требуется решение совета: что мастерская делает со снятыми насосами.' : 'Council decision required: what the workshop does with removed pumps.')
         : ev.type === 'reg' ? (ru ? 'Требуется решение совета: регламент не успевает.' : 'Council decision required: maintenance is falling behind.')
-        : ev.type === 'danger' ? (ru ? `Требуется решение совета: опасный узел — секция радиатора ${ev.id}.` : `Council decision required: a dangerous node — radiator section ${ev.id}.`)
+        : ev.type === 'danger' ? (/\.bearing$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — опора кольца ${ev.id.split('.')[0]}.` : `Council decision required: a dangerous node — ring ${ev.id.split('.')[0]}'s bearing.`)
+          : ru ? `Требуется решение совета: опасный узел — секция радиатора ${ev.id}.` : `Council decision required: a dangerous node — radiator section ${ev.id}.`)
         : ru ? `Требуется решение совета: остановлен контур охлаждения ${ev.loop}.` : `Council decision required: cooling loop ${ev.loop} has stopped.`)
       : (ru ? 'Требуется решение совета.' : 'Council decision required.'));
     if (events.length) head.push((ru ? 'За период: ' : 'Over the period: ') + events.join('; ') + '.');
