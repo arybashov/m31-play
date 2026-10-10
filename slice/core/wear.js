@@ -3,9 +3,10 @@
 (function (root) {
   'use strict';
   const wear = __core => {
-    let CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut,
-    energyOK, eqOf, flightBound, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn;
-    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, flightBound, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn } = __core); };
+    let CLOUD, CLOUD_RHO, EV, JB, M, REWORK_KINDS, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf,
+    edgeIn, edgeOut, energyOK, eqOf, flightBound, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN, reworkRisk, src, streamPlan,
+    tankMove, tankSync, termStart, txt, yrs, yrsEn;
+    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, REWORK_KINDS, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, flightBound, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN, reworkRisk, src, streamPlan, tankMove, tankSync, termStart, txt, yrs, yrsEn } = __core); };
     __link();
 
   // ---- модель времени (DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
@@ -134,8 +135,12 @@
   // людей и восстановления пути, до запаса; аврал забирает людей у регламента и честно копит отставание (шаг «хрупкость»)
   // разбуженные учатся — ещё не в счёте; кольцо остановлено — лишние в невесомости, вахта слабее (шаг «хрупкость» 3в)
   const zgFactor = s => { const w = s.wear; if (!w || !wearOn(s) || !(s.year >= 8) || s.year >= arriveView(s)) return 1; const z = W.zeroG(w); return z.awake ? 1 - W.RING.zeroG * z.n / z.awake : 1; };
-  const techs = s => Math.max(0, Math.floor((Math.floor(s.watch / 6) - (s.trainees ? s.trainees.n : 0)) * zgFactor(s) + 1e-9));
+  // специалисты вахты: шестая часть, без учеников и отдыхающих после перегрузки (не больше четверти; человеческий фактор, шаг
+  // А2), затем — невесомость колец (один раз)
+  const techs = s => { const n = Math.floor(s.watch / 6) - (s.trainees ? s.trainees.n : 0), r = Math.min(restN(s), Math.ceil(Math.max(0, n) / 4));
+    return Math.max(0, Math.floor((n - r) * zgFactor(s) + 1e-9)); };
   const pools = s => ({ tech: techs(s), shop: !s.wear || W.shopOpen(s.wear) ? 1 : 0 });   // мастерская — один производственный слот (3b); привод в ремонте — закрыта (3c)
+  const MENTOR_DAYS = 20;                                               // наставник курса пробуждённой смены, чел.-сут (человеческий фактор, шаг А2)
   const auralN = s => techs(s);
   const auralDays = s => { const n = auralN(s); return n ? WEAR_WORK.pump.work / n + WEAR_WORK.pump.hold : Infinity; };   // насос авралом, сутки
   // все внизу (offShipAt): незаконченные работы износа (ремонт, переборка, лом, регламент) снимаются с той же даты; модель
@@ -195,6 +200,8 @@
         effect: y => { const n = regWakeTo(y), k = Math.floor(n / 6) - Math.floor(y.watch / 6);
           y.ageShift = (y.ageShift || 0) + Math.round(M.awake(Math.max(0, y.arrive - y.year), n - y.watch, crewOf(y)));
           if (k > 0) y.trainees = { n: k, until: W.regNext(y.wear, y.year + W.REG.train / 365.25 - 1e-9, Infinity) };   // конец обучения — узел сетки
+          if (k > 0 && y.jobs) JB.enqueue(y.jobs, { owner: 'wear', ref: 'mentor', type: 'wear.mentor', prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 1, work: MENTOR_DAYS, hold: 0 }, y.year, pools(y));   // наставник курса
+          termStart(y, y.watch, n - y.watch, y.trainees ? y.trainees.until : y.year);   // обещанный срок вахты (шаг А4)
           y.regAsk = { at: y.year, policy: 'wake', B: W.regAt(y.wear, y.year) }; y.watch = n; },
         record: { ru: y => `Лорн будит специалистов: на вахте — ${ppl(y.watch)}. Полгода — обучение, потом регламент догонит график.`, en: y => `Lorn wakes specialists: ${y.watch} on watch. Half a year of training, then maintenance catches up.` }
       }, {
@@ -282,12 +289,13 @@
     if (s.materials < cost - 1e-9) return null;
     if (kind === 'coll' && !(w.inv.valve >= 1)) return null;             // вставка — клапанный комплект из общих восьми
     if ((kind === 'rad' || kind === 'ring' || kind === 'tank') && !(R && W.canRepairDefect(w, id, s.materials))) return null;   // комплекты; разрушенное не чинится
-    const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t };
+    const op = { id: `op.${kind}.${id}.${w.ops.length}`, kind, target: id, at: t, h0: humanSnap(s) };   // h0 — нагрузка вахты к началу (переделка, шаг А3)
     if (R) op.heavy = R === W.DANGER.bearing.alt;                         // опора: дорожка вместо роликов
     w.ops.push(op); s.materials -= cost;
     const rescue = urgent || (kind !== 'pump' && kind !== 'coll' && kind !== 'rad' && kind !== 'ring' && kind !== 'tank' && kind !== 'cargo'), deadline = t + W.BUF[w.safe ? 'safe' : 'std'] / 8766;
     JB.enqueue(s.jobs, Object.assign({ owner: 'wear', ref: op.id, type: `wear.${kind}`, prio: rescue ? JB.PRIO.rescue : JB.PRIO.path, deadline: rescue ? deadline : Infinity,
       pool: 'tech', minW: 1, maxW: urgent ? Infinity : kind === 'ring' ? 4 : 2 }, R ? { work: R.work, hold: R.hold } : WEAR_WORK[kind]), t, pools(s));   // опору — до четырёх
+    op.job = (({ type, prio, maxW, work, hold }) => ({ type, prio, maxW, work, hold }))(s.jobs.list[s.jobs.list.length - 1]);   // для переделки
     if (kind === 'coll') w.inv.valve--;
     if (R && R.kit) w.inv[R.kit] -= R.kits;
     const u = id.split('.')[0], NM = { cargo: [`локализация груза ${u}`, `isolating cargo ${u}`], tank: [`ремонт арматуры бака ${u}`, `repairing tank ${u}'s fittings`], ring: [`ремонт опоры кольца ${u}`, `repairing ring ${u}'s bearing`], rad: [`ремонт секции радиатора ${u}`, `repairing radiator section ${u}`], coll: [`вставка коллектора ${u}`, `an insert for the ${u} collector`], pump: [`замена насоса ${u}`, `replacing the ${u} pump`], cooler: [`замена холодильника группы ${u}`, `replacing group ${u}'s cooler`],
@@ -536,6 +544,7 @@ The expedition to the target is over.`
     const ru = lang === 'ru';
     if (j.owner === 'ev') { const T = EV.TYPES[j.type]; return T ? txt(T.name, lang) : j.type; }
     if (j.type === 'wear.reg') return ru ? 'регламент' : 'routine maintenance';
+    if (j.type === 'wear.mentor') return ru ? 'наставник курса' : 'course mentor';
     const op = s.wear && s.wear.ops.find(o => o.id === j.ref); if (!op) return j.type;
     const u = String(op.target).split('.')[0];
     return { ring: ru ? `ремонт опоры кольца ${u}` : `repairing ring ${u}'s bearing`, rad: ru ? `ремонт секции радиатора ${u}` : `repairing radiator section ${u}`, coll: ru ? `вставка коллектора ${u}` : `an insert for the ${u} collector`, pump: ru ? `замена насоса ${u}` : `replacing the ${u} pump`, cooler: ru ? `замена холодильника ${u}` : `replacing the ${u} cooler`,
@@ -608,6 +617,19 @@ The expedition to the target is over.`
   }
   function wearOpDone(s, id, t) {
     const w = s.wear, op = w.ops.find(o => o.id === id); if (!op || op.done) return null;
+    // ошибка ремонта под перегрузкой (человеческий фактор, шаг А3): проверка после сборки не пройдена — одна переделка той же
+    // работой (запчасть цела, сборка — нет); бросок — один на операцию, по её номеру
+    if (REWORK_KINDS.includes(op.kind) && !op.reworked && op.job && !op.cancelled) {
+      const risk = reworkRisk(s, op.h0, t), u = risk > 0 ? hidden(s, `human.rework.${op.id}`) : null;
+      if (u != null && u < risk) {
+        op.reworked = t; op.h0 = humanSnap(s);
+        const j = JB.enqueue(s.jobs, Object.assign({ owner: 'wear', ref: op.id, pool: 'tech', minW: 1 }, op.job, op.job.maxW === 'all' ? { maxW: Infinity } : {}), t, pools(s));
+        const nmr = jobName(s, j, 'ru'), nme = jobName(s, j, 'en');
+        wearNote(s, `Проверка после сборки — ${nmr}: не держит. Работали под перегрузкой; переделка — та же работа заново.`,
+          `Check after assembly — ${nme}: it does not hold. The work was done under overload; a rework — the same job again.`);
+        return null;
+      }
+    }
     op.done = true;
     if (op.kind === 'rebuild') return wearRebuilt(s, op, t);
     if (op.kind === 'donor') return wearDonorDone(s, op, t);
@@ -860,9 +882,9 @@ The expedition to the target is over.`
     return {
       names: {
         SIM_TITLE, SIM_NOTE, cloudThrough, cloudSpan, streamOn, rhoAt, envOf, streamGrain, streamOutcome, erodeSpan, cloudHit, envMarks, offShipAt,
-        wearOn, wearRnd, awakeAt, awakeNowAt, awakeNow, WEAR_OPS, CAST_SEATS, sleepersAt2, WEAR_WORK, zgFactor, techs, pools, auralN, auralDays,
-        wearStop, wearStart, regJob, REG_ASK, wearRegAsk, regWakeTo, wearRegDecision, wearRegTick, matReserve, jobDone, wearSyncDead, wearDead,
-        wearSync, pumpFail, layout, wearNote, wearReroute, wearOp, wearMove$, pendingFor, wearMove, wearUnit, wearCheckGroups, SHOP_RESERVE,
+        wearOn, wearRnd, awakeAt, awakeNowAt, awakeNow, WEAR_OPS, CAST_SEATS, sleepersAt2, WEAR_WORK, zgFactor, techs, pools, MENTOR_DAYS, auralN,
+        auralDays, wearStop, wearStart, regJob, REG_ASK, wearRegAsk, regWakeTo, wearRegDecision, wearRegTick, matReserve, jobDone, wearSyncDead,
+        wearDead, wearSync, pumpFail, layout, wearNote, wearReroute, wearOp, wearMove$, pendingFor, wearMove, wearUnit, wearCheckGroups, SHOP_RESERVE,
         shopPolicy, shopNeeds, wearShopAsk, prodOf, PART_RU, PART_EN, wearDispose, wearShop, wearShopFail, wearDriveFix, wearShopLost, deadLoop,
         wearCollRetry, wearCollFail, wearTerminal, wearCoreWarn, terminalBeat, brakeBeat, DONOR, agroLost, donorDays, agroDonorOK, wearDonor,
         wearDonorDone, jobName, jobsLine, wearRebuildable, wearRebuild, wearRebuilt, wearRefit, wearRecover, wearRecovered, wearOpDone, wearDeaths,

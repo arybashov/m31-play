@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   const epilogue = K => {
-    const { arrivalAt,
+    const { arrivalAt, costLine,
       OUTCOME, Yepi, answerLag, cap, endR, laserLate, laserYear, livable, lossesOf, namesShort, outcomeOf, ownStory, ppl, reportOn, rescueS, src,
       supplyS, thawAlive, yrs, yrsEn
     } = K;
@@ -44,12 +44,12 @@ In the shared log Naya writes only: "Received. Delivered to the owners."`
           s.relayOK ? 'Связь с Кольцом держится.' : 'Своей связи у форпоста так и нет: пакеты передаёт корабль.',
           s.capsOK ? 'Капсулы работают: смена снова отдыхает.' : 'Капсульной секции нет: отдых по очереди, как прежде.',
           s.shelter ? `${cap(ppl(s.shelterPeople || 90))} живут в кольцах корабля — корабль стал частью форпоста навсегда.` : '',
-          `Погибли в пути: ${lossesOf(s, arrivalAt(s)).total + s.dead}. На форпосте за время работ: ${s.outpostDead || 0}.`].filter(Boolean).join(' '),
+          `Погибли в пути: ${lossesOf(s, arrivalAt(s)).total + s.dead}. На форпосте за время работ: ${s.outpostDead || 0}.`, costLine(s, 'ru')].filter(Boolean).join(' '),
         en: s => s.supplyFailed ? `The supply mission failed. The ship is in orbit by the outpost; Xylona has no permanent support. What became of its people this archive does not know — the report of the failure has gone to the Ring. Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. At the outpost during the work: ${s.outpostDead || 0}.` : [`The outpost's and the ship's shifts work together; both sides correct the procedures.`,
           s.relayOK ? 'The link with the Ring holds.' : 'The outpost still has no link of its own: the ship carries the packets.',
           s.capsOK ? 'The capsules work: the shift can rest again.' : 'There is no capsule section: rest goes by turns, as before.',
           s.shelter ? `${s.shelterPeople || 90} live in the ship's rings — the ship has become part of the outpost for good.` : '',
-          `Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. At the outpost during the work: ${s.outpostDead || 0}.`].filter(Boolean).join(' ')
+          `Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. At the outpost during the work: ${s.outpostDead || 0}.`, costLine(s, 'en')].filter(Boolean).join(' ')
       }
     },
     {
@@ -70,13 +70,13 @@ In the shared log Naya writes only: "Received. Delivered to the owners."`
 
 ${!s.rescued ? 'Сорок мест так и остались обещанием: в ведомости — сорок имён и даты.' : s.housed ? 'Сорок мест были обещанием до встречи; после встречи каждое стало чьим-то местом.' : `Сорок мест остаются обещанием: ${ppl(s.rescued)} ждут жилья.`}
 
-Погибли в пути: ${lossesOf(s, arrivalAt(s)).total + s.dead}. У цели из экипажа: ${s.deadHere}.`; },
+Погибли в пути: ${lossesOf(s, arrivalAt(s)).total + s.dead}. У цели из экипажа: ${s.deadHere}.${costLine(s, 'ru') ? ' ' + costLine(s, 'ru') : ''}`; },
         en: s => { const alive = thawAlive(s, Infinity), placed = s.housed ? alive : [], wait = s.housed ? [] : alive;
           return `${[placed.length ? `The home's register carries the names of Thaw's residents: ${namesShort(placed, 'en')}.` : "The home's register carries the Forty-First's crew.", wait.length ? `Those awaiting housing are listed separately: ${namesShort(wait, 'en')}.` : ''].filter(Boolean).join(' ')} The dead remain in their own record, with dates and causes: six before our voyage${s.thawDead ? `, ${s.thawDead} while help was coming and after` : ''}.
 
 ${!s.rescued ? 'The forty places remained a promise: the record holds forty names and dates.' : s.housed ? 'Before the meeting, forty places were a promise; afterwards, each place belonged to someone.' : `The forty places remain a promise: ${s.rescued} are waiting for housing.`}
 
-Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. Of the crew at the target: ${s.deadHere}.`; }
+Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. Of the crew at the target: ${s.deadHere}.${costLine(s, 'en') ? ' ' + costLine(s, 'en') : ''}`; }
       }
     },
     {
@@ -109,6 +109,7 @@ Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. Of the crew at th
           ['beacon', 'return'].includes(s.home) ? (s.home === 'return' ? 'Ступень обратного пути растёт у гиганта; дети, родившиеся здесь, увидят Землю взрослыми.' : 'Маяк работает без перерыва; вахта сменяется, не выходя из колец.') : 'Первые дети, родившиеся здесь, пошли в школу.',
           s.koraLast ? 'Кора, чей сон закончился, учит детей: школа, которую не передали в полёте, передаётся на земле.' : 'Кору разбудили в последний раз — учить. Школа, которую не передали в полёте, передаётся здесь.',
           `Погибли в пути: ${lossesOf(s, arrivalAt(s)).total + s.dead}. У цели: ${s.deadHere}${s.winterDead ? `, из них ${s.winterDead} — в первую зиму` : ''}.`,
+          costLine(s, 'ru'),
           'Известие о новой экспедиции приходит в архив рядовой записью среди прочих: приняли к сведению и вернулись к своим делам.',
           laserLate(s) ? `\n\nЗапись, дописанная в году ${laserYear(s)}: лазерная экспедиция дошла до Тёмной звезды у ε Индейца и нашла корабль тридцать второй. В его журнале фраза целиком: «Вспоминали сегодня Землю. Она красивее всего, что мы видели за всю дорогу». Она была о доме.` : ''
         ].filter(Boolean).join(' '),
@@ -119,6 +120,7 @@ Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. Of the crew at th
           ['beacon', 'return'].includes(s.home) ? (s.home === 'return' ? 'The return stage grows at the giant; the children born here will see Earth as adults.' : 'The beacon works without pause; the watch changes without leaving the rings.') : 'The first children born here have started school.',
           s.koraLast ? 'Kora, whose sleep is over, teaches the children: the school that was not passed on in flight is passed on here.' : 'Kora was woken one last time — to teach. The school that was not passed on in flight is passed on here.',
           `Died on the road: ${lossesOf(s, arrivalAt(s)).total + s.dead}. At the target: ${s.deadHere}${s.winterDead ? `, ${s.winterDead} of them in the first winter` : ''}.`,
+          costLine(s, 'en'),
           'News of the new expedition reaches the archive as a routine entry among others: noted, and back to their own work.',
           laserLate(s) ? `\n\nAn entry added in year ${laserYear(s)}: the laser expedition reached the Dark Star at ε Indi and found the ship of the Thirty-Second. Its log holds the whole sentence: "We remembered Earth today. It is more beautiful than anything we have seen on the whole road." It was about home.` : ''
         ].filter(Boolean).join(' ')

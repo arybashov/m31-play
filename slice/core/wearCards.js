@@ -5,10 +5,11 @@
   const wearCards = __core => {
     let CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan,
     cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush,
-    fuelSpan, hidden, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays,
-    radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor,
-    wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
-    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush, fuelSpan, hidden, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
+    fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf,
+    profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync,
+    techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision,
+    wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush, fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -221,6 +222,7 @@
     if (ev.type === 'revise') return wearReviseDecision(s, ev);
     if (ev.type === 'shop') return wearShopDecision(s, ev);
     if (ev.type === 'reg') return wearRegDecision(s, ev);
+    if (ev.type === 'term') return humanTermDecision(s, ev);
     if (ev.type === 'danger') return wearDangerDecision(s, ev);
     const L = ev.loop, full = true, moved = Object.keys(ev.plan || {});   // карточка — только когда перестановка покрыла все группы
     return {
@@ -434,6 +436,12 @@
     { id: 'legs', next: (s, t0, t1) => { const g = legNext(s, t0, t1); return g && { at: g.at, cause: null, go: () => { legMark(s, g.id, g.at); return null; } }; } },
     // полёт внутри системы (шаг 4): конец маршрута — выход на орбиту планеты подтверждён (участок закрыт границей 'legs' той же даты)
     // или встречи нет. Граница, пройденная на равной с допуском дате другого источника, — сразу
+    // люди (человеческий фактор, шаг А2): порог нагрузки — техники уходят на восстановление или возвращаются
+    { id: 'human', next: (s, t0, t1) => { const b = humanNext(s, t0, t1); return b && b.at <= t1 + 1e-12 && { at: Math.max(t0, b.at), cause: null, go: () => { humanMark(s, Math.max(t0, b.at)); return null; } }; } },
+    // обещанный срок вахты (шаг А4): карточка «Срок вахты»
+    { id: 'term', next: (s, t0, t1) => { const b = termNext(s, t0, t1); return b && { at: b.at, cause: null, go: () => { s.human.term.asked = s.human.term.until;
+      if (b.auto) { termRotate(s, b.at); return null; }                   // порядок ротации выбран — без карточки
+      s.year = Math.max(s.year, b.at); return { kind: 'wear', type: 'term', at: b.at }; } }; } },
     { id: 'flight', next: (s, t0, t1) => { const fl = s.flight; if (!fl || fl.orbitAt != null || fl.failedAt != null || !(fl.planetOrbitAt <= t1)) return null;
       const at = Math.max(t0, fl.planetOrbitAt); return { at, cause: 'flight.orbit', go: () => { flightArrive(s, at); return null; } }; } },
     // регламент: узлы сетки в четверть года (множитель старения по отставанию, спрос по году рейса); сама работа — тик в начале хода
@@ -465,7 +473,7 @@
         if (s.wear && s.jobs && s.wear.shop && s.wear.shop.machine)        // станки заняты работой — привод стареет (с этой границы)
           W.setShop(s.wear, W.shopMachine(s.wear) && JB.active(s.jobs).some(j => j.equip === 'shop' && j.status === 'work'), t0);
         const nx = calNext(s, t0, target), t1 = nx ? nx.at : target;
-        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); if (fuelSpan(s, t0, t1)) book(s, 'wear.leak', t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
+        if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); if (fuelSpan(s, t0, t1)) book(s, 'wear.leak', t1); humanSpan(s, t0, t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
         if (nx) fuelFlush(s, t1);                                          // отложенный учёт течи и тяги — до регламента и события (меняют опоры износа, подачу)
         wearRegTick(s, t0);                                                // регламент списан по t1 — события шага видят настоящий запас
         if (!nx) break;
