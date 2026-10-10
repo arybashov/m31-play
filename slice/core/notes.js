@@ -3,10 +3,10 @@
 (function (root) {
   'use strict';
   const notes = __core => {
-    let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arriveView, beats, book, cloudSpan, cloudThrough, crewName,
-    crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, spendPct,
-    streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
-    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
+    let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough,
+    crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd,
+    shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
+    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
     __link();
 
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -162,14 +162,14 @@
     if (!s.eq || s.relief || !s.arrive) return null;
     const ids = new Set((log || []).map(i => i.beat.id));
     return { year: s.year, watch: s.watch, awake: awakeOf(s, ids), crew: crewOf(s), alive: aliveOf(s), dead: s.dead || 0, deadHere: s.deadHere || 0, out: s.outpostDead || 0,
-      L: lossesOf(s, Math.max(0, Math.min(s.year, s.arrive))), reserve: s.reserve, materials: s.materials, highPower: !!s.highPower,
+      L: lossesOf(s, Math.max(0, Math.min(s.year, arrivalAt(s)))), reserve: s.reserve, materials: s.materials, highPower: !!s.highPower,
       inc: (s.incidents || []).length, regMat: regSpent(s), shield: s.shield ? { eroded: s.shield.erodedKg / SH.AREA, hits: s.shield.hits.length } : null };
   }
   const regSpent = st => st && st.wear && st.wear.reg ? st.wear.reg.spent || 0 : 0;   // материалы, списанные регламентом с начала рейса
   const LOSS_KEYS = ['capsule', 'revival', 'accident', 'cancer'];
   const LOSS_NAME = { capsule: ['отказы капсул', 'capsule failures'], revival: ['при пробуждении', 'on waking'], accident: ['несчастные случаи на вахте', 'accidents on watch'],
     cancer: ['рак в пути', 'cancers on the road'] };
-  const phaseAt = (s, y) => { const A = arriveView(s), b0 = M.brakeStart(A, s.tMag);
+  const phaseAt = (s, y) => { const A = profileEnd(s), b0 = M.brakeStart(A, s.tMag);
     return y < M.ACC ? 'acc' : y >= A ? 'home' : y < b0 ? 'drift' : s.tMag != null && y >= A - M.ENGINE ? 'eng' : 'mag'; };
   const txt = (v, lang, st) => { const x = v && v[lang]; return typeof x === 'function' ? x(st) : (x || ''); };
   const yWhole = y => Math.abs(y - Math.round(y)) < 1e-6;
@@ -266,7 +266,7 @@
     const shieldSame = !s.shield || (g < 0.005 && !hits.length && !burnt.length);
     const gT = g >= 1000 ? `${nf(g / 1000, 2, lang)} ${ru ? 'кг/м²' : 'kg/m²'}` : `${nf(g, g < 10 ? 2 : 1, lang)} ${ru ? 'г/м²' : 'g/m²'}`;
     // путь: скорость, задержка связи, смена фазы полёта, сводки Кольца
-    const AV = arriveView(s), beta = M.speedAt(y1, s.beta, AV, s.tMag), ly = M.distLy(y1, s.beta, AV, s.tMag, M.star(s.target).d);
+    const AV = profileEnd(s), beta = M.speedAt(y1, s.beta, AV, s.tMag), ly = M.distLy(y1, s.beta, AV, s.tMag, M.star(s.target).d);
     const p0 = phaseAt(s, y0), p1 = phaseAt(s, y1), PH = ui[lang].tlPhase;
     const lagT = ly * 12 < 1 ? (ru ? `${Math.max(1, Math.round(ly * 365.25))} сут.` : `${Math.max(1, Math.round(ly * 365.25))} days`)
       : ly < 2 ? `${nf(ly * 12, 0, lang)} ${ru ? 'мес.' : 'months'}` : `${nf(ly, 1, lang)} ${ru ? 'г.' : 'years'}`;
@@ -351,7 +351,7 @@
   }
   function evWindow(s, t, family) {
     if (!s.arrive || s.lostShip || s.relief || s.outcome) return false;
-    if (t < M.ACC + 1 || t > M.brakeStart(arriveView(s), s.tMag) - 1) return false;
+    if (t < M.ACC + 1 || t > M.brakeStart(profileEnd(s), s.tMag) - 1) return false;
     if ((family === 'lifeSupport' || family === 'cooling') && !ownStory(s) && t > Y(s, 0.6) - 1 && t < Y(s, 0.75) + 1) return false;
     return !storyMarks(s).some(y => Math.abs(t - y) < 1);
   }

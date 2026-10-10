@@ -1945,11 +1945,34 @@
   // направление камеры пресета в осях курса — к нему привязаны планета и находка, чтобы они стояли в кадре за кораблём
   const presetDir = (name) => { const p = PRESETS[name], cp = Math.cos(p.pitch);
     return U.clone().multiplyScalar(cp * Math.cos(p.yaw)).add(E2.clone().multiplyScalar(cp * Math.sin(p.yaw))).add(E3.clone().multiplyScalar(Math.sin(p.pitch))); };
+  // полёт внутри системы (проект «Полёт внутри системы v1», шаг 4): после входа на 50 а.е. — траектория маршрута модели
+  // (flight.js: те же состояния, что дают даты и расход топлива); после выхода на орбиту — у планеты: смещение конца маршрута
+  // вращается с периодом круговой орбиты. null — маршрута нет или корабль ещё до входа
+  function flightPos(y) {
+    const fl = world.flight; if (!fl || !fl.samples || !fl.samples.length || !tsysAx || !SYS || targetInfo.star !== EIND.name || y < fl.samples[0].t) return null;
+    const S = fl.samples, last = S[S.length - 1];
+    if (y >= last.t) {
+      const c = MSYS.bodyAt(SYS, 'c', last.t), rx = last.y[0] - c.r[0], ry = last.y[1] - c.r[1], rz = last.y[2] - c.r[2];
+      const R = Math.hypot(rx, ry, rz), mu = ORB.units.MU_SUN * SYS.bodies.c.mass, w = Math.sqrt(mu / (R * R * R)) * (y - last.t);   // рад (а.е., годы)
+      const cw = Math.cos(w), sw = Math.sin(w);                          // обращение — в плоскости орбит (вокруг n), как у планеты
+      return tsysAx.C0.clone().add(cPos(y)).add(sysVec([rx * cw - ry * sw, rx * sw + ry * cw, rz]));
+    }
+    let lo = 0, hi = S.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (S[m].t <= y) lo = m; else hi = m; }
+    const a = S[lo], b = S[hi], h = b.t - a.t, u = h > 0 ? (y - a.t) / h : 0;
+    // эрмитова интерполяция по положению и скорости (а.е., а.е./год): гладко между точками выборки
+    const h00 = 2 * u * u * u - 3 * u * u + 1, h10 = u * u * u - 2 * u * u + u, h01 = -2 * u * u * u + 3 * u * u, h11 = u * u * u - u * u;
+    const r = [0, 1, 2].map(i => h00 * a.y[i] + h10 * h * a.y[3 + i] + h01 * b.y[i] + h11 * h * b.y[3 + i]);
+    // стык с межзвёздным путём показа: тот начинается от Земли (смещение до 1 а.е. от линии Солнце → звезда), маршрут — от линии.
+    // Разница в точке входа гаснет за первую половину маршрута (только показ: модель — маршрут), без скачка камеры
+    const p0 = pathPoint(distLy(S[0].t)).sub(tsysAx.C0.clone().add(sysVec(S[0].y))), k = Math.min(1, (y - S[0].t) / (0.5 * (last.t - S[0].t)));
+    return tsysAx.C0.clone().add(sysVec(r)).addScaledVector(p0, 1 - k * k * (3 - 2 * k));
+  }
   // корабль: орбита Земли в день отлёта + путь вдоль курса
   function shipPos() {
+    const fp = flightPos(world.year); if (fp) return fp;
     const p = pathPoint(distLy(world.year)), A = world.arrive;
-    // у ε Индейца: последние три года траектория плавно сходит к планете c (0,5 а.е. от звезды), а не к точке прямой
-    if (A && tsysAx && targetInfo.star === EIND.name && world.year > A - 3) {
+    // у ε Индейца без маршрута: последние три года траектория плавно сходит к планете c (0,5 а.е. от звезды), а не к точке прямой
+    if (A && tsysAx && targetInfo.star === EIND.name && !world.flight && world.year > A - 3) {
       const k = Math.min(1, (world.year - (A - 3)) / 3), sk = k * k * (3 - 2 * k), ar = tsysArrival();
       p.addScaledVector(tsysAx.C0.clone().add(cPos(Math.max(A, world.year))).sub(ar.end), sk);
     }
@@ -2801,6 +2824,8 @@
   api.debugSupport = function () { const P = sup.mode === 'route' ? supPos() : null, o = sup.g.getWorldPosition(new THREE.Vector3()).project(sup.cam);
     return { S: world.support, year: world.year, mode: sup.mode, farM: sup.farM, dF: P ? cam.F.clone().sub(P).length() * LY : null, ndc: [+o.x.toFixed(3), +o.y.toFixed(3), +o.z.toFixed(3)], pivot: cam.pivot, dist: cam.dist, focus: cam.focus, shift: viewShift }; };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
   // отладка: где центр масс в кадре (−1…1) и как идёт поворот корпуса — проверка «поворот вокруг центра масс»
+  // проверка непрерывности: положение корабля на год y (сцена, св. годы), без смены кадра
+  api.debugShipAt = function (y) { const y0 = world.year; world.year = y; const p = shipPos(); world.year = y0; return [p.x, p.y, p.z]; };
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
   const goLog = []; api.debugGoLog = () => goLog.slice();
   api.debugTick = function (ms) { let t = Math.max(last, performance.now()); const end = t + ms; while (t < end) { t += 16; frame(t, true); } };   // отладка: прокрутить кадры

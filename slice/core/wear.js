@@ -4,8 +4,8 @@
   'use strict';
   const wear = __core => {
     let CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut,
-    energyOK, eqOf, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn;
-    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn } = __core); };
+    energyOK, eqOf, flightBound, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn;
+    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, flightBound, fuelSync, hidden, incident, nf, nm, plural, ppl, src, streamPlan, tankMove, tankSync, txt, yrs, yrsEn } = __core); };
     __link();
 
   // ---- модель времени (DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
@@ -431,7 +431,7 @@
     const aboard = aliveOf(s), w = s.wear;
     const pumps = w ? w.log.filter(x => x.kind === 'fail' && /\.(pump|coll)$/.test(x.id)).map(x => ({ id: x.id.split('.')[0], part: x.id.split('.')[1], at: x.at })) : [];
     s.terminalAt = t; s.terminalReason = reason; s.year = Math.max(s.year, t);
-    if (reason === 'braking') { incident(s, 'brakeLost', 0, { reason, aboard, year: t, short: s.fuel ? s.fuel.short : 0 }); s.adrift = true; return; }   // 4в: люди живы, корабль не останавливается
+    if (reason === 'braking') { incident(s, 'brakeLost', 0, Object.assign({ reason, aboard, year: t, short: s.fuel ? s.fuel.short : 0 }, flightBound(s, t) ? { bound: true } : {})); s.adrift = true; return; }   // bound — полёт в системе: звезда уже захватила корабль   // 4в: люди живы, корабль не останавливается
     incident(s, 'wearLost', 0, { reason, aboard, year: t, pumps });
     s.lostShip = true;
   }
@@ -472,6 +472,22 @@ The expedition is over. The next one will receive the log — which failure was 
   // финал «принятый график торможения невыполним» (4в): топлива на двигательный участок 0,01c → 0 нет — корабль проходит систему цели
   function brakeBeat(s) {
     const inc = (s.incidents || []).find(x => x.kind === 'brakeLost') || {}, d = Math.round(M.star(s.target).d), lost = (s.fuel ? Object.values(s.fuel.tanks).reduce((a, x) => a + (x.lost || 0), 0) : 0);
+    if (inc.bound) return {                                             // полёт в системе: захват звездой был, сближения с планетой нет
+      id: 'x.wearLost', scene: 'dark', kind: 'end',
+      title: { ru: 'Без встречи', en: 'No rendezvous' },
+      text: {
+        ru: s => `Год ${Math.floor(s.terminalAt)}. Звезда уже захватила корабль, но на сближение с планетой топлива нет: баки потеряли ${nf(lost, 2, 'ru')} тыс. т. Принятый маршрут невыполним.
+
+Сорок первая остаётся на вытянутой орбите вокруг ${nm(s, 'ru').replace(/^звезда /, 'звезды ')}; до планеты ей не дойти. На борту ${ppl(inc.aboard || 0)}; они живы. Передача на Землю и к Кольцу — журнал баков и орбита — дойдёт через ${yrs(d)}.
+
+Экспедиция к цели окончена.`,
+        en: s => `Year ${Math.floor(s.terminalAt)}. The star has already captured the ship, but there is no propellant for the rendezvous with the planet: the tanks lost ${nf(lost, 2, 'en')} thousand t. The accepted route cannot be flown.
+
+The Forty-First stays on a long elliptical orbit around ${nm(s, 'en')}; it cannot reach the planet. There are ${inc.aboard || 0} people aboard; they are alive. The transmission to Earth and the Ring — the tank log and the orbit — will arrive in ${yrsEn(d)}.
+
+The expedition to the target is over.`
+      }
+    };
     return {
       id: 'x.wearLost', scene: 'dark', kind: 'end',
       title: { ru: 'Без торможения', en: 'No braking' },

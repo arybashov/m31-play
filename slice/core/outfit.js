@@ -3,10 +3,10 @@
 (function (root) {
   'use strict';
   const outfit = __core => {
-    let BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, awakeOf, busSplit, cap, capsKit, dd, f1, f2, hashU32,
-    hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild,
-    supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG;
-    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, awakeOf, busSplit, cap, capsKit, dd, f1, f2, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
+    let BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit,
+    dd, f1, f2, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost,
+    supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG;
+    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit, dd, f1, f2, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
     __link();
 
   // ---- оснащение: что даёт каждая позиция (mission.js: EQUIP). До паспорта — базовое.
@@ -225,6 +225,8 @@
         return ru ? `Год ${incYear(inc)} · Вода старой площадки — та же авария. Погибли ${ppl(inc.dead)} экипажа: ${namesLine(inc, 'ru')}.`
           : `Year ${incYear(inc)} · The old site's water — the same accident. Dead, ${inc.dead} of the crew: ${namesLine(inc, 'en')}.`;
       // торможение невыполнимо (шаг 4в): топлива на двигательный участок не хватило — корабль проходит систему, люди живы
+      if (inc.kind === 'brakeLost' && inc.bound) return ru ? `Год ${incYear(inc)} · Сближение невыполнимо. Звезда цели уже захватила корабль, но топлива на сближение с планетой не хватило (недостаёт ${nf((inc.short || 0) * 299792.458, 0, 'ru')} км/с): баки теряли топливо. Корабль на орбите звезды. На борту ${ppl(inc.aboard || 0)}, все живы.`
+        : `Year ${incYear(inc)} · The rendezvous cannot be flown. The target star has already captured the ship, but there was not enough propellant to reach the planet (${nf((inc.short || 0) * 299792.458, 0, 'en')} km/s short): the tanks had been losing propellant. The ship is in orbit around the star. There are ${inc.aboard || 0} people aboard, all alive.`;
       if (inc.kind === 'brakeLost') return ru ? `Год ${incYear(inc)} · Торможение невыполнимо. Топлива на последний участок — двигателем от 0,01c до нуля — не хватило (недостаёт ${nf((inc.short || 0) * 299792.458, 0, 'ru')} км/с): баки теряли топливо. Корабль прошёл систему цели. На борту ${ppl(inc.aboard || 0)}, все живы.`
         : `Year ${incYear(inc)} · Braking cannot be flown. There was not enough propellant for the last leg — the engine from 0.01c down to zero (${nf((inc.short || 0) * 299792.458, 0, 'en')} km/s short): the tanks had been losing propellant. The ship crossed the target system. There are ${inc.aboard || 0} people aboard, all alive.`;
       // рейс окончен: ядро без отвода тепла (шаг 3d)
@@ -360,7 +362,7 @@ ${L > 0 ? `"Did you lose people too?"\n\n"Yes. ${L} died on the way."` : '"How l
 There are no longer years of waiting between question and answer.`;
   }
   // приветствия у людей: сколько умерли в пути (фон и аварии) и чем встреча кончается у каждой колонии
-  const roadDead = s => lossesOf(s, s.arrive).total + s.dead;
+  const roadDead = s => lossesOf(s, arrivalAt(s)).total + s.dead;
   const GREET_LAST = {
     shore: { ru: '— В вашем отчёте мы зависим от земных точных деталей. Давайте сверим, что теперь можете делать вы и что можем мы.', en: '"Your report says we depend on precision parts from Earth. Let\'s compare what you can make now with what we can."' },
     garden: { ru: '— Вы привезли врачей? Сначала познакомим ваши медицинские смены с нашими.', en: '"Did you bring physicians? First we\'ll introduce your medical teams to ours."' },
@@ -436,7 +438,7 @@ There are no longer years of waiting between question and answer.`;
 
   // ---- приборы: чего сколько осталось (HUD) и что останется после варианта решения (game.js).
   // Живые — по модели потерь на текущий год плюс гибель в авариях; зонды — готовые аппараты в трюме.
-  const aliveOf = s => s.lostShip ? 0 : crewOf(s) - (lossesOf(s, Math.max(0, Math.min(s.year, s.arrive))).total + s.dead + s.deadHere - (s.outpostDead || 0));
+  const aliveOf = s => s.lostShip ? 0 : crewOf(s) - (lossesOf(s, Math.max(0, Math.min(s.year, arrivalAt(s)))).total + s.dead + s.deadHere - (s.outpostDead || 0));
   const probesOf = s => { const p = eqOf(s).probes, n = p === 'scout2' ? 2 : p === 'inspect' ? 1 : 0;
     return Math.max(0, n - (p === 'scout2' && s.choices['d.scout'] === 'launch' ? 1 : 0) - (n && s.choices['d.stream'] === 'probe' ? 1 : 0)); };
   const kms0 = s => Math.round(s.reserve / 100 * s.reserveDv * 299792.458);
@@ -460,7 +462,7 @@ There are no longer years of waiting between question and answer.`;
     if (s.mission === 'supply' && (s.deliver || s.outpostDead)) g('outpost', ru ? 'форпост' : 'outpost', (s.deliver ? [s.relayOK ? (ru ? 'связь есть' : 'link up') : (ru ? 'без связи' : 'no link'), s.capsOK ? (ru ? 'капсулы есть' : 'capsules up') : (ru ? 'без капсул' : 'no capsules')] : [])
       .concat(s.shelter ? [ru ? 'люди на корабле' : 'people aboard'] : []).concat(s.outpostDead ? [ru ? `погибли ${s.outpostDead}` : `${s.outpostDead} dead`] : []).join(', '));
     if (s.mission === 'supply' && s.gridBlocks < 2) g('grid', ru ? 'сеть корабля' : 'ship grid', ru ? 'один блок из двух' : 'one block of two');
-    g('arrive', ru ? 'прибытие' : 'arrival', `${ru ? 'год' : 'year'} ${s.arrive}`, s.arrive);
+    g('arrive', ru ? 'прибытие' : 'arrival', `${ru ? 'год' : 'year'} ${arrivalYear(s)}`, arrivalYear(s));
     return out;
   }
   // ---- состояние корабля — полоса и строка (приборы; автор, 08.10: «общее здоровье корабля — а не простыню надписей»,

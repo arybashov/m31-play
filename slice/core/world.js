@@ -3,9 +3,9 @@
 (function (root) {
   'use strict';
   const world = __core => {
-    let BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, energyOK, incYear, lag, livable, namesShort, nmD, nmG, outcomeOf,
-    people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn;
-    const __link = () => { ({ BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, energyOK, incYear, lag, livable, namesShort, nmD, nmG, outcomeOf, people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn } = __core); };
+    let BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, arrivalYear, energyOK, incYear, lag, livable, namesShort, nmD, nmG,
+    outcomeOf, people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn;
+    const __link = () => { ({ BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, arrivalYear, energyOK, incYear, lag, livable, namesShort, nmD, nmG, outcomeOf, people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn } = __core); };
     __link();
 
   // ---- протокол совета на следующие три года (a4.plan): решённая задача, средства, ограничения — по фактам.
@@ -98,7 +98,9 @@
     // выполнение — одно правило с эпилогом (у снабжения и спасения — по их итогу, отчёт — с отчётом экспедиции)
     const task = s.task ? Object.assign({}, s.task, { done: ok && missionComplete(s),
       reportEarthAt: s.task.reportAt != null ? Math.round(s.task.reportAt + d) : ok && missionComplete(s) ? reportAt : null }) : null;
-    return { id: `${exp}|done`, expedition: { id: exp, number: 41, mission: s.mission, target: s.target, outcome: end, arrive: s.arrive, endedAt: s.year, reportAt,
+    const binc = end === 'adrift' && (s.incidents || []).find(x => x.kind === 'brakeLost');
+    return { id: `${exp}|done`, expedition: { id: exp, number: 41, mission: s.mission, target: s.target, outcome: end, arrive: arrivalYear(s), endedAt: s.year, reportAt,
+      ...(s.flight ? { inOrbit: s.flight.orbitAt != null && s.year >= s.flight.orbitAt - 1e-9 } : {}), ...(binc && binc.bound ? { bound: true } : {}),   // полёт в системе: орбита подтверждена; захват без встречи
       lostBy: end === 'lost' ? (s.terminalReason === 'heat' ? 'heat' : 'stream') : null,   // гибель: отказ охлаждения или поток Тёмной звезды
       request: s.requestId || null, task,
       home: ok && end !== 'supplyFailed' ? homeKind(s) : null, alive: ok ? aliveOf(s) : null,
@@ -145,7 +147,8 @@
       const lostBy = x.lostBy || ((x.incidents || []).some(z => z.kind === 'wearLost') ? 'heat' : 'stream');
       const reportAt = x.reportAt == null ? null : Math.round(x.reportAt);
       const res = {
-        adrift: ru ? 'торможение не удалось: топлива на последний участок не хватило, корабль прошёл систему и уходит дальше; люди живы' : 'braking failed: there was no propellant for the last leg; the ship crossed the system and is moving on; the people are alive',
+        adrift: x.bound ? (ru ? 'встреча с планетой не удалась: звезда захватила корабль, но топлива на сближение не хватило; корабль на орбите звезды, люди живы' : 'the rendezvous with the planet failed: the star captured the ship, but there was no propellant to close in; the ship is in orbit around the star; the people are alive')
+          : ru ? 'торможение не удалось: топлива на последний участок не хватило, корабль прошёл систему и уходит дальше; люди живы' : 'braking failed: there was no propellant for the last leg; the ship crossed the system and is moving on; the people are alive',
         lost: lostBy === 'heat' ? (ru ? 'корабль погиб: все контуры охлаждения отказали, ядро осталось без отвода тепла; следующим останутся журнал отказов и координаты остова' : 'the ship was lost: every cooling loop failed and the core was left without heat rejection; the failure log and the wreck coordinates remain for those who follow')
           : ru ? 'корабль погиб в потоке Тёмной звезды; следующим останутся измеренный поток, журнал и координаты остова' : "the ship was lost in the Dark Star's stream; the measured stream, the log and the wreck's coordinates remain for those who follow",
         dutchman: ru ? `вахты не хватило на зал анабиоза; автоматика ведёт пустой корабль к ${nmD({ target: x.target })}, орбита — около года ${x.arrive}. Для следующих это будет находка` : `the watch was too few for the anabiosis hall; the automation flies the empty ship to ${where}, orbit around year ${x.arrive}. For those who follow it will be a find`,
@@ -176,9 +179,10 @@
           : x.home === 'colony' ? (ru ? `Основатели колонии у ${at} — ${n}.` : `Founders of the colony at ${where}: ${n}.`)
           : x.home === 'outpost' ? (ru ? `С форпостом остались — ${n}.` : `Staying with the outpost: ${n}.`)
           : (ru ? `У ${at} живут — ${n}.` : `Living at ${where}: ${n}.`)); }
-      if (x.hull === 'adrift') out.push(ru ? `Сорок первая прошла систему ${nmG({ target: x.target })} без торможения; её курс и последние координаты переданы — живых на борту можно догнать только кораблём быстрее её.` : `The Forty-First crossed the ${where} system without braking; its course and last coordinates have been sent — the living aboard can be reached only by a faster ship.`);
+      if (x.hull === 'adrift' && x.bound) out.push(ru ? `Сорок первая на вытянутой орбите вокруг ${nmG({ target: x.target })}: до планеты не дошла, топлива на сближение не хватило; её орбита передана — живых на борту можно забрать кораблём с запасом топлива.` : `The Forty-First is on a long elliptical orbit around ${where}: it never reached the planet, short of propellant to close in; its orbit has been sent — the living aboard can be taken off by a ship with propellant to spare.`);
+      else if (x.hull === 'adrift') out.push(ru ? `Сорок первая прошла систему ${nmG({ target: x.target })} без торможения; её курс и последние координаты переданы — живых на борту можно догнать только кораблём быстрее её.` : `The Forty-First crossed the ${where} system without braking; its course and last coordinates have been sent — the living aboard can be reached only by a faster ship.`);
       if (x.hull === 'wreck') out.push(lostBy === 'heat'   // отказ охлаждения: остов там, где корабль был, — в пути или у цели
-        ? (x.endedAt >= x.arrive ? (ru ? `Остов остаётся на орбите у ${at}; журнал отказов передан.` : `The wreck stays in orbit at ${where}; the failure log has been transmitted.`)
+        ? ((x.inOrbit != null ? x.inOrbit : x.endedAt >= x.arrive) ? (ru ? `Остов остаётся на орбите у ${at}; журнал отказов передан.` : `The wreck stays in orbit at ${where}; the failure log has been transmitted.`)
           : (ru ? `Остов идёт по прежнему курсу к ${nmD({ target: x.target })}; его траектория передана — следующие смогут его найти.` : `The wreck coasts on along its course to ${where}; its trajectory has been transmitted — those who follow can find it.`))
         : (ru ? 'Остов уходит от ε Индейца по прежней траектории, кувыркаясь; его траектория передана — следующие смогут его найти.' : 'The wreck tumbles away from ε Indi along its former trajectory; its trajectory has been transmitted — those who follow can find it.'));
       if (x.hull === 'orbitDead') out.push(ru ? `Корабль на орбите у ${at} — с экипажем на борту, без живых. Маяк передаёт, пока хватает питания.` : `The ship is in orbit at ${where} — with its crew aboard, none alive. The beacon transmits while power lasts.`);

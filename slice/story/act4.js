@@ -3,15 +3,15 @@
 (function (root) {
   'use strict';
   const act4 = K => {
-    const {
+    const { arrivalYear,
       M, Y4, energyOK, eqOf, livable, planText, planWho, powerOK, ppl, rescueS, src, supplyS, yrs
     } = K;
     return [
     // ------------------------------------------------------------ АКТ IV · ВЫСАДКА И РАЗВЯЗКА
-    { id: 's.f1', kind: 'skip', toYear: s => s.arrive + 2, when: s => !rescueS(s),
-      label: { ru: s => `Промотать до года ${s.arrive + 2} · первый год у цели`, en: s => `Skip ahead to year ${s.arrive + 2} · the first year at the target` } },
+    { id: 's.f1', kind: 'skip', toYear: s => arrivalYear(s) + 2, when: s => !rescueS(s),
+      label: { ru: s => `Промотать до года ${arrivalYear(s) + 2} · первый год у цели`, en: s => `Skip ahead to year ${arrivalYear(s) + 2} · the first year at the target` } },
     {
-      id: 'a4.energy', scene: 'home', kind: 'instrument', year: s => s.arrive + 2, when: s => livable(s) && !rescueS(s),
+      id: 'a4.energy', scene: 'home', kind: 'instrument', year: s => arrivalYear(s) + 2, when: s => livable(s) && !rescueS(s),
       act: { ru: 'Акт IV · Высадка и развязка', en: 'Act IV · Landing and resolution' },
       title: { ru: 'Энергетический журнал', en: 'Energy log' },
       text: {
@@ -26,7 +26,7 @@
       }
     },
     {
-      id: 'a4.fauna', illus: 'rich-site', scene: 'home', kind: 'transcript', year: s => s.arrive + 2, when: s => M.worldOf(s.target) === 'open',
+      id: 'a4.fauna', illus: 'rich-site', scene: 'home', kind: 'transcript', year: s => arrivalYear(s) + 2, when: s => M.worldOf(s.target) === 'open',
       title: { ru: 'Разведка · богатый участок', en: 'Survey · the rich site' },
       text: {
         ru: `Разведгруппа из двух человек и дрона садится на самый богатый участок: вода, выходы металла, тепло из недр.
@@ -42,7 +42,7 @@ The survey's conclusion: the rich site needs a defence the settlement cannot aff
       }
     },
     {
-      id: 'a4.storm', illus: 'terminator-storm', scene: 'home', kind: 'instrument', year: s => s.arrive + 2, when: s => M.worldOf(s.target) === 'dome' && !rescueS(s),
+      id: 'a4.storm', illus: 'terminator-storm', scene: 'home', kind: 'instrument', year: s => arrivalYear(s) + 2, when: s => M.worldOf(s.target) === 'dome' && !rescueS(s),
       title: { ru: 'Журнал разведки · терминатор', en: 'Survey log · the terminator' },
       text: {
         ru: 'На полосе между днём и ночью ветер не стихает: горячий воздух идёт с дневной стороны на ночную. Пробный купол сорван за четверо суток. Держать купола на месте можно только каркасом из несущих конструкций посадочного модуля.',
@@ -50,7 +50,7 @@ The survey's conclusion: the rich site needs a defence the settlement cannot aff
       }
     },
     {
-      id: 'd.site', scene: 'home', kind: 'decision', year: s => s.arrive + 2, when: s => M.worldOf(s.target) === 'open',
+      id: 'd.site', scene: 'home', kind: 'decision', year: s => arrivalYear(s) + 2, when: s => M.worldOf(s.target) === 'open',
       title: { ru: 'Какой участок', en: 'Which site' },
       context: {
         ru: 'Богатый участок сделает поселение сильным — если его удержать. Бедный — выживет, если хватит энергии.',

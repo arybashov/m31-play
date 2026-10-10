@@ -16,7 +16,11 @@
       c: { name: { ru: 'ε Инд c', en: 'ε Ind c' }, a: 0.5, e: 0, i: 0, O: 0, w: 0, M0: 0, t0: 0, mu, mass: M_EARTH, R_km: 6371, data: 'author' },
       Ab: { name: { ru: 'ε Инд Ab', en: 'ε Ind Ab' }, a: 15.8, e: 0.25, i: 0, O: 0, w: 0, M0: O.meanFromTrue(1.1, 0.25), t0: 0, mu, mass: 7 * M_JUP, R_km: 74350, data: 'obs' }
     };
-    return { id: 'Epsilon Indi', star, mu, bodies, target: 'c', hz: [0.47, 0.85], far: { B: { au: 1460, los: 1900, data: 'author' } }, planeInc: 102.2 };
+    // подлёт: направление Солнце → звезда в базисе системы (как tsysAx в 3D): ℓ = (0, sin i, cos i), i — наклон плоскости орбит
+    // к картинной плоскости; к плоскости орбит c луч наклонён на 12,2°
+    const planeInc = 102.2, inc = planeInc * Math.PI / 180;
+    return { id: 'Epsilon Indi', star, mu, bodies, target: 'c', hz: [0.47, 0.85], far: { B: { au: 1460, los: 1900, data: 'author' } }, planeInc,
+      approach: [0, Math.sin(inc), Math.cos(inc)] };
   })();
   const SYSTEMS = { 'Epsilon Indi': EPS_INDI };
   const system = name => SYSTEMS[name] || null;

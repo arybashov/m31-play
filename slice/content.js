@@ -7,28 +7,30 @@
 (function (root) {
   // Части content.js (core/*.js, по системам): каждая — фабрика; создаются по порядку (при загрузке нужны только части
   // выше), затем связываются — имена друг друга получают через __link. Здесь — сборка сцен из story/*.js и экспорт.
-  const PARTS = ['base', 'outfit', 'wear', 'wearCards', 'notes', 'ledger', 'rescue', 'dossier', 'world', 'council', 'relief'];
+  const PARTS = ['base', 'outfit', 'wear', 'wearCards', 'notes', 'ledger', 'rescue', 'dossier', 'world', 'council', 'relief', 'flight'];
   const node = typeof module !== 'undefined' && module.exports;
   const __core = {}, made = PARTS.map(k => { const r = (node ? require('./core/' + k + '.js') : root.M31Core[k])(__core); Object.assign(__core, r.names); return r; });
   made.forEach(r => r.link());
   const {
     BLUEPRINT, CAST, CLOUD, DV, EPOCH3, EV, GREET_LAST, INSERTED, LOOP, M, NEWS, OUTCOME, OUTCOME_R, PREP, R, RESCUE, RISK, SH, SHELTER_R,
     SOS_AT_cargo, STATUS, STORM, STREAM, SUPPLY, TANKS, THAW0, THAW_LOSS, W, WATCH_SOS, Y, Y3, Y4, YD, Yepi, addPct, agendaOf, agroLost, aliveOf,
-    answerLag, applyEvents, archiveLines, archiveShort, arriveView, arriveX, awakeOf, bad, bandBreach, bandHit, beats, brake, brakeApply, brakeLeft,
-    brakeReq, brakeSettle, bulletinTitle, burnDays, busCheck, busRecord, busRestart, busSplit, calPick, canEvade, cap, cargoConnect, cloudBand,
-    collectorCracked, colonyTie, connectNeed, connectOptions, contactRun, coolerName, councilText, crewName, crewOf, crewWord, darkAt, days, daysTo,
-    dd, deadCauses, deliverOptions, discText, dockApply, dutchmanEnd, dvLeft, dvPct, earlyTurnQuote, edgeLogV5, edgeMonths, edgeOut, endHeadline, endR,
-    energyOK, epoch3, eqApi, eqOf, expeditionEvent, f1, f2, fb, fuelAddDv, fuelInit, fuelSpendDv, gaugeDiff, gauges, getWorld, goalOf, greetR, hasIR,
-    hasScouts, hashU32, heatAgo, hidden, homeOptionsR, housedOf, incident, incidentHeadline, incidentLines, initialState, isoDays, jobsLine, kms, lag,
-    laserLate, laserYear, lastCall, legacyLines, livable, loopAt, loopCommon, lossFuture, lossesOf, matReserve, missionCheck, missionComplete,
-    missionMarks, months, nameAt, namesShort, navDeparture, newsCandidates, newsPlan, newsText, nm, nmD, nmG, opNormal, opStart, opYear, outcomeOf,
-    ownStory, passportMetrics, passportOptions, passportParse, pct, pctFrom, people, planText, planWho, plural, powerOK, ppl, probeOK, probeTimes,
-    probesLeft, publicOf, reader, regHands, relief, reliefButton, reliefEvents, reportOn, reqOf, requestOption, rescueLegacy, rescueOptions, rescueS,
-    riskLine, roadDead, scenes, sectionHolds, sectionLine, setWorld, shieldGaugeV5, shieldInspect, shipHealth, sim, siteRecord, skipTo, sleepersAt2,
-    sosDrift, sosEnd, sosKnown, sosOption, spendPct, src, stageOff, stagePass, stageYears, stayOption, storeLine, storeNow, storeR, stormU, streamAt,
-    streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc, supportPlan, supportWorld, tankSync, taskLabel,
-    taskReportText, taskResult, thawAdvance, thawAlive, thawAt, thawDeadline, thawLag, thawN, thawName, thawNames, thinWatch, turnOption, ui, urgentOf,
-    vAt, validIncident, warnAt, wearDecision, wearRespond, win, windowLine, worldLines, yrs, yrsEn, yrsG
+    answerLag, applyEvents, archiveLines, archiveShort, arrivalAt, arrivalYear, arriveView, arriveX, awakeOf, bad, bandBreach, bandHit, beats, brake,
+    brakeApply, brakeLeft, brakeSettle, bulletinTitle, burnDays, busCheck, busRecord, busRestart, busSplit, calPick, canEvade, cap, cargoConnect,
+    cloudBand, collectorCracked, colonyTie, connectNeed, connectOptions, contactRun, coolerName, councilText, crewName, crewOf, crewWord, darkAt, days,
+    daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dutchmanEnd, dvLeft, dvPct, earlyTurnQuote, edgeLogV5, edgeMonths, edgeOut,
+    endHeadline, endR, energyOK, epoch3, eqApi, eqOf, expeditionEvent, f1, f2, fb, flightBound, flightPlan, flightRoute, flightSamples, flightState,
+    fuelAddDv, fuelBurn, fuelFlush, fuelInit, fuelMass, fuelSpan, fuelSpendDv, fuelSync, gaugeDiff, gauges, getWorld, goalOf, greetR, hasIR, hasScouts,
+    hashU32, heatAgo, hidden, homeOptionsR, housedOf, incident, incidentHeadline, incidentLines, initialState, isoDays, jobsLine, kms, lag, laserLate,
+    laserYear, lastCall, legAdd, legCut, legMark, legNext, legSched, legacyLines, livable, loopAt, loopCommon, lossFuture, lossesOf, matReserve,
+    missionCheck, missionComplete, missionMarks, months, mustReq, nameAt, namesShort, navDeparture, newsCandidates, newsPlan, newsText, nm, nmD, nmG,
+    opNormal, opStart, opYear, outcomeOf, ownStory, passportMetrics, passportOptions, passportParse, pct, pctFrom, people, planText, planWho, plural,
+    powerOK, ppl, probeOK, probeTimes, probesLeft, profileEnd, publicOf, reader, regHands, relief, reliefButton, reliefEvents, reportOn, reqOf,
+    requestOption, rescueLegacy, rescueOptions, rescueS, riskLine, roadDead, scenes, sectionHolds, sectionLine, setWorld, shieldGaugeV5, shieldInspect,
+    shipHealth, sim, siteRecord, skipTo, sleepersAt2, sosDrift, sosEnd, sosKnown, sosOption, spendPct, src, stageOff, stagePass, stageYears,
+    stayOption, storeLine, storeNow, storeR, stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS,
+    supplySrc, supportPlan, supportWorld, tankSync, taskLabel, taskReportText, taskResult, thawAdvance, thawAlive, thawAt, thawDeadline, thawLag,
+    thawN, thawName, thawNames, thinWatch, turnOption, ui, urgentOf, vAt, validIncident, warnAt, wearDecision, wearRespond, win, windowLine,
+    worldLines, yrs, yrsEn, yrsG
   } = __core;
 
   // ---- сцены по актам (story/*.js): фабрика акта получает общие имена этого файла — собираются здесь, когда объявлено всё
@@ -37,7 +39,7 @@
   const Story = typeof module !== 'undefined' && module.exports ? Object.fromEntries(STORY.map(k => [k, require('./story/' + k + '.js')])) : root.M31Story;
   const K = {
     BLUEPRINT, CLOUD, DV, EPOCH3, GREET_LAST, LOOP, M, NEWS, OUTCOME, PREP, R, RESCUE, SHELTER_R, SOS_AT_cargo, STORM, STREAM, SUPPLY, THAW0,
-    THAW_LOSS, W, WATCH_SOS, Y, Y3, Y4, YD, Yepi, addPct, agendaOf, agroLost, aliveOf, answerLag, arriveX, bad, bandBreach, bandHit, brake, brakeApply,
+    THAW_LOSS, W, WATCH_SOS, Y, Y3, Y4, YD, Yepi, addPct, agendaOf, agroLost, aliveOf, answerLag, arrivalAt, arrivalYear, arriveX, bad, bandBreach, bandHit, brake, brakeApply,
     brakeSettle, bulletinTitle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, cap, cargoConnect, cloudBand, collectorCracked,
     colonyTie, connectNeed, connectOptions, contactRun, coolerName, councilText, crewOf, crewWord, darkAt, days, daysTo, dd, deadCauses,
     deliverOptions, discText, dockApply, dutchmanEnd, dvPct, edgeLogV5, edgeMonths, edgeOut, endR, energyOK, eqOf, f1, f2, fb, goalOf, greetR, hasIR,
@@ -51,7 +53,7 @@
     yrsEn, yrsG
   };
   for (const k of STORY) beats.push(...Story[k](K));
-  const content = { fuel: { TANKS, init: fuelInit, dvLeft, brakeLeft, brakeReq, sync: tankSync, spendPct, addPct, spendDv: fuelSpendDv, addDv: fuelAddDv }, beats, initialState, ui, scenes, supportPlan, supportWorld, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, shipHealth, calPick, wearHooks: { respond: (s, rec) => wearRespond(s, rec), decision: (s, ev) => wearDecision(s, ev), jobsLine: (s, l) => jobsLine(s, l) }, events: EV, navDeparture, epoch3, lossFuture, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld, OUTCOME_R,
+  const content = { fuel: { TANKS, init: fuelInit, dvLeft, brakeLeft, mustReq, sync: tankSync, spendPct, addPct, spendDv: fuelSpendDv, addDv: fuelAddDv, mass: fuelMass, burn: fuelBurn, span: fuelSpan, legAdd, legCut, legNext, legMark, legSchedOf: legSched, resync: fuelSync, flush: fuelFlush }, beats, initialState, ui, scenes, supportPlan, supportWorld, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, shipHealth, calPick, wearHooks: { respond: (s, rec) => wearRespond(s, rec), decision: (s, ev) => wearDecision(s, ev), jobsLine: (s, l) => jobsLine(s, l) }, events: EV, navDeparture, epoch3, lossFuture, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, profileEnd, arrivalAt, flight: { route: flightRoute, samples: flightSamples, plan: flightPlan, state: flightState, bound: flightBound }, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld, OUTCOME_R,
     reliefEvents, applyEvents, validIncident, INSERTED, gauges, gaugeDiff, passportMetrics, expeditionEvent, worldLines, archiveShort, archiveLines, legacyLines, STATUS };
   if (typeof module !== 'undefined' && module.exports) module.exports = content;
   else root.M31Content = content;

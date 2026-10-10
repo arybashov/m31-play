@@ -3,10 +3,10 @@
 (function (root) {
   'use strict';
   const ledger = __core => {
-    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf,
-    observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS,
-    taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
-    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
+    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag,
+    lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src,
+    storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
+    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
     __link();
 
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
@@ -22,6 +22,8 @@
     s.nav = { rev: 0, revs: [] };
   }
   function book(s, cause, at) {
+    const L = s.fuel && s.fuel.log;                                     // журнал манёвров: сюжетные манёвры и пополнения этой операции
+    if (L) for (const x of L) if (x.cause == null) x.cause = cause;     // (каждая запись журнала запасов размечает все новые)
     const b = s.book; if (!b) return;
     const d = {};
     for (const k of BOOK_KEYS) { const v = s[k] || 0; if (Math.abs(v - b.v[k]) > 1e-9) { d[k] = v - b.v[k]; b.v[k] = v; } }
@@ -64,7 +66,7 @@
     if (/^x\.sos\./.test(id) && s.incident) return { kicker, lines: [ru ? `В капсулах — ${ppl(s.incident.sleepers)}, на вахте — ${s.incident.watch}` : `${s.incident.sleepers} in the capsules, ${s.incident.watch} on watch`,
       ru ? `сигнал бедствия — ${yr(s.incident.sent)}` : `distress signal — ${yr(s.incident.sent)}`] };
     if (id === 'e.end' && s.arrive) {
-      const road = lossesOf(s, s.arrive).total + s.dead, lines = [ru ? `Позади ${yrs(Yepi(s))}` : `${yrsEn(Yepi(s))} behind`];
+      const road = lossesOf(s, arrivalAt(s)).total + s.dead, lines = [ru ? `Позади ${yrs(Yepi(s))}` : `${yrsEn(Yepi(s))} behind`];
       if (s.mission === 'rescue' && s.rescued) lines.push(ru ? `спасены ${ppl(s.rescued)} из Оттепели` : `${s.rescued} saved from Thaw`);
       if (s.mission === 'contact' && s.task) { const n = taskName(s.task, lang);
         lines.push(s.task.done ? (ru ? `задание выполнено: ${n}` : `task done: ${n}`) : (ru ? `задание не выполнено: ${n}` : `task not done: ${n}`)); }
@@ -291,10 +293,10 @@ The log's last entry is a woman's voice: to those who come after — do not open
   const livable = s => s.mission !== 'supply' && ['open', 'dome'].includes(M.worldOf(s.target));
   // Акт III — за 12 лет до прибытия, но не раньше раскрытия магнита: после поворота к источнику скорость ниже и торможение короче
   const Y3 = s => M.actIII(s.arrive, s.tMag);
-  const Y4 = s => s.arrive + 3;                                        // первое утро дома
+  const Y4 = s => arrivalYear(s) + 3;                                  // первое утро дома (от года прибытия: у полёта в системе — выхода на орбиту)
   const answerLag = s => 2 * Math.round(M.star(s.target).d) + 2;      // отчёт туда, ответ обратно и решение Совета
   const Yepi = s => Y4(s) + answerLag(s);
-  const laserYear = s => s.arrive + 1 + laserNews(s);
+  const laserYear = s => arrivalYear(s) + 1 + laserNews(s);
   // исход партии по фактическому состоянию
   const OUTCOME = {
     mainstay: { ru: 'Новая опора Кольца', en: 'A new mainstay of the Ring' },
@@ -319,7 +321,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
     if (s.home === 'return') return 'return';
     if (s.home === 'beacon') return 'beacon';
     if (!livable(s) || s.settle === 'orbit') return 'orbital';
-    const deadAll = lossesOf(s, s.arrive).total + s.dead + s.deadHere;
+    const deadAll = lossesOf(s, arrivalAt(s)).total + s.dead + s.deadHere;
     return s.winterDead > 0 || deadAll > 60 ? 'lean' : 'mainstay';
   }                  // когда до нас дойдёт весть с Тёмной звезды
   const laserLate = s => !src(s) && laserYear(s) > Yepi(s);
@@ -335,7 +337,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
   function laserNews(s) {
     const t0 = epoch3(s).launch, a = M.star(M.SOURCE), b = M.star(s.target);
     const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-    return Math.max(2, Math.round(t0 + a.d / EPOCH3.beta + (EPOCH3.acc + EPOCH3.dec) / 2 + d - (s.arrive + 1)));
+    return Math.max(2, Math.round(t0 + a.d / EPOCH3.beta + (EPOCH3.acc + EPOCH3.dec) / 2 + d - (arrivalYear(s) + 1)));
   }
   const skipTo = (f, ru, en) => ({ kind: 'skip', toYear: s => Y(s, f),
     label: { ru: s => `Промотать до года ${Y(s, f)}${ru ? ' · ' + ru : ''}`, en: s => `Skip ahead to year ${Y(s, f)}${en ? ' · ' + en : ''}` } });

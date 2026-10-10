@@ -365,7 +365,7 @@
     const place = sc && sc.label ? t(sc.label) : u.earth;
     let lines = [`<b>${esc(fmtYear(y))}</b>`, esc(place)];
     if (ids.has('a1.depart')) {
-      const B = result.state.beta, A = C.arriveView(result.state), tm = result.state.tMag, beta = M.speedAt(y, B, A, tm);
+      const B = result.state.beta, A = C.profileEnd(result.state), tm = result.state.tMag, beta = M.speedAt(y, B, A, tm);
       const ly = M.distLy(y, B, A, tm, M.star(result.state.target).d);   // разгон 8 лет, дрейф, магнит, 4 года двигателя
       lines.push(`${u.speed} <b>${num(beta, 3)}c</b>`);
       lines.push(ly < 2 ? `${u.lag} <b>${num(ly * 12, 1)} ${u.months}</b>` : `${u.lag} <b>${num(ly, 1)} ${lang === 'ru' ? 'г.' : 'yr'}</b>`);
@@ -729,7 +729,7 @@
   // фаза полёта на год y — как на таймлайне
   function phaseOf(s, y) {
     if (!s.arrive) return null;
-    const A = C.arriveView(s), b0 = M.brakeStart(A, s.tMag);
+    const A = C.profileEnd(s), b0 = M.brakeStart(A, s.tMag);
     return y < M.ACC ? 'acc' : y >= A ? 'home' : y < b0 ? 'drift' : s.tMag != null && y >= A - M.ENGINE ? 'eng' : 'mag';
   }
   // план показа: снимки журнала нового экрана по годам и события периода (не больше трёх сообщений, две паузы)
@@ -754,7 +754,7 @@
     // смена фазы полёта (разгон → дрейф → магнит → двигатель → у цели) — по годам границ
     const s1 = result.state, ph0 = phaseOf(s1, y0), ph1 = phaseOf(s1, y1);
     if (ph0 && ph0 !== ph1 && !relief) {
-      const A = C.arriveView(s1), cuts = [M.ACC, M.brakeStart(A, s1.tMag), s1.tMag != null ? A - M.ENGINE : null, A].filter(c => c != null && c > y0 && c <= y1);
+      const A = C.profileEnd(s1), cuts = [M.ACC, M.brakeStart(A, s1.tMag), s1.tMag != null ? A - M.ENGINE : null, A].filter(c => c != null && c > y0 && c <= y1);
       for (const c of cuts) evs.push({ at: c, w: 1, k: 'phase', phase: phaseOf(s1, c + 1e-9) });
     }
     for (const e of evs) if (e.w === 2) { const inc = evs.find(x => x.w === 3 && Math.abs(x.at - e.at) < 1e-6 && !x.with);
@@ -878,7 +878,7 @@
     const y2 = view.result.state.year;
     if (window.M31Space && M31Space.ok && relief) {
       const st = view.result.state, inc = relief.incident, R = M.rescuers(inc, relief.world), res = st.res;
-      M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target),
+      M31Space.setWorld({ shield: null, shieldSel: null, store: null, outpost: null, flight: null, wreck: false, dark: 'sleep', year: y, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, separated: true, cloudSeen: inc.sent > 4, worldClass: M.worldOf(inc.target),
         burning: false, atEarth: false, target: inc.target, beta: inc.beta, arrive: inc.arrive, cargo: [], cargoLabels: false, scout: 0, epoch3: null, support: null,
         relief: { P: R.P, sent: inc.sent, council: R.council.id, list: R.list.map(r => ({ id: r.id, colony: r.colony || null, hear: r.hear, launch: r.launch, complete: r.complete })),
           voyages: res ? res.voyages : [] }, legacy: { passTug: relief.world.passTug !== false, settled: relief.world.settled || [] } });
@@ -892,7 +892,9 @@
         wreck: !!st.lostShip, dark: st.dutchman ? 'empty' : st.outcome === 'sos' ? 'sleep' : null, relief: null, anim: yearAnim ? { from: yearAnim.from, to: y2 } : null, legacy: { passTug: world.passTug !== false, settled: world.settled || [] }, year: y, separated: ids.has('a1.stage'), cloudSeen: ids.has('a1.cloud'),
         worldClass: st.target ? M.worldOf(st.target) : null,
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
-        target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.arriveView(st) : 0,
+        target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.profileEnd(st) : 0,
+        // полёт внутри системы: траектория маршрута от 50 а.е. до орбиты планеты (выборка модели; та же, что даёт даты и расход)
+        flight: st.flight ? { entryAt: st.flight.entryAt, planetOrbitAt: st.flight.planetOrbitAt, samples: C.flight.samples(st) } : null,
         // голосование по заявкам: курса ещё нет — звезда только осматривается; кольца у звёзд заявок повестки
         knee: st.route ? st.route.knee : null,                          // излом траектории после поворота (совет «Новые сведения»)
         support: C.supportWorld(st, ids),                               // корабль поддержки: после сводки о нём (только контакт)

@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
   const relief = __core => {
-    let M, cap, f1, nm, nmD, nmG, place, plural, ppl, rescueS, yr, yrs, yrsEn;
-    const __link = () => { ({ M, cap, f1, nm, nmD, nmG, place, plural, ppl, rescueS, yr, yrs, yrsEn } = __core); };
+    let M, cap, f1, nm, nmD, nmG, place, plural, ppl, yr, yrs, yrsEn;
+    const __link = () => { ({ M, cap, f1, nm, nmD, nmG, place, plural, ppl, yr, yrs, yrsEn } = __core); };
     __link();
 
   // ================================================================ ПАРТИЯ СПАСАТЕЛЕЙ
@@ -361,13 +361,11 @@ The rescuer secures a bag to the handrail.
     return c.id === 'earth' ? 'Совет Звездоплавания: принять сигнал' : `Совет ${place(c, 'ru', 1)}: принять сигнал`;
   }
 
-  const arriveView = s => rescueS(s) && s.arriveExact != null ? s.arriveExact : s.arrive;
 
     return {
       names: {
         CAUSE, plan, rsc, shipWhere, passEarthLy, earthStands, CREWED, voyage, grade, reliefResult, sleepersAt, reliefEvents, applyEvents,
-        validIncident, INSERTED, marginLine, capLine, OUTCOME_R, aliveLine, signalText, RBEATS, inc0, midRelief, reliefState, relief, reliefButton,
-        arriveView
+        validIncident, INSERTED, marginLine, capLine, OUTCOME_R, aliveLine, signalText, RBEATS, inc0, midRelief, reliefState, relief, reliefButton
       },
       link: __link
     };

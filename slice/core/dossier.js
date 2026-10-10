@@ -3,9 +3,9 @@
 (function (root) {
   'use strict';
   const dossier = __core => {
-    let BLUEPRINT, CLOUD, DV, M, RQ, SHIELD_WORK, SOS_AT_cargo, STORM, THAW_LOSS, capsSafe, crewOf, eqOf, f1, hasIR, hasScouts, loopAt, lossesOf, nm, nmD,
-    nmG, passportNumbers, powerOK, ppl, probesLeft, reqOf, rescueS, sosAtStream, storeNow, supplyS, yrs, yrsEn;
-    const __link = () => { ({ BLUEPRINT, CLOUD, DV, M, RQ, SHIELD_WORK, SOS_AT_cargo, STORM, THAW_LOSS, capsSafe, crewOf, eqOf, f1, hasIR, hasScouts, loopAt, lossesOf, nm, nmD, nmG, passportNumbers, powerOK, ppl, probesLeft, reqOf, rescueS, sosAtStream, storeNow, supplyS, yrs, yrsEn } = __core); };
+    let BLUEPRINT, CLOUD, DV, M, RQ, SHIELD_WORK, SOS_AT_cargo, STORM, THAW_LOSS, arrivalAt, arrivalYear, capsSafe, crewOf, eqOf, f1, hasIR, hasScouts,
+    loopAt, lossesOf, nm, nmD, nmG, passportNumbers, powerOK, ppl, probesLeft, reqOf, rescueS, sosAtStream, storeNow, supplyS, yrs, yrsEn;
+    const __link = () => { ({ BLUEPRINT, CLOUD, DV, M, RQ, SHIELD_WORK, SOS_AT_cargo, STORM, THAW_LOSS, arrivalAt, arrivalYear, capsSafe, crewOf, eqOf, f1, hasIR, hasScouts, loopAt, lossesOf, nm, nmD, nmG, passportNumbers, powerOK, ppl, probesLeft, reqOf, rescueS, sosAtStream, storeNow, supplyS, yrs, yrsEn } = __core); };
     __link();
 
   // ---------------------------------------------------------------- оснащение: досье, вопросы, карточки, цена (DOC: оснащение v4)
@@ -210,9 +210,9 @@
   const getWorld = () => WORLD;
   // cargo: год сигнала — целый (сутки работ — в журнале)
   // год сигнала — целый (у склада — после консервации зала: прибытие округляется вверх)
-  const SOS_AT = { cargo: SOS_AT_cargo, drift: loopAt, stream: sosAtStream, home: s => s.arrive + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
+  const SOS_AT = { cargo: SOS_AT_cargo, drift: loopAt, stream: sosAtStream, home: s => arrivalYear(s) + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
   function incidentOf(s, cause) {
-    const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, s.arrive)).total + s.dead + (s.rescueCrewDead || 0));
+    const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, arrivalAt(s))).total + s.dead + (s.rescueCrewDead || 0));
     return { id: `${s.target}|${sent}|${cause}`, cause, target: s.target, beta: s.beta, arrive: s.arrive, tMag: s.tMag, capRate: capsSafe(s) ? 1e-4 : 2e-4, sent, mission: s.mission,
       alive, watch: WATCH_SOS, sleepers: alive - WATCH_SOS, hold: sosHold(s), deadline: sent + sosHold(s) };
   }
@@ -252,9 +252,9 @@
   });
   // конец партии: люди живы, экспедиция прекращена; следующую партию начинает совет, услышавший первым
   const SOS_WHERE = {
-    cargo: { ru: s => `Корабль идёт к ${nmD(s)} сам и встанет там на орбиту около года ${s.arrive}${s.kits.includes('request') ? '; груз заявки — в трюме' : ''}.`, en: s => `The ship flies on to ${nm(s, 'en')} by itself and will enter orbit there around year ${s.arrive}${s.kits.includes('request') ? '; the request cargo is in the hold' : ''}.` },
-    drift: { ru: s => `Корабль идёт к ${nmD(s)} сам и встанет там на орбиту около года ${s.arrive}.`, en: s => `The ship flies on to ${nm(s, 'en')} by itself and will enter orbit there around year ${s.arrive}.` },
-    stream: { ru: s => `Корабль дотормаживает к ${nmD(s)}: орбита — около года ${s.arrive}.`, en: s => `The ship finishes braking toward ${nm(s, 'en')}: orbit around year ${s.arrive}.` },
+    cargo: { ru: s => `Корабль идёт к ${nmD(s)} сам и встанет там на орбиту около года ${arrivalYear(s)}${s.kits.includes('request') ? '; груз заявки — в трюме' : ''}.`, en: s => `The ship flies on to ${nm(s, 'en')} by itself and will enter orbit there around year ${arrivalYear(s)}${s.kits.includes('request') ? '; the request cargo is in the hold' : ''}.` },
+    drift: { ru: s => `Корабль идёт к ${nmD(s)} сам и встанет там на орбиту около года ${arrivalYear(s)}.`, en: s => `The ship flies on to ${nm(s, 'en')} by itself and will enter orbit there around year ${arrivalYear(s)}.` },
+    stream: { ru: s => `Корабль дотормаживает к ${nmD(s)}: орбита — около года ${arrivalYear(s)}.`, en: s => `The ship finishes braking toward ${nm(s, 'en')}: orbit around year ${arrivalYear(s)}.` },
     home: { ru: s => `Корабль на орбите у ${nmG(s)}.`, en: s => `The ship is in orbit at ${nm(s, 'en')}.` },
     rescueDock: { ru: s => `Корабль на орбите у ${nmG(s)}, рядом со складом Оттепели; живые Оттепели остаются в капсулах склада, их последняя диагностика — в сигнале.`, en: s => `The ship is in orbit at ${nm(s, 'en')}, beside Thaw's store; Thaw's living remain in the store's capsules, their last diagnostics in the signal.` }
   };
@@ -291,12 +291,12 @@ They can go on living on the patches. Or they can put the hall into conservation
     text: {
       ru: s => `Контур воды отказал в обоих кольцах. Группа Б и одиннадцать человек вахты погибли; оставшихся ${ppl(s.watch)} не хватило, чтобы обслуживать зал анабиоза. Капсулы отказывают по одной.
 
-Автоматика ведёт корабль дальше. Плазменный магнит включится по программе, корабль встанет на орбиту у ${nmG(s)} около года ${s.arrive} — и так и будет кружить с экипажем на борту, без живых. Маяк будет передавать, пока хватит питания.
+Автоматика ведёт корабль дальше. Плазменный магнит включится по программе, корабль встанет на орбиту у ${nmG(s)} около года ${arrivalYear(s)} — и так и будет кружить с экипажем на борту, без живых. Маяк будет передавать, пока хватит питания.
 
 Экспедиция окончена. Для следующей — к другой цели — это будет находка: журнал, имена, последняя запись вахты.`,
       en: s => `The water loop failed in both rings. Group B and eleven of the watch died; the remaining ${s.watch} were too few to maintain the anabiosis hall. The capsules fail one by one.
 
-The automation flies the ship on. The plasma magnet will switch on by programme, and the ship will enter orbit at ${nm(s, 'en')} around year ${s.arrive} — and will keep circling there with its crew aboard, none of them alive. The beacon will transmit as long as there is power.
+The automation flies the ship on. The plasma magnet will switch on by programme, and the ship will enter orbit at ${nm(s, 'en')} around year ${arrivalYear(s)} — and will keep circling there with its crew aboard, none of them alive. The beacon will transmit as long as there is power.
 
 The expedition is over. For the next one — to another target — it will be a find: the log, the names, the watch's last entry.`
     }

@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
   const council = __core => {
-    let M, R, crewOf, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline;
-    const __link = () => { ({ M, R, crewOf, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline } = __core); };
+    let M, R, crewOf, flightPlan, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline;
+    const __link = () => { ({ M, R, crewOf, flightPlan, hashU32, hidden, nf, nmG, plural, spendPct, thawDeadline } = __core); };
     __link();
 
   // ---------------------------------------------------------------- совет «Новые сведения» (ранний поворот, год 3)
@@ -108,6 +108,7 @@
         st.requestId = q.id; st.target = q.star; st.task = { work: q.work, star: q.star, done: false, found: null, reportAt: null };
         st.arriveExact = t2.arriveExact; st.arrive = t2.arrive;
         st.route = { knee: { at: st.year, x: t2.x, from }, D: t2.D };
+        flightPlan(st);                                                  // новая цель — свой план полёта в системе (подлёт после раннего поворота — та же линия: ≲0,2°)
         st.earlyCouncil = { at: st.year, family: st.earlyNews.family, choice: 'turn', from, to: q.star, dvKms: t2.dvKms };
       },
       record: {

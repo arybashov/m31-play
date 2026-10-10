@@ -4,7 +4,7 @@
   'use strict';
   const act3 = K => {
     const {
-      DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arriveX, bad, brakeApply,
+      DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arrivalAt, arrivalYear, arriveX, bad, brakeApply,
       brakeSettle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, connectNeed, connectOptions, contactRun, crewOf, darkAt, days,
       daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dvPct, eqOf, f1, f2, fb, greetR, hasIR, heatAgo, homeOptionsR, housedOf, incident,
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
@@ -379,10 +379,10 @@ Selina sends the corrected sailing directions and keeps the original beside them
     },
 
     // ---- прибытие
-    { id: 's.e5', kind: 'skip', toYear: s => rescueS(s) ? arriveX(s) : s.arrive,
-      label: { ru: s => rescueS(s) ? 'Промотать до прибытия к складу' : `Промотать до года ${s.arrive} · прибытие`, en: s => rescueS(s) ? 'Skip ahead to the arrival at the store' : `Skip ahead to year ${s.arrive} · arrival` } },
+    { id: 's.e5', kind: 'skip', toYear: s => rescueS(s) ? arriveX(s) : arrivalAt(s),
+      label: { ru: s => rescueS(s) ? 'Промотать до прибытия к складу' : `Промотать до года ${arrivalYear(s)} · прибытие`, en: s => rescueS(s) ? 'Skip ahead to the arrival at the store' : `Skip ahead to year ${s.arrive} · arrival` } },
     {
-      id: 'a3.orbit', scene: 'arrival', kind: 'instrument', year: s => rescueS(s) ? arriveX(s) : s.arrive,
+      id: 'a3.orbit', scene: 'arrival', kind: 'instrument', year: s => rescueS(s) ? arriveX(s) : arrivalAt(s),
       effect: s => { s.worldSeen = M.worldOf(s.target); },
       title: { ru: 'Навигационный журнал · прибытие', en: 'Navigation log · arrival' },
       text: {
@@ -407,7 +407,7 @@ Manoeuvre reserve: ${f1(s.reserve, 'en')}% of rated. Landing materials: ${Math.r
       }
     },
     {
-      id: 'a3c.greeting', illus: 'colony-greeting', scene: 'arrival', kind: 'transcript', year: s => s.arrive,
+      id: 'a3c.greeting', illus: 'colony-greeting', scene: 'arrival', kind: 'transcript', year: s => arrivalAt(s),
       when: s => s.mission === 'contact' && !!M.colonyAt(s.target) && M.colonyAt(s.target).awake > 0 && ['viable', 'establishing', 'declining'].includes(M.colonyAt(s.target).status),
       effect: s => { s.colonyLink = true; },                           // двусторонняя связь с поселением состоялась
       title: { ru: s => `«${M.colonyAt(s.target).ru}» · связь`, en: s => `${M.colonyAt(s.target).en} · contact` },
@@ -441,7 +441,7 @@ ${(GREET_LAST[c.id] || GREET_LAST.default).en}`; }
       }
     },
     {
-      id: 'a3c.silence', scene: 'arrival', kind: 'transcript', year: s => s.arrive,
+      id: 'a3c.silence', scene: 'arrival', kind: 'transcript', year: s => arrivalAt(s),
       when: s => s.mission === 'contact' && !!M.colonyAt(s.target) && M.colonyAt(s.target).status === 'dead',
       title: { ru: s => `«${M.colonyAt(s.target).ru}» · вызов`, en: s => `${M.colonyAt(s.target).en} · the call` },
       text: {
@@ -812,17 +812,17 @@ Here an answer comes at once: there is no transmitter between them, no years of 
     {
       // отчёт по заданию исследовательской заявки: первый месяц у цели — работа сделана или нет, отчёт уходит Кольцу
       // (DOC «Ревью Codex — заявки из мира», шаг 3). Выполнение задания и судьба дома — разные итоги
-      id: 'a3.taskReport', scene: 'arrival', kind: 'archive', year: s => Math.max(s.year, s.arrive + 1 / 12),
+      id: 'a3.taskReport', scene: 'arrival', kind: 'archive', year: s => Math.max(s.year, arrivalAt(s) + 1 / 12),
       when: s => s.mission === 'contact' && !!s.task && !s.sos && !s.lostShip,
       place: { ru: 'Отчёт Кольцу · задание заявки', en: 'Report to the Ring · the request task' },
-      effect: s => { const r = taskResult(s); s.task.done = r.done; s.task.found = r.found; s.task.reportAt = Math.max(s.year, s.arrive + 1 / 12); },   // дата сцены (без модели эффект — до установки года)
+      effect: s => { const r = taskResult(s); s.task.done = r.done; s.task.found = r.found; s.task.reportAt = Math.max(s.year, arrivalAt(s) + 1 / 12); },   // дата сцены (без модели эффект — до установки года)
       text: { ru: s => taskReportText(s, 'ru'), en: s => taskReportText(s, 'en') }
     },
-    { id: 's.e6', kind: 'skip', toYear: s => s.arrive + 1,
+    { id: 's.e6', kind: 'skip', toYear: s => arrivalYear(s) + 1,
       label: { ru: 'Промотать год ожидания', en: 'Skip the year of waiting' } },
     {
       id: 'a3.wait1', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: supplyS,
-      effect: s => { s.lost = lossesOf(s, s.arrive).total + s.dead; },
+      effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead; },
       title: { ru: 'Совет у цели', en: 'Council at the target' },
       text: {
         ru: `Будят Дассера и Орина. На столе — первоначальная заявка и совместный журнал работ.
@@ -851,7 +851,7 @@ Dasser signs the report after the local council, not in its place.`
     },
     {
       id: 'a3.wait3', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: rescueS,
-      effect: s => { s.lost = lossesOf(s, s.arrive).total + s.dead; },
+      effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead; },
       title: { ru: 'Подписанный прогноз', en: 'The signed forecast' },
       text: {
         ru: s => `Будят Дассера и Орина. На столе лежат паспорт, исправленная лоция и именной итог операции. Орин сравнивает две даты${s.brakeDelay ? '' : ' — они совпали'}.
@@ -860,14 +860,14 @@ Dasser signs the report after the local council, not in its place.`
 
 Селина показывает, когда пришлось решать. Дассер читает список до конца: ${s.rescued ? 'теперь обещание сорока мест имеет имена' : 'обещание сорока мест осталось списком имён'}.
 
-Медицинский журнал: погибли в пути — ${ppl(lossesOf(s, s.arrive).total + s.dead)}.`,
+Медицинский журнал: погибли в пути — ${ppl(lossesOf(s, arrivalAt(s)).total + s.dead)}.`,
         en: s => `Dasser and Orin are woken. The passport, the corrected sailing directions and the named operation record lie on the table. Orin compares the two dates${s.brakeDelay ? '' : ' — they match'}.
 
 "I signed a calculation for a medium we had not yet measured."
 
 Selina shows when the decision had to be made. Dasser reads the entire list: ${s.rescued ? 'the promise of forty places now has names' : 'the promise of forty places has remained a list of names'}.
 
-Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}.`
+Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}.`
       }
     },
     {
@@ -888,8 +888,8 @@ Teya closes the sampler.
       }
     },
     {
-      id: 'a3.wait', illus: s => s.support === 'found' ? null : 'council-at-target', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: s => !ownStory(s),
-      effect: s => { s.lost = lossesOf(s, s.arrive).total + s.dead;
+      id: 'a3.wait', illus: s => s.support === 'found' ? null : 'council-at-target', scene: 'home', kind: 'transcript', year: s => arrivalYear(s) + 1, when: s => !ownStory(s),
+      effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead;
         if (s.support === 'found') { s.materials += 30; addPct(s, dvPct(s, 900)); s.highPower = true; } },
       title: { ru: 'Совет у цели', en: 'Council at the target' },
       text: {
@@ -900,7 +900,7 @@ Teya closes the sampler.
 
 Корабль поддержки признают погибшим. Обряд имён — по семи именам. Вместе с ним пропадают ³He, теплообменники и материалы, на которые когда-то рассчитывал совет Ирсона.
 `) + `
-Медицинский журнал: погибли в пути — ${ppl(lossesOf(s, s.arrive).total + s.dead)}${s.dead ? `, из них ${deadCauses(s, 'ru')}` : ''}.` +
+Медицинский журнал: погибли в пути — ${ppl(lossesOf(s, arrivalAt(s)).total + s.dead)}${s.dead ? `, из них ${deadCauses(s, 'ru')}` : ''}.` +
           (src(s) ? '\n\nОрин читает разбор ошибки у Тёмной звезды и записывает вину на себя: он оставил простую инструкцию там, где нужен был разбор района.' : ''),
         en: s => (s.support === 'found'
           ? `Dasser and Orin are woken. A year later the support ship comes out at the rendezvous: the seven wake themselves, as agreed over the link. Its holds carry ³He, heat exchangers and landing materials. The high-power loop is whole again; the manoeuvre reserve and the materials are replenished.
@@ -909,12 +909,12 @@ Teya closes the sampler.
 
 The support ship is declared lost. The rite of names — seven names. With it go the ³He, the heat exchangers and the materials that Irson's council once relied on.
 `) + `
-Medical log: died on the road — ${lossesOf(s, s.arrive).total + s.dead}${s.dead ? `, of them ${deadCauses(s, 'en')}` : ''}.` +
+Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}${s.dead ? `, of them ${deadCauses(s, 'en')}` : ''}.` +
           (src(s) ? '\n\nOrin reads the review of the error at the Dark Star and takes the blame himself: he left a simple instruction where a survey of the region was needed.' : '')
       }
     },
     {
-      id: 'd.home', scene: 'home', kind: 'decision', year: s => s.arrive + 1, when: s => s.mission !== 'supply' && !s.sos,
+      id: 'd.home', scene: 'home', kind: 'decision', year: s => arrivalYear(s) + 1, when: s => s.mission !== 'supply' && !s.sos,
       title: { ru: 'Где будет дом', en: 'Where home will be' },
       rec: s => { if (!rescueS(s)) return null; const ids = homeOptionsR(s).map(o => o.id), id = ['check', 'closed', 'orbit', 'stay'].find(x => ids.includes(x));
         return id === 'check' ? { id, why: { ru: 'старая площадка сохраняет инфраструктуру; перед заселением нужна проверка', en: 'the old site keeps its infrastructure; it needs testing before occupation' }, assume: { ru: 'короткое испытание представляет будущий режим очистки', en: 'the short test represents future treatment conditions' } }

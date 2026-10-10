@@ -4,11 +4,11 @@
   'use strict';
   const wearCards = __core => {
     let CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan,
-    cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf,
-    offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan,
-    tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick,
-    wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
-    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, fuelSpan, hidden, jobDone, layout, nf, offShipAt, plural, pools, ppl, prodOf, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
+    cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush,
+    fuelSpan, hidden, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays,
+    radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor,
+    wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush, fuelSpan, hidden, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -410,18 +410,32 @@
       return b && { at: b.at, cause: `job.${b.job.type || b.job.owner}`, go: () => { s.year = Math.max(s.year, b.at); const j = JB.step(s.jobs, b.job.id, b.at, pools(s)); return j ? jobDone(s, j, b.at) : null; } }; } },
     // износ корабля: смена бодрствующих, отказы узлов, одиночные капсулы, исчерпание буферов
     { id: 'wear', next: wearNext },
+    // течь бака во время тяги (двигательное торможение, маршрут в системе): граница каждые сутки по абсолютной сетке (той же, что
+    // у fuelSpan) — нехватка топлива ловится источником 'brake' в тот же день при любой нарезке перемотки (ревью Codex, шаг 4)
+    { id: 'leakDay', next: (s, t0, t1) => { if (!s.fuel || s.terminalAt != null || !tankLeaking(s) || !fuelBusy(s, t0)) return null;
+      const h = 1 / 365.25, at = (Math.floor(t0 / h + 1e-9) + 1) * h; return at <= t1 && { at, cause: null, go: () => null }; } },
     // торможение невыполнимо (4в): к началу двигательного участка (и во время него) топлива на STOP → 0 не хватает — конец рейса
     { id: 'brake', next: (s, t0, t1) => { if (!s.fuel || s.terminalAt != null || s.arrive == null || !(s.fuel.short > 1e-9)) return null;
-      const at = Math.max(t0, arriveView(s) - M.ENGINE); if (at > t1 + 1e-12 || at > arriveView(s) + 1e-9) return null;
+      // дефицит, возникший во время тяги, — срыв в ближайшей точке суточной сетки (её границы ставит 'leakDay'): дата не зависит
+      // от нарезки перемотки; известный до включения двигателя — в начале двигательного участка
+      const A = profileEnd(s), h = 1 / 365.25, at = t0 <= A - M.ENGINE ? A - M.ENGINE : Math.max(t0, Math.ceil(t0 / h - 1e-9) * h);
+      if (at > t1 + 1e-12 || at > Math.max(A, arriveView(s)) + 1e-9) return null;   // с полётом в системе — до орбиты
       const w = s.wear, shut = w ? W.TANKS.filter(id => w.nodes[id] && !w.nodes[id].ok && !(w.nodes[id].defect && w.nodes[id].defect.stage === 'heavy')) : [];
       // ремонт перекрытого бака идёт (люди на нём или выдержка) и кончится до середины двигательного участка — ждать его; работа
       // без людей или поздняя — не ждать (иначе финал обходится до прибытия)
       const going = id => w.ops.some(o => { if (o.done || o.target !== id) return false; const j = s.jobs && s.jobs.list.find(x => x.ref === o.id && x.status !== 'done');
-        return !!j && (j.status === 'work' || j.status === 'hold') && JB.eta(j, at) <= arriveView(s) - M.ENGINE / 2; });
+        return !!j && (j.status === 'work' || j.status === 'hold') && JB.eta(j, at) <= A - M.ENGINE / 2; });
       if (shut.some(going)) return null;
       const ask = shut.find(id => dangerCan(s, id) && !(s.fuel.brakeAsked || []).includes(id));
       if (ask) return { at, cause: null, go: () => { (s.fuel.brakeAsked = s.fuel.brakeAsked || []).push(ask); return dangerAsk(s, ask, 'isolated', at); } };   // последний шанс — восстановить
       return { at, cause: null, go: () => { wearTerminal(s, at, 'braking'); return null; } }; } },
+    // участки плана полёта (проект «Полёт внутри системы v1», шаг 3): начало и конец участка тяги — границы календаря; списание
+    // отрезка до границы — fuelSpan, на границе — состояние участка и журнал манёвров. Межзвёздное торможение сюда не входит
+    { id: 'legs', next: (s, t0, t1) => { const g = legNext(s, t0, t1); return g && { at: g.at, cause: null, go: () => { legMark(s, g.id, g.at); return null; } }; } },
+    // полёт внутри системы (шаг 4): конец маршрута — выход на орбиту планеты подтверждён (участок закрыт границей 'legs' той же даты)
+    // или встречи нет. Граница, пройденная на равной с допуском дате другого источника, — сразу
+    { id: 'flight', next: (s, t0, t1) => { const fl = s.flight; if (!fl || fl.orbitAt != null || fl.failedAt != null || !(fl.planetOrbitAt <= t1)) return null;
+      const at = Math.max(t0, fl.planetOrbitAt); return { at, cause: 'flight.orbit', go: () => { flightArrive(s, at); return null; } }; } },
     // регламент: узлы сетки в четверть года (множитель старения по отставанию, спрос по году рейса); сама работа — тик в начале хода
     // устойчиво (долга нет, старение штатное, людей — ровно по спросу и хватает, материалы есть, никто не учится) — промежуточные
     // узлы ничего не меняют: только границы лет (ревью Codex: после погашения долга m и люди меняются на ближайшем узле сетки)
@@ -452,6 +466,7 @@
           W.setShop(s.wear, W.shopMachine(s.wear) && JB.active(s.jobs).some(j => j.equip === 'shop' && j.status === 'work'), t0);
         const nx = calNext(s, t0, target), t1 = nx ? nx.at : target;
         if (t1 > t0) { erodeSpan(s, t0, t1, rhoAt(s, (t0 + t1) / 2)); if (fuelSpan(s, t0, t1)) book(s, 'wear.leak', t1); t0 = t1; s.simYear = t1; if (s.wear && wearOn(s)) W.touch(s.wear, t1); }   // модель износа дошла до t1
+        if (nx) fuelFlush(s, t1);                                          // отложенный учёт течи и тяги — до регламента и события (меняют опоры износа, подачу)
         wearRegTick(s, t0);                                                // регламент списан по t1 — события шага видят настоящий запас
         if (!nx) break;
         const ev = nx.go();
