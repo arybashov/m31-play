@@ -55,6 +55,9 @@
   // тормозит почти постоянной силой 3,15 МН (площадь растёт при падении скорости), поэтому время работы
   // магнита t = M·Δv/F растёт линейно с массой: 59 тыс. т на 0,1c — 16 лет. Дальше 4 года — двигатель ядра.
   const MAG_F = 3.15e6, C_MS = 299792458, YEAR_S = 3.15576e7, ENGINE = 4;
+  // предел ускорения двигателя (проектное допущение до паспорта двигателя; «Полёт внутри системы v1»): STOP за ENGINE лет —
+  // 0,02375 м/с², около 2 км/с в сутки. Манёвр в 20 км/с — не меньше 9,75 суток работы
+  const ENGINE_ACC = STOP * C_MS / (ENGINE * YEAR_S);
   const brakeMass = (beta, reserve, cargo) => CORE + cargo + (1 + K) * stage(CORE + cargo, STOP + reserve);
   const magYears = (massKt, beta) => massKt * 1e6 * (beta - STOP) * C_MS / MAG_F / YEAR_S;
   const stdMag = beta => magYears(brakeMass(beta, 0.01, 0), beta);   // пустой корабль с резервом 1% — для карты
@@ -426,7 +429,7 @@
     RESCUERS, WORK, CASCADE, WATCH_TAIL, incidentPos, localColony, rescuers, survivors, lightYears,
     kitsFor, crewOf, LEGACY_KITS, ENGINE, MAG_F, brakeMass, magYears, stdMag, brakeStart, brakeDist, actIII,
     EQUIP, SWAPS, EQ_BASE, EQ_MISSION, eqDefault, eqOpt, eqMass, eqSwaps, eqCode, eqParse, eqLegacy,
-    YEAR_S, C_MS, flightProfile, sampleFlight, timeAtDistance, toSec, toYears, copy, STOP };
+    YEAR_S, C_MS, flightProfile, sampleFlight, timeAtDistance, toSec, toYears, copy, STOP, ENGINE_ACC };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Mission = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

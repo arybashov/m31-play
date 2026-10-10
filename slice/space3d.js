@@ -848,6 +848,9 @@
   const EIND = { name: 'Epsilon Indi', R_km: 0.713 * 696000, c: { a: 0.5, R_km: 6371, P_d: 146 }, Ab: { a: 15.8, e: 0.25, R_km: 74350, P_yr: 85 },
     hz: [0.47, 0.85], B_au: 1460, B_los: 1900 };   // пара Ba/Bb: 1460 а.е. поперёк луча, 1900 — ближе к нам вдоль него (выбор автора, у потока)
   let tsys = null, tsysAx = null;
+  // модель системы цели (проект «Полёт внутри системы v1», шаг 2): орбиты и положения тел — из systems.js / orbits.js
+  const ORB = window.M31Orbits, MSYS = window.M31Systems, SYS = MSYS && MSYS.system(EIND.name);
+  const sysVec = r => tsysAx.p1.clone().multiplyScalar(r[0] * AU_LY).addScaledVector(tsysAx.p2, r[1] * AU_LY).addScaledVector(tsysAx.n, r[2] * AU_LY);   // а.е. системы → координаты сцены
   const tsysParts = { orbits: [], dots: [] };
   function buildTargetSystem() {
     const st = stars.find(x => x.name === EIND.name); if (!st) return;
@@ -862,10 +865,10 @@
     const inPlane = (r, t) => p1.clone().multiplyScalar(r * Math.cos(t)).addScaledVector(p2, r * Math.sin(t));
     const line = (pts, color, op) => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false })); l.userData.base = op; tsys.add(l); tsysParts.orbits.push(l); return l; };
-    const T256 = [...Array(257)].map((_, k) => k / 256 * Math.PI * 2);
-    line(T256.map(t => inPlane(EIND.c.a * AU_LY, t)), 0xe8b36a, 0.95);                                 // c — наша цель
+    // орбиты — из модели (systems.js, orbits.js): те же элементы, что у положений тел
+    line(ORB.orbitPoints(SYS.bodies.c).map(sysVec), 0xe8b36a, 0.95);                                 // c — наша цель
     const Ab = EIND.Ab;
-    line(T256.map(nu => inPlane(Ab.a * (1 - Ab.e * Ab.e) / (1 + Ab.e * Math.cos(nu)) * AU_LY, nu)), 0x4d6a78, 0.5);
+    line(ORB.orbitPoints(SYS.bodies.Ab).map(sysVec), 0x4d6a78, 0.5);
     // зона жизни — полупрозрачное кольцо в плоскости орбит
     const hz = new THREE.Mesh(new THREE.RingGeometry(EIND.hz[0] * AU_LY, EIND.hz[1] * AU_LY, 128, 1),
       new THREE.MeshBasicMaterial({ color: 0x6f9f6a, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
@@ -892,9 +895,10 @@
   // Фаза планеты c (период ~148 суток). Промотка года идёт 1,8 с — это два-три оборота: звезда облетала бы кадр,
   // а камера, держащая звезду и планету, дёргалась. Пока год анимируется (world.anim), фаза идёт от начальной к итоговой
   // кратчайшим путём; в конце — точно там, где должна быть.
-  const cTh = (th0, year) => th0 + 2 * Math.PI * (year - world.arrive) * 365.25 / EIND.c.P_d;
+  // фаза — по модели (кеплерова орбита от эпохи мира, не от даты встречи); угол в плоскости орбит
+  const cTh = (th0, year) => { const st = MSYS.bodyAt(SYS, 'c', year); return Math.atan2(st.r[1], st.r[0]); };
   function cPos(year) {
-    const { th0 } = tsysArrival(), A = world.arrive, an = world.anim, r = EIND.c.a * AU_LY;
+    const th0 = 0, A = world.arrive, an = world.anim, r = EIND.c.a * AU_LY;
     let th = cTh(th0, year);
     if (an && year > A) {
       const f = Math.max(A, an.from), t = Math.max(A, an.to);
@@ -917,8 +921,7 @@
     const tD = cam.F.clone().addScaledVector(offsetDir(), dly).distanceTo(tsysAx.C0);
     sysFlare.tgt.a = band(tD, 3e-7, 3e-6, 1e9, 1e9) * nearT; sysFlare.tgt.s = band(tD, 3e-6, 3e-5, 3e-3, 0.05);
     if (world.arrive) tsysParts.c.position.copy(cPos(world.year));
-    const th = 2 * Math.PI * world.year / EIND.Ab.P_yr + 1.1, Ab = EIND.Ab, r = Ab.a * (1 - Ab.e * Ab.e) / (1 + Ab.e * Math.cos(th)) * AU_LY;
-    tsysParts.Ab.position.copy(tsysAx.p1).multiplyScalar(r * Math.cos(th)).addScaledVector(tsysAx.p2, r * Math.sin(th));
+    tsysParts.Ab.position.copy(sysVec(MSYS.bodyAt(SYS, 'Ab', world.year).r));   // Ab — по Кеплеру (раньше — равномерный истинный угол)
   }
   function drawTargetLabels(put, rel, dly) {
     if (!tsys || !tsys.visible) return;
