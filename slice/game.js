@@ -894,7 +894,7 @@
         burning: ids.has('a1.depart') && !ids.has('a1.stage'), atEarth: y < 0.5,
         target: st.target || (atStop('agenda') && mapPick) || M.DECLARED, beta: st.beta, arrive: st.target ? C.profileEnd(st) : 0,
         // полёт внутри системы: траектория маршрута от 50 а.е. до орбиты планеты (выборка модели; та же, что даёт даты и расход)
-        flight: st.flight ? { entryAt: st.flight.entryAt, planetOrbitAt: st.flight.planetOrbitAt, samples: C.flight.samples(st) } : null,
+        flight: st.flight ? { key: `${st.flight.end}|${st.flight.variant}|${st.flight.planetOrbitAt}`, entryAt: st.flight.entryAt, planetOrbitAt: st.flight.planetOrbitAt, hold: st.flight.hold || null, get: () => C.flight.samples(st) } : null,   // выборка — лениво (3D просит, когда нужна)
         // голосование по заявкам: курса ещё нет — звезда только осматривается; кольца у звёзд заявок повестки
         knee: st.route ? st.route.knee : null,                          // излом траектории после поворота (совет «Новые сведения»)
         support: C.supportWorld(st, ids),                               // корабль поддержки: после сводки о нём (только контакт)

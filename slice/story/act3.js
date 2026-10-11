@@ -5,6 +5,7 @@
   const act3 = K => {
     const {
       DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arrivalAt, arrivalYear, arriveX, bad, brakeApply,
+      flightOptions, flightChoose, nf, yrsG,
       brakeSettle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, connectNeed, connectOptions, contactRun, crewOf, darkAt, days,
       daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dvPct, eqOf, f1, f2, fb, greetR, hasIR, heatAgo, homeOptionsR, housedOf, incident,
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
@@ -363,6 +364,28 @@ The ship is turned stern-first. The core engine takes off the remaining speed ov
 The shield now faces backward. At this speed a dust grain hits ${Math.round((s.beta / vAt(s, s.arrive - 4)) ** 2)} times softer than in the drift.
 The acceleration stage passed the system ${yrsEn(s.arrive - 4 - stagePass(s))} ago, a thousand AU aside. No one saw it.`
       }
+    },
+    // план встречи (полёт внутри системы, шаг 5): до входа на 50 а.е. — позже и экономнее или раньше и дороже
+    {
+      id: 'd.approach', scene: 'flip', kind: 'decision', year: s => s.arrive - 4, when: s => !!(s.flight && flightOptions(s).early),
+      title: { ru: 'План встречи', en: 'The rendezvous plan' },
+      rec: s => { const o = flightOptions(s), dd = Math.round((o.late.planetOrbitAt - o.early.planetOrbitAt) * 365.25), dp = 100 * (o.early.dv - o.late.dv) / s.reserveDv;
+        return dd >= 20 && dp <= 3 ? { id: 'early', why: { ru: `${dd} суток вахты дороже ${nf(dp, 1, 'ru')}% резерва`, en: `${dd} days of watch cost more than ${nf(dp, 1, 'en')}% of the reserve` } }
+          : { id: 'late', why: { ru: 'топливо нужнее у цели, чем несколько дней', en: 'propellant is worth more at the target than a few days' } }; },
+      context: {
+        ru: s => `Двигатель включён. До 50 а.е. от звезды — около ${yrsG(Math.max(1, s.flight.entryAt - s.year))}, дальше — тяга к планете ${s.flight.body}. Навигаторы рассчитали два плана встречи.`,
+        en: s => `The engine is on. About ${yrsEn(Math.max(1, s.flight.entryAt - s.year))} to 50 AU from the star, then thrust toward planet ${s.flight.body}. The navigators have worked out two rendezvous plans.`
+      },
+      options: s => { const o = flightOptions(s), base = o.late, kms = x => Math.round(x * 299792.458), res = x => Math.max(0, s.reserve - 100 * (x.dv - (s.flight.variant === 'early' ? o.early : o.late).dv) / s.reserveDv);
+        const opt = (v, ru, en, k) => ({ id: v, label: { ru, en },
+          known: { ru: [`Орбита планеты ${s.flight.body} — год ${nf(o[v].planetOrbitAt, 2, 'ru')}${v === 'early' ? `, на ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} суток раньше` : ''}.`,
+              `Маршрут — ${kms(o[v].dv)} км/с${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; резерв манёвров после — ${f1(res(o[v]), 'ru')}%; тяга — до ${Math.round(100 * o[v].ratio)}% предела.`],
+            en: [`Orbit of planet ${s.flight.body} — year ${nf(o[v].planetOrbitAt, 2, 'en')}${v === 'early' ? `, ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} days earlier` : ''}.`,
+              `Route — ${kms(o[v].dv)} km/s${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; manoeuvre reserve after — ${f1(res(o[v]), 'en')}%; thrust up to ${Math.round(100 * o[v].ratio)}% of the limit.`] },
+          effect: st => flightChoose(st, v),
+          record: { ru: `Совет утверждает план: ${k.ru}. Навигаторы закладывают его в программу двигателя.`, en: `The council approves the plan: ${k.en}. The navigators load it into the engine programme.` } });
+        return [opt('late', 'Позже — экономнее', 'Later — more economical', { ru: 'позже и экономнее', en: 'later and more economical' }),
+          opt('early', 'Раньше — дороже', 'Earlier — costlier', { ru: 'раньше и дороже', en: 'earlier and costlier' })]; }
     },
     {
       id: 'a3r.brakeResult', scene: 'flip', kind: 'instrument', year: s => s.arrive - 4, when: rescueS,

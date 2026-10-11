@@ -4,8 +4,8 @@
 (function (root) {
   'use strict';
   const flight = __core => {
-    let M, fuelSync, legAdd, legCut, rescueS, wearTerminal;
-    const __link = () => { ({ M, fuelSync, legAdd, legCut, rescueS, wearTerminal } = __core); };
+    let M, f1, fuelSync, hidden, legAdd, legCut, nf, plural, rescueS, wearNote, wearTerminal;
+    const __link = () => { ({ M, f1, fuelSync, hidden, legAdd, legCut, nf, plural, rescueS, wearNote, wearTerminal } = __core); };
     __link();
 
   // ---- полёт внутри системы (DOC «Полёт внутри системы v1 — проект», шаг 4). Контакт к цели с данными системы (systems.js)
@@ -21,29 +21,30 @@
   // прибытие для сцен: точная дата и год (сцены «через год», первое утро — от целого года)
   const arrivalAt = s => s.flight ? arriveView(s) : s.arrive;
   const arrivalYear = s => s.flight ? Math.round(arriveView(s)) : s.arrive;
-  // таблица решена при тех же параметрах двигателя
-  const tableOk = T => !!T && !!T.engine && T.engine[0] === M.ENGINE && T.engine[1] === M.STOP && T.engine[2] === M.ENGINE_ACC && T.engine[3] === M.VE;
+  // таблица решена при тех же параметрах двигателя; v3 — два варианта плана встречи на год, захват и график расхода в строке
+  const tableOk = T => !!T && T.v === 3 && !!T.engine && T.engine[0] === M.ENGINE && T.engine[1] === M.STOP && T.engine[2] === M.ENGINE_ACC && T.engine[3] === M.VE;
   const MEMO = new Map();
-  // маршрут для конца профиля end: из таблицы (целый год), иначе — построение (секунды; запоминается); null — маршрута нет
-  function routeFor(sys, end) {
-    const key = `${sys.id}|${end}`; if (MEMO.has(key)) return MEMO.get(key);
-    const e = FL.entryAt(M, sys, end, 50), T = tableOk(ROUTES) && ROUTES[sys.id], row = T && T.rows[end];
-    const r = row ? FL.routeOf(M, sys, T.body, e, { T: row[0], p: row[1], lam: row.slice(2, 8), dv: row[15], ratio: row[17] },
-      { T: row[8], p: 2, lam: row.slice(9, 15), dv: row[16], ratio: row[18] }, { ok: true, rminKm: row[19], rmaxKm: row[20] }) : FL.planRoute(M, sys, sys.target, e);
+  // маршрут для конца профиля end и варианта плана встречи ('late' — позже, экономнее; 'early' — раньше): из таблицы (целый
+  // год), иначе — построение (секунды; запоминается); null — маршрута (или раннего варианта) нет
+  function routeFor(sys, end, variant = 'late') {
+    const key = `${sys.id}|${end}|${variant}`; if (MEMO.has(key)) return MEMO.get(key);
+    const e = FL.entryAt(M, sys, end, 50), T = tableOk(ROUTES) && ROUTES[sys.id], rows = T && T.rows[end];
+    let r;
+    if (rows) { const row = variant === 'early' ? rows[1] : rows[0];
+      r = row ? FL.routeOf(M, sys, T.body, e, { T: row[0], p: row[1], lam: row.slice(2, 8), dv: row[15], ratio: row[17] },
+        { T: row[8], p: 2, lam: row.slice(9, 15), dv: row[16], ratio: row[18] }, { ok: true, rminKm: row[19], rmaxKm: row[20] }) : null;
+      if (r) { const sc = []; for (let i = 23; i + 1 < row.length; i += 2) sc.push([row[i], row[i + 1]]);   // захват и график — из таблицы
+        r.captureAt = row[21] >= 0 ? e.t + row[21] : null; r.sched = { dv: row[22], pairs: sc }; } }
+    else { const both = FL.planRoutes(M, sys, sys.target, e); MEMO.set(`${sys.id}|${end}|late`, both.late); MEMO.set(`${sys.id}|${end}|early`, both.early); r = both[variant]; }
     if (MEMO.size > 256) MEMO.clear();
     MEMO.set(key, r); return r;
   }
-  // график расхода участка: пары [доля времени, доля Δv] по выборке траектории — ломаная, отличающаяся от интеграла тяги не
-  // больше SCHED_KMS (упрощение Дугласа — Пекера); стык участков H и P — всегда точка графика (тяга там меняется скачком)
+  // график расхода участка: пары [доля времени, доля Δv] — из таблицы (посчитан по выборке траектории заранее); вне таблицы —
+  // по выборке здесь же (медленно). dv — интеграл тяги той же выборки: стык участков H и P на графике точный
   const SCHED_KMS = 0.01;
   function schedOf(sys, r) {
-    const pts = FL.routeSamples(sys, r), t0 = r.entryAt, T = r.planetOrbitAt - t0, tot = pts[pts.length - 1].dv, eps = SCHED_KMS / FL.units.AUYR_KMS;
-    const keep = new Set([0, pts.length - 1, pts.findIndex(x => x.t >= r.rendezvousAt - 1e-12)]);
-    const simplify = (a, b) => { let m = -1, w = eps;
-      for (let k = a + 1; k < b; k++) { const x = pts[a].dv + (pts[b].dv - pts[a].dv) * (pts[k].t - pts[a].t) / (pts[b].t - pts[a].t), d = Math.abs(pts[k].dv - x); if (d > w) { w = d; m = k; } }
-      if (m >= 0) { keep.add(m); simplify(a, m); simplify(m, b); } };
-    const ks = [...keep].sort((a, b) => a - b); for (let i = 0; i + 1 < ks.length; i++) simplify(ks[i], ks[i + 1]);
-    return { dv: tot * FL.units.AUYR_KMS / FL.units.C_KMS, sched: [...keep].sort((a, b) => a - b).map(k => [Math.min(1, Math.max(0, (pts[k].t - t0) / T)), pts[k].dv / tot]) };
+    const sc = r.sched || FL.schedPairs(FL.routeSamples(sys, r), r.entryAt, r.planetOrbitAt, r.rendezvousAt, SCHED_KMS);
+    return { dv: sc.dv * FL.units.AUYR_KMS / FL.units.C_KMS, sched: sc.pairs };
   }
   // состояние маршрута на год t (а.е., а.е./год; система цели) — по выборке; null — вне маршрута
   function flightState(s, t) {
@@ -52,9 +53,8 @@
     const a = S[lo], b = S[hi], u = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
     return a.y.map((x, i) => x + (b.y[i] - x) * u);
   }
-  // корабль связан со звездой цели (энергия относительно неё отрицательна) — захват уже произошёл
-  function flightBound(s, t) { const y = flightState(s, t), sys = flightSys(s); if (!y || !sys) return false;
-    const r = Math.hypot(y[0], y[1], y[2]), v = Math.hypot(y[3], y[4], y[5]); return v * v / 2 - sys.mu / r < 0; }
+  // корабль связан со звездой цели — захват уже произошёл (энергия на маршруте убывает: после захвата орбита остаётся замкнутой)
+  const flightBound = (s, t) => !!(s.flight && s.flight.captureAt != null && t >= s.flight.captureAt - 1e-12);
   // план полёта партии: при утверждении паспорта и после поворота курса. Не начатый участок прежнего плана снимается; Δv
   // маршрута сразу входит в обязательный резерв (mustReq), межзвёздное торможение — только до входа на 50 а.е.
   function flightPlan(s) {
@@ -62,27 +62,141 @@
     const og = old && f && (f.plan || []).find(g => g.id === old.leg);
     if (og && og.state !== 'planned') return;                          // маршрут уже исполняется — план не меняется
     if (og) legCut(s, og.id, s.year);
-    const sys = flightSys(s), r = sys && f && s.arrive != null ? routeFor(sys, profileEnd(s)) : null;
+    const sys = flightSys(s), want = old && old.variant || 'late', r0 = sys && f && s.arrive != null ? routeFor(sys, profileEnd(s), want) : null;
+    const r = r0 || (sys && f && s.arrive != null && want !== 'late' ? routeFor(sys, profileEnd(s), 'late') : null);   // раннего варианта нет — поздний
     if (!r) { if (old) { delete s.flight; if (f) { delete f.brakeEnd; fuelSync(s); } } return; }
     const n = old ? old.n + 1 : 1, id = `local.${n}`, sc = schedOf(sys, r);   // Δv — интеграл тяги той же выборки, что график и 3D
-    s.flight = { n, leg: id, body: r.body, end: profileEnd(s), entryAt: r.entryAt, rendezvousAt: r.rendezvousAt, planetOrbitAt: r.planetOrbitAt, dv: sc.dv };
+    s.flight = { n, leg: id, body: r.body, end: profileEnd(s), variant: r0 ? want : 'late', entryAt: r.entryAt, captureAt: captureOf(sys, r), rendezvousAt: r.rendezvousAt,
+      planetOrbitAt: r.planetOrbitAt, dv: sc.dv, marks: [] };
     f.brakeEnd = r.entryAt;
     legAdd(s, { id, t1: r.planetOrbitAt, dur: r.planetOrbitAt - r.entryAt, dv: sc.dv, sched: sc.sched });
   }
+  // захват звездой: из таблицы; вне таблицы — первая точка выборки с отрицательной энергией относительно звезды
+  const captureOf = (sys, r) => r.captureAt !== undefined ? r.captureAt : FL.captureT(sys, FL.routeSamples(sys, r));
+  // варианты плана встречи: поздний и ранний (если есть) — даты, Δv (доли c), доля предела тяги
+  function flightOptions(s) {
+    const sys = s.flight && flightSys(s); if (!sys) return { late: null, early: null };
+    const one = v => { const r = routeFor(sys, s.flight.end, v); return r && { variant: v, planetOrbitAt: r.planetOrbitAt, dv: r.dv, ratio: r.ratio }; };
+    return { late: one('late'), early: one('early') };
+  }
+  // выбор плана встречи (решение «План встречи»): до входа на 50 а.е. маршрут ещё не исполняется — меняется целиком
+  function flightChoose(s, variant) { if (!s.flight || s.flight.variant === variant) return; s.flight.variant = variant; flightPlan(s); }
+  // вехи подхода (календарь, источник 'flight'): вход на 50 а.е., захват звездой, сближение с планетой — строка журнала вахты
+  const FLIGHT_MARKS = ['entry', 'capture', 'nav', 'meet'];
+  const markAt = (fl, m) => m === 'entry' ? fl.entryAt : m === 'capture' ? fl.captureAt : m === 'nav' ? (navAt(fl) > fl.entryAt ? navAt(fl) : null) : fl.rendezvousAt;
+  function flightMarkNext(s, t1) {
+    const fl = s.flight; if (!fl || fl.failedAt != null) return null;
+    let nx = null; for (const m of FLIGHT_MARKS) { const at = markAt(fl, m); if (at != null && !(fl.marks || []).includes(m) && at <= t1 && (!nx || at < nx.at)) nx = { m, at }; }
+    return nx;
+  }
+  function flightMark(s, m) {
+    const fl = s.flight; (fl.marks = fl.marks || []).push(m);
+    if (m === 'nav') { const d = navRoll(s); if (d) return { kind: 'wear', type: 'nav', at: navAt(fl), km: d.km, ahead: d.ahead }; }   // отклонение — решение совета
+    if (!s.wear) return null;                                            // журнал вахты — у модели износа
+    const kms = x => Math.round(x * FL.units.C_KMS), days = Math.round((fl.planetOrbitAt - fl.entryAt) * 365.25);
+    if (m === 'entry') wearNote(s, `50 а.е. от звезды: межзвёздное торможение кончено, корабль идёт к планете ${fl.body} — ${days} суток тяги, Δv ${kms(fl.dv)} км/с.`,
+      `50 AU from the star: interstellar braking is over; the ship heads for planet ${fl.body} — ${days} days of thrust, Δv ${kms(fl.dv)} km/s.`);
+    else if (m === 'capture') wearNote(s, 'Звезда захватила корабль: орбита вокруг неё уже замкнута, тяга ведёт к планете.', 'The star has captured the ship: the orbit around it is already closed, and the thrust leads to the planet.');
+    else if (m === 'nav') wearNote(s, 'Навигация уточнила орбиту планеты: отклонение в пределах допуска, встреча — по плану.', "Navigation has refined the planet's orbit: the offset is within tolerance, the rendezvous goes as planned.");
+    else if (fl.hold && fl.hold.kind === 'corr') wearNote(s, `Коррекция окна идёт: встреча с планетой ${fl.body} — через ${navDays(Math.round(fl.hold.dur * 365.25), 'ru')}.`,
+      `The window correction is under way: the rendezvous with planet ${fl.body} is in ${navDays(Math.round(fl.hold.dur * 365.25), 'en')}.`);
+    else if (fl.hold) wearNote(s, `Сближение отложено: корабль держится у планеты ${fl.body} на орбите ожидания — следующее окно через ${Math.round(fl.hold.dur * 365.25)} суток.`,
+      `The rendezvous is postponed: the ship holds near planet ${fl.body} in a waiting orbit — the next window is in ${Math.round(fl.hold.dur * 365.25)} days.`);
+    else wearNote(s, `Планета ${fl.body} — в 600 тыс. км, догон 1 км/с: начат выход на её орбиту.`, `Planet ${fl.body} is 600 thousand km away, closing at 1 km/s: the insertion into its orbit has begun.`);
+  }
   // конец маршрута (календарь, источник 'flight'): участок исполнен без недожога — корабль на орбите планеты; иначе встречи нет
   function flightArrive(s, at) {
-    const fl = s.flight, g = fl && s.fuel && (s.fuel.plan || []).find(x => x.id === fl.leg), e = g && (s.fuel.log || []).find(x => x.leg === fl.leg);
-    if (g && g.state === 'done' && !(e && e.short > 0)) { fl.orbitAt = at; return; }
+    const fl = s.flight, ids = fl && (fl.legs || [fl.leg]), plan = (s.fuel && s.fuel.plan) || [], log = (s.fuel && s.fuel.log) || [];
+    const ok = ids && ids.every(id => { const g = plan.find(x => x.id === id), e = log.find(x => x.leg === id); return g && (g.state === 'cut' || (g.state === 'done' && !(e && e.short > 0))); })
+      && ids.some(id => (plan.find(x => x.id === id) || {}).state === 'done');
+    if (ok) { fl.orbitAt = at; return; }
     fl.failedAt = at; wearTerminal(s, at, 'braking');
   }
+  // ---- отклонение навигации (шаг 5, часть 4). За NAV.lead суток до сближения навигация уточняет орбиту планеты: с вероятностью
+  // NAV.p планета на δ в стороне от расчёта (скрытый бросок). Коррекция окна — сдвиг на δ (разгон и торможение пополам) в запасе
+  // тяги сверх маршрута (маршрут идёт на долю ratio предела F/m): за оставшиеся τ нужно ускорение 4δ/τ², Δv 4δ/τ — встреча в срок;
+  // не укладывается — сдвиг на пределе запаса, встреча позже на дни–недели. Орбита ожидания: корабль держится у планеты один её
+  // оборот (окно повторяется: орбита круговая), удержание — NAV.hold км/с; затем тот же захват
+  const NAV = { p: 0.3, lead: 10, dmin: 3e5, dmax: 3e6, hold: 0.5 };   // сутки; км; км; км/с
+  function navRoll(s) {
+    const u = hidden(s, 'flight.nav'), v = hidden(s, 'flight.nav.d'), w = hidden(s, 'flight.nav.sign');
+    return u != null && u < NAV.p ? { km: NAV.dmin + (NAV.dmax - NAV.dmin) * (v ?? 0.5), ahead: (w ?? 0.5) < 0.5 } : null;
+  }
+  // коррекция к дате at: Δv (км/с) и опоздание встречи slip (годы). В срок τ — ускорение 4δ/τ²; сверх запаса тяги a — сдвиг на
+  // пределе запаса за τ' = 2√(δ/a), Δv = a·τ', встреча позже на τ' − τ. null — запаса нет или опоздание не меньше оборота планеты
+  function navFix(s, at, km) {
+    const fl = s.flight, tau = (fl.rendezvousAt - at) * FL.units.YEAR_S, r = flightRoute(s); if (!(tau > 0) || !r) return null;
+    const VE = M.VE * FL.units.C_KMS, lim = M.ENGINE_ACC * Math.exp((M.STOP * FL.units.C_KMS - FL.norm(r.entry.v) * FL.units.AUYR_KMS + fl.dv * FL.units.C_KMS) / VE);   // предел F/m к концу маршрута, м/с²
+    const a = 4 * km * 1000 / (tau * tau), margin = (1 - r.ratio) * lim; if (!(margin > 0)) return null;
+    if (a <= margin) return { dv: 4 * km / tau, slip: 0, margin };
+    const t2 = 2 * Math.sqrt(km * 1000 / margin), slip = (t2 - tau) / FL.units.YEAR_S;
+    return slip < O_PERIOD(flightSys(s), fl.body) ? { dv: margin * t2 / 1000, slip, margin } : null;
+  }
+  const navAt = fl => fl.rendezvousAt - NAV.lead / 365.25;
+  // встреча позже на dur (орбита ожидания — оборот планеты; коррекция с опозданием): участок маршрута снимается на дате at; до
+  // сближения — его остаток, у планеты — свой участок extra (удержание или коррекция), захват — на dur позже (графики — из графика
+  // маршрута). В 3D корабль у планеты, пока идёт dur, захват повёрнут вместе с ней
+  function navShift(s, at, dur, extra, kind) {
+    const fl = s.flight, f = s.fuel, g = f.plan.find(x => x.id === fl.leg);
+    const x0 = (at - (g.t1 - g.dur)) / g.dur, xh = (fl.rendezvousAt - (g.t1 - g.dur)) / g.dur, part = (a, b) => {
+      const pts = g.sched.filter(p => p[0] > a + 1e-12 && p[0] < b - 1e-12), fa = schedAt(g.sched, a), fb = schedAt(g.sched, b);
+      return { dvf: fb - fa, sched: [[0, 0]].concat(pts.map(p => [(p[0] - a) / (b - a), (p[1] - fa) / (fb - fa)]), [[1, 1]]) }; };
+    const h = part(x0, xh), c = part(xh, 1), n = fl.n;
+    legCut(s, g.id, at);
+    legAdd(s, { id: `local.${n}.h`, t1: fl.rendezvousAt, dur: fl.rendezvousAt - at, dv: g.dv * h.dvf, sched: h.sched });
+    legAdd(s, Object.assign({ t1: fl.rendezvousAt + dur }, extra));
+    legAdd(s, { id: `local.${n}.p`, t1: fl.planetOrbitAt + dur, dur: fl.planetOrbitAt - fl.rendezvousAt, dv: g.dv * c.dvf, sched: c.sched });
+    fl.legs = [g.id, `local.${n}.h`, extra.id, `local.${n}.p`]; fl.hold = { at: fl.rendezvousAt, dur, kind }; fl.planetOrbitAt += dur;
+  }
+  function navHold(s, at) { const fl = s.flight, P = O_PERIOD(flightSys(s), fl.body); navShift(s, at, P, { id: `hold.${fl.n}`, dur: P, dv: NAV.hold / FL.units.C_KMS }, 'wait'); }
+  // коррекция: в срок — участок коррекции рядом с маршрутом; с опозданием — сдвиг встречи на slip
+  function navCorrect(s, at, fix) {
+    const fl = s.flight, dv = fix.dv / FL.units.C_KMS; fl.navFix = +fix.dv.toFixed(2);
+    if (fix.slip > 0) return navShift(s, at, fix.slip, { id: `corr.${fl.n}`, dur: fl.rendezvousAt + fix.slip - at, dv }, 'corr');
+    legAdd(s, { id: `corr.${fl.n}`, t1: fl.rendezvousAt, dur: fl.rendezvousAt - at, dv }); fl.legs = [fl.leg, `corr.${fl.n}`];
+  }
+  const navDays = (n, lang) => lang === 'ru' ? `${n} ${plural(n, ['сутки', 'суток', 'суток'])}` : `${n} day${n === 1 ? '' : 's'}`;
+  const O_PERIOD = (sys, id) => 2 * Math.PI / Math.sqrt(sys.bodies[id].mu / Math.pow(sys.bodies[id].a, 3));
+  // доля Δv по графику на доле времени x (как legSched, без dv)
+  function schedAt(P, x) { let lo = 0, hi = P.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= x) lo = m; else hi = m; }
+    const a = P[lo], b = P[hi], u = b[0] > a[0] ? Math.max(0, Math.min(1, (x - a[0]) / (b[0] - a[0]))) : 1; return a[1] + (b[1] - a[1]) * u; }
+  function flightNavDecision(s, ev) {
+    const fl = s.flight, fix = navFix(s, ev.at, ev.km), P = Math.round(O_PERIOD(flightSys(s), fl.body) * 365.25), kms = x => nf(x, 1, 'ru'), kmsE = x => nf(x, 1, 'en');
+    const where = { ru: ev.ahead ? 'впереди' : 'позади', en: ev.ahead ? 'ahead of' : 'behind' }, tk = Math.round(ev.km / 1000);
+    const late = fix && fix.slip > 0 ? Math.ceil(fix.slip * 365.25) : 0, left = (y, lang) => f1(Math.max(0, y.reserve - 100 * fix.dv / FL.units.C_KMS / y.reserveDv), lang);
+    const opts = [];
+    if (fix) opts.push({ id: 'correct', label: { ru: 'Коррекция окна', en: 'Correct the window' },
+      known: { ru: y => [`Δv коррекции — ${kms(fix.dv)} км/с; резерв манёвров после — ${left(y, 'ru')}%.`, late ? `Встреча — на ${navDays(late, 'ru')} позже: двигатель на пределе запаса тяги.` : 'Дата встречи прежняя; двигатель — ближе к пределу.'],
+        en: y => [`Correction Δv — ${kmsE(fix.dv)} km/s; manoeuvre reserve after — ${left(y, 'en')}%.`, late ? `The rendezvous is ${navDays(late, 'en')} later: the engine at the limit of its thrust margin.` : 'The rendezvous date stays; the engine runs closer to its limit.'] },
+      effect: y => navCorrect(y, y.year, fix),
+      record: late ? { ru: `Навигаторы закладывают коррекцию: встреча — на ${navDays(late, 'ru')} позже.`, en: `The navigators load a correction: the rendezvous is ${navDays(late, 'en')} later.` }
+        : { ru: 'Навигаторы закладывают коррекцию: встреча — в прежний день.', en: 'The navigators load a correction: the rendezvous stays on the same day.' } });
+    opts.push({ id: 'wait', label: { ru: 'Орбита ожидания', en: 'A waiting orbit' },
+      known: { ru: y => [`Корабль держится у планеты ${P} суток — до следующего окна; удержание — ${kms(NAV.hold)} км/с.`, `Ещё ${P} суток вахты: износ и регламент идут.`],
+        en: y => [`The ship holds near the planet for ${P} days — until the next window; station-keeping — ${kmsE(NAV.hold)} km/s.`, `${P} more days of watch: wear and maintenance go on.`] },
+      effect: y => navHold(y, y.year),
+      record: { ru: `Совет выбирает орбиту ожидания: встреча — через ${P} суток.`, en: `The council chooses a waiting orbit: the rendezvous is ${P} days later.` } });
+    return {
+      id: 'd.flight.nav', scene: 'arrival', kind: 'decision',
+      title: { ru: 'Отклонение навигации', en: 'A navigation offset' },
+      rec: y => fix && y.reserve - 100 * fix.dv / FL.units.C_KMS / y.reserveDv >= 10 ? { id: 'correct', why: { ru: `коррекция стоит ${kms(fix.dv)} км/с${late ? ` и ${navDays(late, 'ru')}` : ''}, ожидание — ${navDays(P, 'ru')} вахты`, en: `a correction costs ${kmsE(fix.dv)} km/s${late ? ` and ${navDays(late, 'en')}` : ''}, waiting — ${navDays(P, 'en')} of watch` } }
+        : { id: 'wait', why: { ru: fix ? 'резерва на коррекцию почти нет' : 'тяги на коррекцию не хватит', en: fix ? 'there is almost no reserve for a correction' : 'there is not enough thrust for a correction' } },
+      context: {
+        ru: y => `Навигация уточнила орбиту планеты ${fl.body}: она на ${tk} тыс. км ${where.ru} расчёта. До сближения — ${NAV.lead} суток.${late ? ' За это время двигатель встречу не сдвинет — только с опозданием.' : ''}`,
+        en: y => `Navigation has refined the orbit of planet ${fl.body}: it is ${tk} thousand km ${where.en} the computed place. ${NAV.lead} days to the rendezvous.${late ? ' The engine cannot shift the rendezvous in that time — only with a delay.' : ''}`
+      },
+      options: opts
+    };
+  }
   // маршрут для показа (3D): данные и выборка состояний; null — у партии нет полёта внутри системы
-  function flightRoute(s) { const sys = s.flight && flightSys(s); return sys ? routeFor(sys, s.flight.end) : null; }
-  function flightSamples(s) { const sys = s.flight && flightSys(s), r = sys && routeFor(sys, s.flight.end); return r ? FL.routeSamples(sys, r) : null; }
+  function flightRoute(s) { const sys = s.flight && flightSys(s); return sys ? routeFor(sys, s.flight.end, s.flight.variant || 'late') : null; }
+  function flightSamples(s) { const r = flightRoute(s); return r ? FL.routeSamples(flightSys(s), r) : null; }   // выбранный вариант плана встречи
 
     return {
       names: {
         FL, MSYS, ROUTES, flightSys, profileEnd, arriveView, arrivalAt, arrivalYear, tableOk, MEMO, routeFor, SCHED_KMS, schedOf, flightState,
-        flightBound, flightPlan, flightArrive, flightRoute, flightSamples
+        flightBound, flightPlan, captureOf, flightOptions, flightChoose, FLIGHT_MARKS, markAt, flightMarkNext, flightMark, flightArrive, NAV, navRoll,
+        navFix, navAt, navShift, navHold, navCorrect, navDays, O_PERIOD, schedAt, flightNavDecision, flightRoute, flightSamples
       },
       link: __link
     };

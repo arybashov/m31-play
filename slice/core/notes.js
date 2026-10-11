@@ -248,6 +248,7 @@
       : ev.kind === 'wear' ? (ev.type === 'shop' ? (ru ? 'Требуется решение совета: что мастерская делает со снятыми насосами.' : 'Council decision required: what the workshop does with removed pumps.')
         : ev.type === 'reg' ? (ru ? 'Требуется решение совета: регламент не успевает.' : 'Council decision required: maintenance is falling behind.')
         : ev.type === 'term' ? (ru ? 'Требуется решение совета: смена отслужила обещанный срок.' : 'Council decision required: the watch has served its promised term.')
+        : ev.type === 'nav' ? (ru ? 'Требуется решение совета: отклонение навигации перед встречей.' : 'Council decision required: a navigation offset before the rendezvous.')
         : ev.type === 'danger' ? (/^C\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — груз ${ev.id}.` : `Council decision required: a dangerous node — cargo ${ev.id}.`)
           : /^T\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — течь бака ${ev.id}.` : `Council decision required: a dangerous node — a leak in tank ${ev.id}.`)
           : /\.bearing$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — опора кольца ${ev.id.split('.')[0]}.` : `Council decision required: a dangerous node — ring ${ev.id.split('.')[0]}'s bearing.`)

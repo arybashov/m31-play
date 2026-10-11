@@ -4,12 +4,12 @@
   'use strict';
   const wearCards = __core => {
     let CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan,
-    cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush,
-    fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf,
-    profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync,
-    techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision,
-    wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
-    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, fuelBusy, fuelFlush, fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
+    cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, flightMark, flightMarkNext,
+    flightNavDecision, fuelBusy, fuelFlush, fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext,
+    nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome,
+    streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn,
+    wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, flightMark, flightMarkNext, flightNavDecision, fuelBusy, fuelFlush, fuelSpan, hidden, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -223,6 +223,7 @@
     if (ev.type === 'shop') return wearShopDecision(s, ev);
     if (ev.type === 'reg') return wearRegDecision(s, ev);
     if (ev.type === 'term') return humanTermDecision(s, ev);
+    if (ev.type === 'nav') return flightNavDecision(s, ev);
     if (ev.type === 'danger') return wearDangerDecision(s, ev);
     const L = ev.loop, full = true, moved = Object.keys(ev.plan || {});   // карточка — только когда перестановка покрыла все группы
     return {
@@ -442,7 +443,10 @@
     { id: 'term', next: (s, t0, t1) => { const b = termNext(s, t0, t1); return b && { at: b.at, cause: null, go: () => { s.human.term.asked = s.human.term.until;
       if (b.auto) { termRotate(s, b.at); return null; }                   // порядок ротации выбран — без карточки
       s.year = Math.max(s.year, b.at); return { kind: 'wear', type: 'term', at: b.at }; } }; } },
-    { id: 'flight', next: (s, t0, t1) => { const fl = s.flight; if (!fl || fl.orbitAt != null || fl.failedAt != null || !(fl.planetOrbitAt <= t1)) return null;
+    { id: 'flight', next: (s, t0, t1) => { const fl = s.flight; if (!fl || fl.orbitAt != null || fl.failedAt != null) return null;
+      const mk = flightMarkNext(s, t1);                                  // вехи подхода (вход, захват, сближение) — раньше орбиты
+      if (mk && !(fl.planetOrbitAt < mk.at)) { const at = Math.max(t0, mk.at); return { at, cause: null, go: () => { s.year = Math.max(s.year, at); return flightMark(s, mk.m) || null; } }; }
+      if (!(fl.planetOrbitAt <= t1)) return null;
       const at = Math.max(t0, fl.planetOrbitAt); return { at, cause: 'flight.orbit', go: () => { flightArrive(s, at); return null; } }; } },
     // регламент: узлы сетки в четверть года (множитель старения по отставанию, спрос по году рейса); сама работа — тик в начале хода
     // устойчиво (долга нет, старение штатное, людей — ровно по спросу и хватает, материалы есть, никто не учится) — промежуточные

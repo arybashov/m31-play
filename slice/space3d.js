@@ -922,6 +922,28 @@
     sysFlare.tgt.a = band(tD, 3e-7, 3e-6, 1e9, 1e9) * nearT; sysFlare.tgt.s = band(tD, 3e-6, 3e-5, 3e-3, 0.05);
     if (world.arrive) tsysParts.c.position.copy(cPos(world.year));
     tsysParts.Ab.position.copy(sysVec(MSYS.bodyAt(SYS, 'Ab', world.year).r));   // Ab — по Кеплеру (раньше — равномерный истинный угол)
+    routeLine(orbitA);                                                   // траектория маршрута в системе
+  }
+  // траектория маршрута в системе (полёт внутри системы, шаг 5): та же выборка модели, что даёт положение корабля, даты и
+  // расход; тонкая линия без свечения — от 50 а.е. до орбиты планеты. Перестраивается, когда меняется маршрут
+  let rLine = null, rSrc = null;
+  function routeLine(alpha) {
+    const S = world.flight ? flightSamplesOf() : null;
+    if (S !== rSrc) {
+      if (rLine) { tsys.remove(rLine); rLine.geometry.dispose(); rLine.material.dispose(); rLine = null; }
+      rSrc = S;
+      if (S && S.length > 1 && targetInfo.star === EIND.name) {
+        const step = Math.max(1, Math.floor(S.length / 600)), pts = [], H = world.flight.hold, turn = H ? cAng(H.at + H.dur) - cAng(H.at) : 0;
+        const at = i => H && S[i].t > H.at ? rotZ(S[i].y, turn) : S[i].y;   // встреча позже: захват повёрнут вместе с планетой
+        for (let i = 0; i < S.length; i += step) {
+          if (H && S[i].t > H.at && (i < step || S[i - step].t <= H.at)) for (let k = 0; k <= 32; k++) pts.push(sysVec(holdPoint(S, H, H.at + H.dur * k / 32)));
+          pts.push(sysVec(at(i))); }
+        pts.push(sysVec(at(S.length - 1)));
+        rLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x8fb4cf, transparent: true, opacity: 0.6, depthTest: false }));
+        rLine.userData.base = 0.6; tsys.add(rLine);
+      }
+    }
+    if (rLine) fadeObj(rLine, alpha, rLine.userData.base);
   }
   function drawTargetLabels(put, rel, dly) {
     if (!tsys || !tsys.visible) return;
@@ -1948,20 +1970,40 @@
   // полёт внутри системы (проект «Полёт внутри системы v1», шаг 4): после входа на 50 а.е. — траектория маршрута модели
   // (flight.js: те же состояния, что дают даты и расход топлива); после выхода на орбиту — у планеты: смещение конца маршрута
   // вращается с периодом круговой орбиты. null — маршрута нет или корабль ещё до входа
+  // выборка маршрута — по запросу и один раз на маршрут (прогон траектории не нужен, пока корабль не в системе и её не видно)
+  let fKey = null, fVal = null;
+  function flightSamplesOf() { const fl = world.flight; if (!fl) return null; if (fl.key !== fKey) { fKey = fl.key; fVal = null; } return fVal || (fVal = fl.get ? fl.get() : fl.samples || null); }
+  // эрмитова интерполяция выборки по положению и скорости (а.е., а.е./год): гладко между точками
+  function sampleAt(S, y) {
+    let lo = 0, hi = S.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (S[m].t <= y) lo = m; else hi = m; }
+    const a = S[lo], b = S[hi], h = b.t - a.t, u = h > 0 ? Math.max(0, Math.min(1, (y - a.t) / h)) : 0;
+    const h00 = 2 * u * u * u - 3 * u * u + 1, h10 = u * u * u - 2 * u * u + u, h01 = -2 * u * u * u + 3 * u * u, h11 = u * u * u - u * u;
+    return [0, 1, 2].map(i => h00 * a.y[i] + h10 * h * a.y[3 + i] + h01 * b.y[i] + h11 * h * b.y[3 + i]);
+  }
+  // встреча позже (отклонение навигации: орбита ожидания или коррекция с опозданием): от сближения корабль у планеты — смещение
+  // поворачивается вместе с ней; потом — захват, повёрнутый на угол, на который планета ушла за время задержки (у оборота — 0)
+  const cAng = y => { const c = MSYS.bodyAt(SYS, 'c', y); return Math.atan2(c.r[1], c.r[0]); };
+  const rotZ = (v, a) => { const cs = Math.cos(a), sn = Math.sin(a); return [v[0] * cs - v[1] * sn, v[0] * sn + v[1] * cs, v[2]]; };
+  function holdPoint(S, H, y) {
+    const m = sampleAt(S, H.at), c0 = MSYS.bodyAt(SYS, 'c', H.at), c1 = MSYS.bodyAt(SYS, 'c', y);
+    const d = rotZ([m[0] - c0.r[0], m[1] - c0.r[1], m[2] - c0.r[2]], cAng(y) - cAng(H.at));
+    return [c1.r[0] + d[0], c1.r[1] + d[1], c1.r[2] + d[2]];
+  }
   function flightPos(y) {
-    const fl = world.flight; if (!fl || !fl.samples || !fl.samples.length || !tsysAx || !SYS || targetInfo.star !== EIND.name || y < fl.samples[0].t) return null;
-    const S = fl.samples, last = S[S.length - 1];
+    const fl = world.flight; if (!fl || !tsysAx || !SYS || targetInfo.star !== EIND.name || !(y >= fl.entryAt - 1e-9)) return null;
+    const S = flightSamplesOf(); if (!S || !S.length || y < S[0].t) return null;
+    const H = fl.hold, y0 = y; let turn = 0;
+    if (H && y > H.at) {
+      if (y <= H.at + H.dur) return tsysAx.C0.clone().add(sysVec(holdPoint(S, H, y)));
+      y -= H.dur; turn = cAng(H.at + H.dur) - cAng(H.at); }
+    const last = S[S.length - 1];
     if (y >= last.t) {
       const c = MSYS.bodyAt(SYS, 'c', last.t), rx = last.y[0] - c.r[0], ry = last.y[1] - c.r[1], rz = last.y[2] - c.r[2];
-      const R = Math.hypot(rx, ry, rz), mu = ORB.units.MU_SUN * SYS.bodies.c.mass, w = Math.sqrt(mu / (R * R * R)) * (y - last.t);   // рад (а.е., годы)
+      const R = Math.hypot(rx, ry, rz), mu = ORB.units.MU_SUN * SYS.bodies.c.mass, w = Math.sqrt(mu / (R * R * R)) * (y - last.t) + turn;   // рад (а.е., годы)
       const cw = Math.cos(w), sw = Math.sin(w);                          // обращение — в плоскости орбит (вокруг n), как у планеты
-      return tsysAx.C0.clone().add(cPos(y)).add(sysVec([rx * cw - ry * sw, rx * sw + ry * cw, rz]));
+      return tsysAx.C0.clone().add(cPos(y0)).add(sysVec([rx * cw - ry * sw, rx * sw + ry * cw, rz]));
     }
-    let lo = 0, hi = S.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (S[m].t <= y) lo = m; else hi = m; }
-    const a = S[lo], b = S[hi], h = b.t - a.t, u = h > 0 ? (y - a.t) / h : 0;
-    // эрмитова интерполяция по положению и скорости (а.е., а.е./год): гладко между точками выборки
-    const h00 = 2 * u * u * u - 3 * u * u + 1, h10 = u * u * u - 2 * u * u + u, h01 = -2 * u * u * u + 3 * u * u, h11 = u * u * u - u * u;
-    const r = [0, 1, 2].map(i => h00 * a.y[i] + h10 * h * a.y[3 + i] + h01 * b.y[i] + h11 * h * b.y[3 + i]);
+    const r = rotZ(sampleAt(S, y), turn);
     // стык с межзвёздным путём показа: тот начинается от Земли (смещение до 1 а.е. от линии Солнце → звезда), маршрут — от линии.
     // Разница в точке входа гаснет за первую половину маршрута (только показ: модель — маршрут), без скачка камеры
     const p0 = pathPoint(distLy(S[0].t)).sub(tsysAx.C0.clone().add(sysVec(S[0].y))), k = Math.min(1, (y - S[0].t) / (0.5 * (last.t - S[0].t)));
@@ -2825,6 +2867,8 @@
     return { S: world.support, year: world.year, mode: sup.mode, farM: sup.farM, dF: P ? cam.F.clone().sub(P).length() * LY : null, ndc: [+o.x.toFixed(3), +o.y.toFixed(3), +o.z.toFixed(3)], pivot: cam.pivot, dist: cam.dist, focus: cam.focus, shift: viewShift }; };                 // отладка: ракурс без перелёта (снимки в скрытой панели)
   // отладка: где центр масс в кадре (−1…1) и как идёт поворот корпуса — проверка «поворот вокруг центра масс»
   // проверка непрерывности: положение корабля на год y (сцена, св. годы), без смены кадра
+  api.debugRouteLine = function () { return { line: rLine ? rLine.geometry.attributes.position.count : 0, tsys: !!tsys && tsys.visible, opacity: rLine ? +rLine.material.opacity.toFixed(3) : null,
+    flight: world.flight ? (fVal ? fVal.length : 'не запрошена') : null, star: targetInfo.star }; };
   api.debugShipAt = function (y) { const y0 = world.year; world.year = y; const p = shipPos(); world.year = y0; return [p.x, p.y, p.z]; };
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
   const goLog = []; api.debugGoLog = () => goLog.slice();

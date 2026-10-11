@@ -185,14 +185,21 @@
     return { ok: Emax < 0 && rmin > 0.8 * R && rmax < 1.2 * R, rminKm: rmin * U.AU_KM, rmaxKm: rmax * U.AU_KM, bound: Emax < 0 };
   }
   // построение маршрута (медленно: перебор, секунды; в игре — таблица routes.js): лучший выполнимый — минимум полного Δv
-  function planRoute(M, sys, id, e, opt = {}) {
+  // кандидаты участка H: перебор длительности и p, только под пределом
+  function routeCands(M, sys, id, e, opt = {}) {
     const aref = accAU(M.ENGINE_ACC), lim0 = limitAt(M, e), ctx = ctxOf(sys, id), cand = [];
     for (const Td of opt.TH || ROUTE.TH) {
       let hs; try { hs = legH(M, sys, id, e, Td / 365.25, aref); } catch (x) { continue; }
       for (const h of hs) { const pk = peak(M, ctx, h.p, aref, e, h.T, h.lam, lim0); if (pk.ratio <= ROUTE.MARGIN) cand.push(Object.assign(h, pk)); }
     }
-    cand.sort((a, b) => a.dv - b.dv);
-    for (const h of cand) {
+    return cand;
+  }
+  // выбор маршрута из кандидатов: order 'dv' — минимум Δv («позже, экономнее»), 'time' — самый ранний («раньше»); у кандидата
+  // должен найтись захват под пределом и держащаяся орбита
+  function routePick(M, sys, id, e, cand, order = 'dv') {
+    const aref = accAU(M.ENGINE_ACC), lim0 = limitAt(M, e), ctx = ctxOf(sys, id);
+    const list = cand.slice().sort(order === 'time' ? (a, b) => a.T - b.T || a.dv - b.dv : (a, b) => a.dv - b.dv);
+    for (const h of list) {
       const t0 = e.t + h.T;
       for (const Td of ROUTE.TP) {
         let c; try { c = legP(sys, id, t0, h.end, Td / 365.25, aref); } catch (x) { c = null; }
@@ -206,12 +213,35 @@
     }
     return null;
   }
+  // построение маршрута (медленно: перебор, секунды; в игре — таблица routes.js)
+  const planRoute = (M, sys, id, e, opt = {}) => routePick(M, sys, id, e, routeCands(M, sys, id, e, opt), opt.order || 'dv');
+  // оба варианта плана встречи из одних кандидатов: позже (минимум Δv) и раньше (самый ранний; null — совпадает с поздним)
+  function planRoutes(M, sys, id, e, opt = {}) {
+    const cand = routeCands(M, sys, id, e, opt), late = routePick(M, sys, id, e, cand, 'dv'), early = routePick(M, sys, id, e, cand, 'time');
+    return { late, early: early && late && early.planetOrbitAt < late.planetOrbitAt - 1e-9 ? early : null };
+  }
   // маршрут как данные: даты, Δv (доли c и км/с), участки; восстанавливается из λ0 (таблица) прогоном
   function routeOf(M, sys, id, e, H, P, vf) {
     const toC = x => x * U.AUYR_KMS / U.C_KMS;
     return { v: 1, sys: sys.id, body: id, aref: accAU(M.ENGINE_ACC), entry: { t: e.t, r: e.r, v: e.v }, H, P,
       entryAt: e.t, rendezvousAt: e.t + H.T, planetOrbitAt: e.t + H.T + P.T, dv: toC(H.dv + P.dv), dvKms: (H.dv + P.dv) * U.AUYR_KMS,
       ratio: Math.max(H.ratio, P.ratio), verify: vf };
+  }
+  // захват звездой: первая точка выборки с отрицательной энергией относительно звезды (null — не захвачен)
+  function captureT(sys, pts) {
+    for (const x of pts) { const R = Math.hypot(x.y[0], x.y[1], x.y[2]), v = Math.hypot(x.y[3], x.y[4], x.y[5]); if (v * v / 2 - sys.mu / R < 0) return x.t; }
+    return null;
+  }
+  // график расхода маршрута: пары [доля времени, доля Δv] — ломаная, отличающаяся от интеграла тяги выборки не больше kms
+  // (упрощение Дугласа — Пекера); стык участков H и P (tH) — всегда точка графика. dv — интеграл тяги выборки (а.е./год)
+  function schedPairs(pts, t0, t1, tH, kms) {
+    const T = t1 - t0, tot = pts[pts.length - 1].dv, eps = kms / U.AUYR_KMS;
+    const keep = new Set([0, pts.length - 1, pts.findIndex(x => x.t >= tH - 1e-12)]);
+    const simplify = (a, b) => { let m = -1, w = eps;
+      for (let k = a + 1; k < b; k++) { const x = pts[a].dv + (pts[b].dv - pts[a].dv) * (pts[k].t - pts[a].t) / (pts[b].t - pts[a].t), d = Math.abs(pts[k].dv - x); if (d > w) { w = d; m = k; } }
+      if (m >= 0) { keep.add(m); simplify(a, m); simplify(m, b); } };
+    const ks = [...keep].sort((a, b) => a - b); for (let i = 0; i + 1 < ks.length; i++) simplify(ks[i], ks[i + 1]);
+    return { dv: tot, pairs: [...keep].sort((a, b) => a - b).map(k => [Math.min(1, Math.max(0, (pts[k].t - t0) / T)), pts[k].dv / tot]) };
   }
   // прогон маршрута: состояние на год t (до входа — по линии подлёта не определено: null), тяга; кэш выборки по ключу
   const SAMPLES = new Map();
@@ -229,7 +259,7 @@
   }
 
   const api = { units: Object.assign({ ACC_UNIT, LY_AU }, U), ROUTE, accAU, accMS, add, mul, dot, norm, unit, cross, gravity, motion, control, optimal, integrate,
-    entryAt, entryState, meetPoint, orbitPoint, limitAt, shoot, newton, legH, legP, peak, verifyOrbit, planRoute, routeOf, routeSamples };
+    entryAt, entryState, meetPoint, orbitPoint, limitAt, shoot, newton, legH, legP, peak, verifyOrbit, routeCands, routePick, planRoute, planRoutes, routeOf, routeSamples, captureT, schedPairs };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Flight = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
