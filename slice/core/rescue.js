@@ -3,9 +3,9 @@
 (function (root) {
   'use strict';
   const rescue = __core => {
-    let M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural,
-    popName, ppl, rescueS, spendPct, thawN, xyl, yr;
-    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr } = __core); };
+    let M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, flightPlan, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart,
+    opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr;
+    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, flightPlan, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr } = __core); };
     __link();
 
   // ---- спасатель v3 (rescueS): реестр Оттепели, тепловой срок секции, торможение, крепление, площадка
@@ -63,16 +63,17 @@
     cut: { ru: 'отсечь повреждённую секцию', en: 'cut off the damaged section' }, proceed: { ru: 'сразу к операции, без отдельной помощи секции', en: 'straight to the operation, with no separate help for the section' },
     move: { ru: 'перенос — дольше срока секции', en: 'moving — longer than the section deadline' }, restore: { ru: 'восстановление склада — дольше срока секции', en: 'restoring the store — longer than the section deadline' },
     wake: { ru: 'пробуждение — дольше срока секции', en: 'waking — longer than the section deadline' }, grab: { ru: 'захват без осмотра', en: 'grappling without inspection' }, inspect: { ru: 'осмотр крепления', en: 'a mount inspection' } };
-  // торможение: поправка — только к точному прибытию (целый год пути и пройденный дрейф не сдвигаются)
+  // торможение: поправка — только к точному прибытию (целый год пути и пройденный дрейф не сдвигаются). План прибытия —
+  // к цели (у полёта внутри системы — по нынешнему маршруту), от него — срок протекающей секции
   function brakeApply(st, method) {
-    st.brakeMethod = method; st.arrivePlan = arriveX(st);
+    st.brakeMethod = method; st.arrivePlan = arriveX(st); st.profilePlan = st.arriveExact;
     st.brakeFound = method === 'measure' && brakeLong(st) && (hidden(st, 'rescue.brake.check') ?? 1) < RESCUE.longSense;
     if (method === 'burn' || st.brakeFound) spendPct(st, dvPct(st, RESCUE.burn));
   }
   // навигационная сверка: протяжённость участка установлена по факту, поправка — к точному прибытию
   function brakeSettle(st) {
     st.brakeLong = brakeLong(st);
-    if (st.brakeLong && st.brakeMethod !== 'burn' && !st.brakeFound) { st.brakeDelay = RESCUE.delay; st.arriveExact = st.arrivePlan + RESCUE.delay / YD; }
+    if (st.brakeLong && st.brakeMethod !== 'burn' && !st.brakeFound) { st.brakeDelay = RESCUE.delay; st.arriveExact = (st.profilePlan ?? st.arriveExact) + RESCUE.delay / YD; flightPlan(st); }
   }
   // крепление: при надломе захват срывает трубопровод в конце работ — секции остаётся не больше двенадцати суток
   function dockApply(st, method) {

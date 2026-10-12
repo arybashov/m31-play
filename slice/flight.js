@@ -243,11 +243,130 @@
     const ks = [...keep].sort((a, b) => a - b); for (let i = 0; i + 1 < ks.length; i++) simplify(ks[i], ks[i + 1]);
     return { dv: tot, pairs: [...keep].sort((a, b) => a - b).map(k => [Math.min(1, Math.max(0, (pts[k].t - t0) / T)), pts[k].dv / tot]) };
   }
+  // ---------------------------------------------------------------- маршрут «спираль» (v2: красные карлики)
+  // DOC «Полёт внутри системы v2 — Ксилона и Оттепель». Цель — в 0,05 а.е. от карлика: тяготение звезды там в ~17 раз сильнее
+  // тяги, одна оптимальная дуга к цели не строится (семейство решений обрывается). Участки (route системы — systems.js):
+  //   S — от 50 а.е. до промежуточной круговой орбиты rs (плоскость орбит цели, угол th, прямое обращение): оптимальная тяга,
+  //       как H; цели в динамике нет — участок не зависит от года (сдвиг во времени). Решения — таблица: угол × длительность;
+  //   W — ожидание окна: свободный полёт по промежуточной орбите, пока фаза цели не подойдёт (без расхода);
+  //   Z — спуск по спирали к орбите цели: наведение по скорости (круговая скорость и снижение ṙ = −2·a_t·√(r³/μ)), тяга ≤ AMAX
+  //       предела; спирали системы — по доле a_t (ATS: медленнее — дешевле); поворот вокруг звезды; конец — на орбите цели,
+  //       backKm позади неё;
+  //   N — сближение у цели: сутки и Δv — проектное допущение (route.near); показ — плавный переход к орбите у цели.
+  const SPIRAL = { TH: [280, 290, 300, 310], ANG: [90, 112.5, 135, 157.5], AMAX: 0.85, ATS: [0.6, 0.8, 1], TAU_D: 0.5, DVH_KMS: 580, CHUNK_D: 0.05, HOLD_KM: 2 };
+  const rotZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return [v[0] * c - v[1] * s, v[0] * s + v[1] * c, v[2]]; };
+  function stagePoint(sys, th) { const rs = sys.route.rs, vc = Math.sqrt(sys.mu / rs); return { r: [rs * Math.cos(th), rs * Math.sin(th), 0], v: [-vc * Math.sin(th), vc * Math.cos(th), 0] }; }
+  // участок S за T к углу th: прямое решение со звездой, иначе продолжение по её массе → p по списку; решения по каждому p
+  function legStage(M, sys, e, T, th, aref) {
+    const tg = stagePoint(sys, th), ctx = { mu: sys.mu, body: null }, out = [];
+    let lam = guess(e, T, tg, aref), r = newton(ctx, 2, aref, e, T, lam, tg);
+    if (r.nR > TOL_AU) for (const k of [1e-9, 0.2, 0.4, 0.6, 0.8, 0.9, 1]) { r = newton({ mu: sys.mu * k, body: null }, 2, aref, e, T, lam, tg); if (r.nR > TOL_AU) return out; lam = r.lam; }
+    lam = r.lam; let p0 = 2;
+    for (const p of ROUTE.P) {
+      if (p !== p0) { r = newton(ctx, p, aref, e, T, rescale(lam, p0, p), tg); if (r.nR > TOL_AU) break; lam = r.lam; p0 = p; }
+      out.push({ T, p, lam: lam.slice() });
+    }
+    return out;
+  }
+  // решения участка S (медленно; в игре — таблица): по углам и длительностям — p под пределом с минимумом Δv
+  function stageRows(M, sys) {
+    const e = entryAt(M, sys, 100, 50), aref = accAU(M.ENGINE_ACC), lim0 = limitAt(M, e), ctx = { mu: sys.mu, body: null }, rows = [];
+    for (const deg of SPIRAL.ANG) for (const Td of SPIRAL.TH) {
+      let hs; try { hs = legStage(M, sys, e, Td / 365.25, deg * Math.PI / 180, aref); } catch (x) { continue; }
+      let best = null;
+      for (const h of hs) { const pk = peak(M, ctx, h.p, aref, e, h.T, h.lam, lim0); if (pk.ratio <= ROUTE.MARGIN && (!best || pk.dv < best.dv)) best = { th: deg * Math.PI / 180, T: h.T, p: h.p, lam: h.lam, dv: pk.dv, ratio: pk.ratio }; }
+      if (best) rows.push(best);
+    }
+    return rows;
+  }
+  // спираль системы с долей тяги ka (кэш): от промежуточной орбиты (угол 0, год 0) до орбиты цели — выборка, длительность, Δv,
+  // пройденный угол. Конец — на границе куска CHUNK_D, когда орбита у радиуса цели и почти круговая (детерминированно)
+  const SPIRALS = new Map();
+  function spiralOf(M, sys, ka) {
+    const key = `${sys.id}|${ka}`; if (SPIRALS.has(key)) return SPIRALS.get(key);
+    const mu = sys.mu, rs = sys.route.rs, rt = sys.bodies[sys.target].a, e = entryAt(M, sys, 100, 50), VE = M.VE * U.C_KMS / U.AUYR_KMS;
+    const amax = SPIRAL.AMAX * limitAt(M, e) * Math.exp(SPIRAL.DVH_KMS / U.AUYR_KMS / VE), at = ka * amax, tau = SPIRAL.TAU_D / 365.25, z = [0, 0, 1];
+    const ctl = y => { const r = [y[0], y[1], y[2]], v = [y[3], y[4], y[5]], R = norm(r), rh = mul(r, 1 / R), th = unit(cross(z, rh));
+      const k = Math.min(1, Math.max(0, (R - rt) / (0.15 * rt))), vdes = add(mul(th, Math.sqrt(mu / R)), rh, -2 * at * k * Math.sqrt(R * R * R / mu));
+      const a = add(mul(th, -at * k), add(vdes, v, -1), 1 / tau), m = norm(a); return m > amax ? mul(a, amax / m) : a; };
+    const f = (t, y) => { const R = Math.hypot(y[0], y[1], y[2]), g = -mu / (R * R * R), a = ctl(y); return [y[3], y[4], y[5], g * y[0] + a[0], g * y[1] + a[1], g * y[2] + a[2], norm(a)]; };
+    const ecc = y => { const r = y.slice(0, 3), v = y.slice(3, 6); return norm(add(mul(cross(v, cross(r, v)), 1 / mu), unit(r), -1)); };
+    let t = 0, y = [rs, 0, 0, 0, Math.sqrt(mu / rs), 0, 0], th = 0, prev = 0;
+    const pts = [{ t: 0, y: y.slice(0, 6), dv: 0, a: norm(ctl(y)) }];
+    for (;;) {
+      const r = integrate(f, t, y, t + SPIRAL.CHUNK_D / 365.25, { tol: 1e-10, abs: 1e-12, errN: 6, sample: true });
+      for (const x of r.samples.slice(1)) pts.push({ t: x.t, y: x.y.slice(0, 6), dv: x.y[6], a: norm(ctl(x.y)) });
+      t = r.t; y = r.y; const ang = Math.atan2(y[1], y[0]); let d = ang - prev; if (d < -Math.PI) d += 2 * Math.PI; if (d > Math.PI) d -= 2 * Math.PI; th += d; prev = ang;
+      if (Math.abs(norm(y.slice(0, 3)) - rt) < 1e-4 * rt && ecc(y) < 1e-3) break;
+      if (t > 0.3) throw new Error('flight.spiralOf: спираль не сошлась');
+    }
+    const sp = { ka, T: t, dv: y[6], theta: th, pts, amax, ratio: SPIRAL.AMAX };
+    SPIRALS.set(key, sp); return sp;
+  }
+  // ожидание окна с года tS на промежуточной орбите у угла th: после ожидания w и спирали корабль — backKm позади цели
+  const angleAt = (b, t) => { const st = O.stateAt(b, t); return Math.atan2(st.r[1], st.r[0]); };
+  function windowWait(sys, th, tS, sp) {
+    const rs = sys.route.rs, b = sys.bodies[sys.target], ws = Math.sqrt(sys.mu / (rs * rs * rs)), n = Math.sqrt(b.mu / (b.a * b.a * b.a)), P = 2 * Math.PI;
+    const X = angleAt(b, tS + sp.T) - th - sp.theta - sys.route.backKm / U.AU_KM / b.a;
+    return ((-X % P) + P) % P / (n - ws);
+  }
+  // маршрут «спираль» для входа e по строке решений row { th, T, p, lam, dv, ratio } и доле тяги спирали ka (поля — как у
+  // маршрута к планете)
+  function spiralRoute(M, sys, e, row, ka) {
+    const sp = spiralOf(M, sys, ka), nr = sys.route.near, tS = e.t + row.T, w = windowWait(sys, row.th, tS, sp), tR = tS + w + sp.T;
+    const tot = row.dv + sp.dv + nr.dvKms / U.AUYR_KMS;
+    return { v: 1, kind: 'spiral', row, sys: sys.id, body: sys.target, aref: accAU(M.ENGINE_ACC), entry: { t: e.t, r: e.r, v: e.v },
+      H: { T: row.T, p: row.p, lam: row.lam, dv: row.dv, ratio: row.ratio }, th: row.th, ka, entryAt: e.t, stageAt: tS, spiralAt: tS + w, rendezvousAt: tR,
+      planetOrbitAt: tR + nr.days / 365.25, dv: tot * U.AUYR_KMS / U.C_KMS, dvKms: tot * U.AUYR_KMS, ratio: Math.max(row.ratio, sp.ratio), verify: { ok: true } };
+  }
+  // варианты плана встречи по строкам × спиралям: позже — минимум Δv; раньше — самое раннее прибытие (null — не раньше суток)
+  function spiralRoutes(M, sys, e, rows) {
+    const list = []; for (const ka of SPIRAL.ATS) for (const row of rows) list.push(spiralRoute(M, sys, e, row, ka));
+    const late = list.slice().sort((a, b) => a.dv - b.dv || a.planetOrbitAt - b.planetOrbitAt)[0] || null;
+    const early = list.slice().sort((a, b) => a.planetOrbitAt - b.planetOrbitAt || a.dv - b.dv)[0] || null;
+    return { late, early: early && late && early.planetOrbitAt < late.planetOrbitAt - 1 / 365.25 ? early : null };
+  }
+  // график расхода маршрута «спираль»: участок S (пары из таблицы или выборки), ожидание (ровно), спираль, сближение (линейно)
+  function spiralSched(M, sys, r, hPairs, kms) {
+    const sp = spiralOf(M, sys, r.ka), spPairs = sp.sched || (sp.sched = schedPairs(sp.pts, 0, sp.T, sp.T, kms).pairs);
+    const tot = r.H.dv + sp.dv + sys.route.near.dvKms / U.AUYR_KMS, t0 = r.entryAt, T = r.planetOrbitAt - t0, abs = [];
+    for (const [x, f] of hPairs) abs.push([t0 + x * r.H.T, f * r.H.dv]);
+    for (const [x, f] of spPairs) abs.push([r.spiralAt + x * sp.T, r.H.dv + f * sp.dv]);
+    abs.push([r.planetOrbitAt, tot]);
+    return { dv: tot, pairs: abs.map(([t, d]) => [Math.min(1, Math.max(0, (t - t0) / T)), d / tot]) };
+  }
+  // положение у цели относительно неё: на сближении — от конца спирали (поворачивается вместе с целью) к орбите у цели
+  // (у планеты — круговая orbitKm, прямое обращение; у форпоста — точка стоянки HOLD_KM позади); после — та же орбита
+  function nearRel(sys, r, end, t) {
+    const b = sys.bodies[sys.target], tR = r.rendezvousAt, tN = r.planetOrbitAt, c0 = bodyAtSys(sys, sys.target, tR), ang = x => angleAt(b, x);
+    const d0 = add(end.y.slice(0, 3), c0.r, -1), rel0 = rotZ(d0, ang(t) - ang(tR));
+    const R = (sys.route.orbitKm || SPIRAL.HOLD_KM) / U.AU_KM, muB = U.MU_SUN * b.mass, dN = rotZ(d0, ang(tN) - ang(tR));
+    const relF = b.mass > 0 ? (() => { const psi = Math.atan2(dN[1], dN[0]) + Math.sqrt(muB / (R * R * R)) * (t - tN); return [R * Math.cos(psi), R * Math.sin(psi), 0]; })()
+      : rotZ(mul(unit(c0.v), -R), ang(t) - ang(tR));
+    const u = Math.min(1, Math.max(0, (t - tR) / (tN - tR))), s = u * u * (3 - 2 * u);
+    return add(mul(rel0, 1 - s), relF, s);
+  }
+  const bodyAtSys = (sys, id, t) => O.stateAt(sys.bodies[id], t);
+  // выборка маршрута «спираль» (показ, проверки): S (прогон), ожидание, спираль (поворот и сдвиг), сближение у цели
+  function spiralSamples(M, sys, r) {
+    const sp = spiralOf(M, sys, r.ka), b = sys.bodies[sys.target], ws = Math.sqrt(sys.mu / Math.pow(sys.route.rs, 3)), w = r.spiralAt - r.stageAt;
+    const h = shoot({ mu: sys.mu, body: null }, r.H.p, r.aref, r.entry, r.H.T, r.H.lam, { sample: true, maxStep: 0.25 / 365.25 });
+    const pts = h.samples.map(x => ({ t: x.t, y: x.y.slice(0, 6), dv: x.y[12], a: norm(control(x.y.slice(9, 12), r.H.p, r.aref)) })), dvS = h.y[12];
+    if (w > 1e-9) { const n = Math.max(1, Math.ceil(w * 365.25 / 0.25)); for (let k = 1; k <= n; k++) { const st = stagePoint(sys, r.th + ws * w * k / n); pts.push({ t: r.stageAt + w * k / n, y: st.r.concat(st.v), dv: dvS, a: 0 }); } }
+    const a0 = r.th + ws * w;
+    for (const x of sp.pts.slice(1)) pts.push({ t: r.spiralAt + x.t, y: rotZ(x.y.slice(0, 3), a0).concat(rotZ(x.y.slice(3, 6), a0)), dv: dvS + x.dv, a: x.a });
+    const end = pts[pts.length - 1], tR = end.t, Tn = r.planetOrbitAt - tR, dvN = sys.route.near.dvKms / U.AUYR_KMS, n = Math.max(2, Math.ceil(Tn * 365.25 / 0.02)), hh = 1e-6;
+    const pos = t => add(bodyAtSys(sys, sys.target, t).r, nearRel(sys, Object.assign({}, r, { rendezvousAt: tR }), end, t));
+    for (let k = 1; k <= n; k++) { const t = tR + Tn * k / n, p = pos(t), v = mul(add(pos(t + hh), pos(t - hh), -1), 1 / (2 * hh));
+      pts.push({ t, y: p.concat(v), dv: end.dv + dvN * k / n, a: dvN / Tn }); }
+    return pts;
+  }
   // прогон маршрута: состояние на год t (до входа — по линии подлёта не определено: null), тяга; кэш выборки по ключу
   const SAMPLES = new Map();
-  function routeSamples(sys, r) {
-    const key = `${r.sys}|${r.entryAt}|${r.H.T}|${r.H.p}|${r.H.lam.join(',')}|${r.P.lam.join(',')}`;
+  function routeSamples(sys, r, M) {
+    const key = r.kind === 'spiral' ? `${r.sys}|${r.entryAt}|${r.th}|${r.H.T}|${r.H.p}|${r.ka}|${r.spiralAt}` : `${r.sys}|${r.entryAt}|${r.H.T}|${r.H.p}|${r.H.lam.join(',')}|${r.P.lam.join(',')}`;
     if (SAMPLES.has(key)) return SAMPLES.get(key);
+    if (r.kind === 'spiral') { const pts = spiralSamples(M || root.M31Mission || require('./mission.js'), sys, r); if (SAMPLES.size > 64) SAMPLES.clear(); SAMPLES.set(key, pts); return pts; }
     const ctx = ctxOf(sys, r.body), ar = r.aref;
     const h = shoot(ctx, r.H.p, ar, r.entry, r.H.T, r.H.lam, { sample: true, maxStep: 0.25 / 365.25 });   // как в planRoute (peak): тот же конец H
     const e2 = { t: r.rendezvousAt, r: h.y.slice(0, 3), v: h.y.slice(3, 6) };
@@ -259,7 +378,8 @@
   }
 
   const api = { units: Object.assign({ ACC_UNIT, LY_AU }, U), ROUTE, accAU, accMS, add, mul, dot, norm, unit, cross, gravity, motion, control, optimal, integrate,
-    entryAt, entryState, meetPoint, orbitPoint, limitAt, shoot, newton, legH, legP, peak, verifyOrbit, routeCands, routePick, planRoute, planRoutes, routeOf, routeSamples, captureT, schedPairs };
+    entryAt, entryState, meetPoint, orbitPoint, limitAt, shoot, newton, legH, legP, peak, verifyOrbit, routeCands, routePick, planRoute, planRoutes, routeOf, routeSamples, captureT, schedPairs,
+    SPIRAL, rotZ, stagePoint, legStage, stageRows, spiralOf, windowWait, spiralRoute, spiralRoutes, spiralSched, nearRel, spiralSamples };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.M31Flight = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

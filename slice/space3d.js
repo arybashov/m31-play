@@ -842,48 +842,61 @@
     const sunD = cam.F.clone().addScaledVector(offsetDir(), dly).length();
     sysFlare.sun.a = band(sunD, 3e-7, 3e-6, 1e9, 1e9) * band(dly, 0, 0, 0.04, 0.078); sysFlare.sun.s = band(sunD, 3e-6, 3e-5, 3e-3, 0.05);   // к границе вида — гаснет
   }
-  // ---------------------------------------------------------------- система ε Индейца (данные 2026 и гипотетическая c)
-  // Плоскость орбит — по Ab: наклон 102° к картинной плоскости (узел условный); c — в той же плоскости, на 0,5 а.е.
-  // Ba + Bb («Тёмная звезда») — 1 460 а.е. от A в проекции на небо; глубина по Gaia неточна.
-  const EIND = { name: 'Epsilon Indi', R_km: 0.713 * 696000, c: { a: 0.5, R_km: 6371, P_d: 146 }, Ab: { a: 15.8, e: 0.25, R_km: 74350, P_yr: 85 },
-    hz: [0.47, 0.85], B_au: 1460, B_los: 1900 };   // пара Ba/Bb: 1460 а.е. поперёк луча, 1900 — ближе к нам вдоль него (выбор автора, у потока)
-  let tsys = null, tsysAx = null;
-  // модель системы цели (проект «Полёт внутри системы v1», шаг 2): орбиты и положения тел — из systems.js / orbits.js
-  const ORB = window.M31Orbits, MSYS = window.M31Systems, SYS = MSYS && MSYS.system(EIND.name);
+  // ---------------------------------------------------------------- система цели (данные systems.js): ε Индейца, звезда Барнарда, Росс 128
+  // Строится для цели, у которой есть данные системы (лениво, при выборе цели). Плоскость орбит — по наклону planeInc к картинной
+  // плоскости (узел условный); орбиты и положения тел — из модели (systems.js / orbits.js). У ε Индейца — ещё зона жизни и пара
+  // Ba/Bb («Тёмная звезда»: 1 460 а.е. поперёк луча, 1 900 — ближе к нам вдоль него, у потока; выбор автора). Спутники (склад
+  // Оттепели на 30 000 км) в виде системы не рисуются — они на масштабе корабля
+  const ORB = window.M31Orbits, MSYS = window.M31Systems;
+  const TS_LOOK = {   // показ: радиус кадра «Цель» (а.е.), цвета, подписи-пометки
+    'Epsilon Indi': { view: 40, star: 0xffd9a8, light: 0xffc890, notes: { Ab: ['суперюпитер', 'super-Jupiter'] }, hzAt: 0.66 },
+    "Barnard's Star": { view: 0.3, star: 0xffb27a, light: 0xffa070, notes: { x: ['форпост', 'outpost'] } },
+    'Ross 128': { view: 0.3, star: 0xffb27a, light: 0xffa070, notes: {} } };
+  const TSYS = {};                                                       // построенные системы по имени звезды
+  let tsys = null, tsysAx = null, SYS = null, TGT = null, tsysParts = { orbits: [], dots: [], bodies: {} };
   const sysVec = r => tsysAx.p1.clone().multiplyScalar(r[0] * AU_LY).addScaledVector(tsysAx.p2, r[1] * AU_LY).addScaledVector(tsysAx.n, r[2] * AU_LY);   // а.е. системы → координаты сцены
-  const tsysParts = { orbits: [], dots: [] };
-  function buildTargetSystem() {
-    const st = stars.find(x => x.name === EIND.name); if (!st) return;
+  const lookOf = () => TS_LOOK[SYS.id] || TS_LOOK["Barnard's Star"];
+  function buildTargetSystem(name) {
+    const st = stars.find(x => x.name === name), sys = MSYS && MSYS.system(name); if (!st || !sys) return null;
     const C0 = new THREE.Vector3(st.x, st.y, st.z), los = C0.clone().normalize();
     const skyA = new THREE.Vector3(0, 0, 1).cross(los).normalize(), skyB = los.clone().cross(skyA).normalize();
-    const inc = 102.2 * Math.PI / 180, n = los.clone().multiplyScalar(Math.cos(inc)).addScaledVector(skyA, Math.sin(inc)).normalize();
-    const p1 = skyB.clone(), p2 = n.clone().cross(p1).normalize();
-    tsysAx = { C0, los, skyA, n, p1, p2 };
-    tsys = new THREE.Group(); tsys.position.copy(C0);
-    const kcol = 0xffc27a;
-    tsys.add(new THREE.Mesh(new THREE.SphereGeometry(EIND.R_km * KM_LY, 48, 32), new THREE.MeshBasicMaterial({ color: 0xffd9a8 })));
-    const inPlane = (r, t) => p1.clone().multiplyScalar(r * Math.cos(t)).addScaledVector(p2, r * Math.sin(t));
+    const inc = sys.planeInc * Math.PI / 180, n = los.clone().multiplyScalar(Math.cos(inc)).addScaledVector(skyA, Math.sin(inc)).normalize();
+    const p1 = skyB.clone(), p2 = n.clone().cross(p1).normalize(), ax = { C0, los, skyA, n, p1, p2 };
+    const vec = r => p1.clone().multiplyScalar(r[0] * AU_LY).addScaledVector(p2, r[1] * AU_LY).addScaledVector(n, r[2] * AU_LY);
+    const look = TS_LOOK[name] || TS_LOOK["Barnard's Star"], g = new THREE.Group(), parts = { orbits: [], dots: [], bodies: {} };
+    g.position.copy(C0);
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(sys.star.R_km * KM_LY, 48, 32), new THREE.MeshBasicMaterial({ color: look.star })));
     const line = (pts, color, op) => { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false })); l.userData.base = op; tsys.add(l); tsysParts.orbits.push(l); return l; };
-    // орбиты — из модели (systems.js, orbits.js): те же элементы, что у положений тел
-    line(ORB.orbitPoints(SYS.bodies.c).map(sysVec), 0xe8b36a, 0.95);                                 // c — наша цель
-    const Ab = EIND.Ab;
-    line(ORB.orbitPoints(SYS.bodies.Ab).map(sysVec), 0x4d6a78, 0.5);
-    // зона жизни — полупрозрачное кольцо в плоскости орбит
-    const hz = new THREE.Mesh(new THREE.RingGeometry(EIND.hz[0] * AU_LY, EIND.hz[1] * AU_LY, 128, 1),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false })); l.userData.base = op; g.add(l); parts.orbits.push(l); return l; };
+    // зона жизни — полупрозрачное кольцо в плоскости орбит (есть в данных — у ε Индейца)
+    if (sys.hz) { const hz = new THREE.Mesh(new THREE.RingGeometry(sys.hz[0] * AU_LY, sys.hz[1] * AU_LY, 128, 1),
       new THREE.MeshBasicMaterial({ color: 0x6f9f6a, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
-    hz.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n); tsys.add(hz); tsysParts.hz = hz;
-    const body = (R_km, color, dotCol) => { const g = new THREE.Group();
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(R_km * KM_LY, 32, 24), new THREE.MeshStandardMaterial({ color, roughness: 0.8 })));
+      hz.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n); g.add(hz); parts.hz = hz; }
+    const body = (R_km, color, dotCol, sphere) => { const b = new THREE.Group();
+      if (sphere) b.add(new THREE.Mesh(new THREE.SphereGeometry(R_km * KM_LY, 32, 24), new THREE.MeshStandardMaterial({ color, roughness: 0.8 })));
       const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(true), color: dotCol, sizeAttenuation: false, depthTest: false, transparent: true }));
-      dot.scale.set(0.012, 0.012, 1); g.add(dot); tsysParts.dots.push(dot); tsys.add(g); return g; };
-    tsysParts.c = body(EIND.c.R_km, 0x3d6f9e, 0x9cc4e8);
-    tsysParts.Ab = body(Ab.R_km, 0xc8b89a, 0xd6c3a0);
-    tsysParts.B = body(0.08 * 696000, 0x6a3a30, 0xb0604a);
-    tsysParts.B.position.copy(skyA).multiplyScalar(EIND.B_au * AU_LY).addScaledVector(los, -EIND.B_los * AU_LY);
-    tsys.add(new THREE.PointLight(0xffc890, 1.4, 0.02, 1e-4));                     // свет звезды — только в своей системе
-    tsys.traverse(o => { if (o.material) o.material.toneMapped = false; });
-    tsys.visible = false; starsGroup.add(tsys);
+      dot.scale.set(0.012, 0.012, 1); b.add(dot); parts.dots.push(dot); g.add(b); return b; };
+    // орбиты и тела — из модели: цель выделена; станции (форпост) — точка без шара; спутники — не здесь
+    for (const [id, b] of Object.entries(sys.bodies)) {
+      if (b.parent) continue;
+      const tgt = id === sys.target, giant = b.mass > 1e-4;
+      line(ORB.orbitPoints(b).map(vec), tgt ? 0xe8b36a : 0x4d6a78, tgt ? 0.95 : 0.5);
+      parts.bodies[id] = body(b.R_km, tgt ? 0x3d6f9e : giant ? 0xc8b89a : 0x8a7f72, tgt ? 0x9cc4e8 : giant ? 0xd6c3a0 : 0xb0a898, !b.station);
+    }
+    if (sys.far && sys.far.B) { parts.B = body(0.08 * 696000, 0x6a3a30, 0xb0604a, true);
+      parts.B.position.copy(skyA).multiplyScalar(sys.far.B.au * AU_LY).addScaledVector(los, -sys.far.B.los * AU_LY); }
+    g.add(new THREE.PointLight(look.light, 1.4, 0.02, 1e-4));                // свет звезды — только в своей системе
+    g.traverse(o => { if (o.material) o.material.toneMapped = false; });
+    g.visible = false; starsGroup.add(g);
+    return { g, ax, parts, sys };
+  }
+  // система нынешней цели: построить при первом выборе, прежнюю спрятать; у цели без данных системы — нет
+  function useTargetSystem() {
+    const name = targetInfo.star; if (SYS && SYS.id === name) return;
+    if (tsys) tsys.visible = false;
+    const sys = MSYS && MSYS.system(name), T = sys ? (TSYS[name] || (TSYS[name] = buildTargetSystem(name))) : null;
+    tsys = T ? T.g : null; tsysAx = T ? T.ax : null; SYS = T ? T.sys : null; TGT = T ? T.sys.target : null;
+    tsysParts = T ? T.parts : { orbits: [], dots: [], bodies: {} }; sysOcc.tgt = null; rSrc = undefined;
   }
   // корабль приходит к планете: фаза c на году прибытия — там, куда ведёт прямая траектория
   function tsysArrival() {
@@ -892,13 +905,13 @@
     const v = end.clone().sub(tsysAx.C0), th0 = Math.atan2(v.dot(tsysAx.p2), v.dot(tsysAx.p1));
     return { end, th0 };
   }
-  // Фаза планеты c (период ~148 суток). Промотка года идёт 1,8 с — это два-три оборота: звезда облетала бы кадр,
-  // а камера, держащая звезду и планету, дёргалась. Пока год анимируется (world.anim), фаза идёт от начальной к итоговой
-  // кратчайшим путём; в конце — точно там, где должна быть.
-  // фаза — по модели (кеплерова орбита от эпохи мира, не от даты встречи); угол в плоскости орбит
-  const cTh = (th0, year) => { const st = MSYS.bodyAt(SYS, 'c', year); return Math.atan2(st.r[1], st.r[0]); };
+  // Фаза цели (у c — период ~148 суток, у целей красных карликов — ~10). Промотка года идёт 1,8 с — это обороты: звезда облетала
+  // бы кадр, а камера, держащая звезду и цель, дёргалась. Пока год анимируется (world.anim) и корабль уже у цели, фаза идёт от
+  // начальной к итоговой кратчайшим путём; в конце — точно там, где должна быть.
+  // фаза — по модели (кеплерова орбита от эпохи мира, не от даты встречи); угол в плоскости орбит; орбита цели — круговая
+  const cTh = (th0, year) => { const st = MSYS.bodyAt(SYS, TGT, year); return Math.atan2(st.r[1], st.r[0]); };
   function cPos(year) {
-    const th0 = 0, A = world.arrive, an = world.anim, r = EIND.c.a * AU_LY;
+    const th0 = 0, A = world.flight ? world.flight.planetOrbitAt : world.arrive, an = world.anim, r = SYS.bodies[TGT].a * AU_LY;
     let th = cTh(th0, year);
     if (an && year > A) {
       const f = Math.max(A, an.from), t = Math.max(A, an.to);
@@ -910,18 +923,18 @@
     return tsysAx.p1.clone().multiplyScalar(r * Math.cos(th)).addScaledVector(tsysAx.p2, r * Math.sin(th));
   }
   function updateTargetSystem(dly) {
-    if (!tsys) return;
-    const on = targetInfo.star === EIND.name, nearT = on ? band(cam.F.distanceTo(tsysAx.C0), 0, 0, 0.02, 0.1) : 0;
+    useTargetSystem(); if (!tsys) return;
+    const nearT = band(cam.F.distanceTo(tsysAx.C0), 0, 0, 0.02, 0.1);
     tsys.visible = nearT > 0.003;
     if (!tsys.visible) return;
     const orbitA = band(dly, 3e-8, 2e-7, 0.01, 0.03) * nearT;
     tsysParts.orbits.forEach(o => fadeObj(o, orbitA, o.userData.base));
     tsysParts.dots.forEach(d => fadeObj(d, band(dly, 1e-7, 5e-7, 0.01, 0.03) * nearT, 1));
-    fadeObj(tsysParts.hz, band(dly, 1e-7, 1e-6, 2e-4, 1e-3) * nearT, 0.12);
+    if (tsysParts.hz) fadeObj(tsysParts.hz, band(dly, 1e-7, 1e-6, 2e-4, 1e-3) * nearT, 0.12);
     const tD = cam.F.clone().addScaledVector(offsetDir(), dly).distanceTo(tsysAx.C0);
     sysFlare.tgt.a = band(tD, 3e-7, 3e-6, 1e9, 1e9) * nearT; sysFlare.tgt.s = band(tD, 3e-6, 3e-5, 3e-3, 0.05);
-    if (world.arrive) tsysParts.c.position.copy(cPos(world.year));
-    tsysParts.Ab.position.copy(sysVec(MSYS.bodyAt(SYS, 'Ab', world.year).r));   // Ab — по Кеплеру (раньше — равномерный истинный угол)
+    for (const id of Object.keys(tsysParts.bodies))                    // тела — по Кеплеру; цель — с фазой промотки (cPos)
+      tsysParts.bodies[id].position.copy(id === TGT ? (world.arrive ? cPos(world.year) : sysVec(MSYS.bodyAt(SYS, id, world.year).r)) : sysVec(MSYS.bodyAt(SYS, id, world.year).r));
     routeLine(orbitA);                                                   // траектория маршрута в системе
   }
   // траектория маршрута в системе (полёт внутри системы, шаг 5): та же выборка модели, что даёт положение корабля, даты и
@@ -930,9 +943,9 @@
   function routeLine(alpha) {
     const S = world.flight ? flightSamplesOf() : null;
     if (S !== rSrc) {
-      if (rLine) { tsys.remove(rLine); rLine.geometry.dispose(); rLine.material.dispose(); rLine = null; }
+      if (rLine) { if (rLine.parent) rLine.parent.remove(rLine); rLine.geometry.dispose(); rLine.material.dispose(); rLine = null; }
       rSrc = S;
-      if (S && S.length > 1 && targetInfo.star === EIND.name) {
+      if (S && S.length > 1 && SYS && targetInfo.star === SYS.id) {
         const step = Math.max(1, Math.floor(S.length / 600)), pts = [], H = world.flight.hold, turn = H ? cAng(H.at + H.dur) - cAng(H.at) : 0;
         const at = i => H && S[i].t > H.at ? rotZ(S[i].y, turn) : S[i].y;   // встреча позже: захват повёрнут вместе с планетой
         for (let i = 0; i < S.length; i += step) {
@@ -945,13 +958,14 @@
     }
     if (rLine) fadeObj(rLine, alpha, rLine.userData.base);
   }
+  // подписи тел: видны, пока орбита в кадре различима (пороги — по её радиусу: у c — 1e-7…0,01 св. года)
   function drawTargetLabels(put, rel, dly) {
     if (!tsys || !tsys.visible) return;
-    const at = o => rel(o.position.clone().add(tsysAx.C0)), ru = lang === 'ru';
-    if (dly > 1e-7 && dly < 0.01) put(at(tsysParts.c), ru ? 'ε Инд c · 0,5 а.е.' : 'ε Ind c · 0.5 AU', 'star');
-    if (dly > 1e-6 && dly < 0.02) put(at(tsysParts.Ab), ru ? 'ε Инд Ab · суперюпитер' : 'ε Ind Ab · super-Jupiter', 'star');
-    if (dly > 2e-7 && dly < 3e-5) put(rel(tsysAx.p1.clone().multiplyScalar(0.66 * AU_LY).add(tsysAx.C0)), ru ? 'зона жизни' : 'habitable zone', 'star');
-    if (dly > 5e-5 && dly < 0.08) put(at(tsysParts.B), ru ? 'Ba + Bb · Тёмная звезда' : 'Ba + Bb · the Dark Star', 'star');
+    const at = o => rel(o.position.clone().add(tsysAx.C0)), ru = lang === 'ru', L = lookOf(), au = x => `${String(+x.toFixed(x < 0.1 ? 3 : 2)).replace('.', ru ? ',' : '.')} ${ru ? 'а.е.' : 'AU'}`;
+    for (const [id, o] of Object.entries(tsysParts.bodies)) { const b = SYS.bodies[id], a = b.a * AU_LY, note = L.notes[id];
+      if (dly > 0.0127 * a && dly < Math.min(0.02, 1265 * a)) put(at(o), `${b.name[ru ? 'ru' : 'en']} · ${note ? note[ru ? 0 : 1] : au(b.a)}`, 'star'); }
+    if (SYS.hz && dly > 2e-7 && dly < 3e-5) put(rel(tsysAx.p1.clone().multiplyScalar((L.hzAt || (SYS.hz[0] + SYS.hz[1]) / 2) * AU_LY).add(tsysAx.C0)), ru ? 'зона жизни' : 'habitable zone', 'star');
+    if (tsysParts.B && dly > 5e-5 && dly < 0.08) put(at(tsysParts.B), ru ? 'Ba + Bb · Тёмная звезда' : 'Ba + Bb · the Dark Star', 'star');
   }
   function drawSolarLabels(put, rel, dly) {
     if (!solar || !solar.visible || dly > 0.03) return;
@@ -1282,7 +1296,7 @@
     const up = side.clone().cross(st).normalize();
     // звезда в кадре слева (справа — карточки). Сторону выбираем один раз — по геометрии в точке прибытия,
     // иначе на подлёте, пока направление на звезду поворачивается, планета могла бы перескочить на другую сторону.
-    const ref = world.arrive && tsysAx && targetInfo.star === EIND.name ? cPos(world.arrive).normalize().negate() : st;
+    const ref = world.arrive && SYS && targetInfo.star === SYS.id ? cPos(world.arrive).normalize().negate() : st;
     const refSide = ref.clone().cross(E3).normalize(), refRight = ref.clone().add(refSide).cross(E3);
     if (ref.dot(refRight) > 0) side.negate();
     const A = world.arrive || 0, k = Math.max(0, Math.min(1, world.year - A)), sk = k * k * (3 - 2 * k);
@@ -1291,9 +1305,11 @@
     const planet = st.clone().multiplyScalar(Math.cos(phi)).addScaledVector(dir, Math.sin(phi)).normalize();
     return { st, side, up, planet };
   }
+  // цель — станция на орбите звезды (форпост Ксилона Ир): планеты рядом нет — в кадре звезда и станция, и на прибытии, и «дома»
+  const stationTarget = () => !!(SYS && targetInfo.star === SYS.id && SYS.bodies[TGT].station);
   function arrivalLook(fit) {
     const ax = arrivalAxes();
-    const look = fit === 'arrival' ? ax.st.clone().add(ax.planet).normalize()          // между звездой и планетой
+    const look = fit === 'arrival' || stationTarget() ? ax.st.clone().add(ax.planet).normalize()          // между звездой и планетой
       : ax.planet.clone().addScaledVector(ax.up, 0.06).addScaledVector(ax.side, 0.08).normalize();
     return frameAngles(look.negate());
   }
@@ -1304,7 +1320,7 @@
     // планета
     // мира для колонии нет (none): база — в поясе астероидов у точки прибытия, планета каталога (объект обследования) — в стороне
     const cls = world.worldClass, cat = cls === 'none' ? catalogPlanet(targetInfo.star) : null, look = cls === 'none' ? cat && cat.look : cls;
-    const pOn = A > 0 && look && y >= A - 2;
+    const pOn = A > 0 && look && y >= A - 2 && !stationTarget();        // у форпоста планеты нет: ближайшая — в 1,7 млн км
     const eOn = pOn && targetInfo.star === 'Epsilon Indi' && cls === 'open';      // ε Индейца — по картам, остальные пока болванки
     arrival.eind.tilt.visible = !!eOn;
     arrival.planet.visible = !!pOn && !eOn;
@@ -1469,7 +1485,7 @@
     if (solar && solar.visible) { const p = starsGroup.localToWorld(new THREE.Vector3()); if (!sysOcc.sun) sysOcc.sun = bodiesOf(solar, solar.children.find(o => o.isMesh));
       put(sysFlare.sun, p, 0xfff0d8, () => occludedSys(sysOcc.sun, p, 696000 * KM_LY)); }
     if (tsys && tsys.visible) { const p = tsys.getWorldPosition(new THREE.Vector3()); if (!sysOcc.tgt) sysOcc.tgt = bodiesOf(tsys, tsys.children.find(o => o.isMesh));
-      put(sysFlare.tgt, p, starColor(targetInfo.sp), () => occludedSys(sysOcc.tgt, p, EIND.R_km * KM_LY)); }
+      put(sysFlare.tgt, p, starColor(targetInfo.sp), () => occludedSys(sysOcc.tgt, p, SYS.star.R_km * KM_LY)); }
   }
 
   // ---------------------------------------------------------------- звёзды и маршрут
@@ -1982,15 +1998,16 @@
   }
   // встреча позже (отклонение навигации: орбита ожидания или коррекция с опозданием): от сближения корабль у планеты — смещение
   // поворачивается вместе с ней; потом — захват, повёрнутый на угол, на который планета ушла за время задержки (у оборота — 0)
-  const cAng = y => { const c = MSYS.bodyAt(SYS, 'c', y); return Math.atan2(c.r[1], c.r[0]); };
+  const cAng = y => { const c = MSYS.bodyAt(SYS, TGT, y); return Math.atan2(c.r[1], c.r[0]); };
   const rotZ = (v, a) => { const cs = Math.cos(a), sn = Math.sin(a); return [v[0] * cs - v[1] * sn, v[0] * sn + v[1] * cs, v[2]]; };
   function holdPoint(S, H, y) {
-    const m = sampleAt(S, H.at), c0 = MSYS.bodyAt(SYS, 'c', H.at), c1 = MSYS.bodyAt(SYS, 'c', y);
+    const m = sampleAt(S, H.at), c0 = MSYS.bodyAt(SYS, TGT, H.at), c1 = MSYS.bodyAt(SYS, TGT, y);
     const d = rotZ([m[0] - c0.r[0], m[1] - c0.r[1], m[2] - c0.r[2]], cAng(y) - cAng(H.at));
     return [c1.r[0] + d[0], c1.r[1] + d[1], c1.r[2] + d[2]];
   }
   function flightPos(y) {
-    const fl = world.flight; if (!fl || !tsysAx || !SYS || targetInfo.star !== EIND.name || !(y >= fl.entryAt - 1e-9)) return null;
+    useTargetSystem();
+    const fl = world.flight; if (!fl || !tsysAx || !SYS || targetInfo.star !== SYS.id || !(y >= fl.entryAt - 1e-9)) return null;
     const S = flightSamplesOf(); if (!S || !S.length || y < S[0].t) return null;
     const H = fl.hold, y0 = y; let turn = 0;
     if (H && y > H.at) {
@@ -1998,8 +2015,8 @@
       y -= H.dur; turn = cAng(H.at + H.dur) - cAng(H.at); }
     const last = S[S.length - 1];
     if (y >= last.t) {
-      const c = MSYS.bodyAt(SYS, 'c', last.t), rx = last.y[0] - c.r[0], ry = last.y[1] - c.r[1], rz = last.y[2] - c.r[2];
-      const R = Math.hypot(rx, ry, rz), mu = ORB.units.MU_SUN * SYS.bodies.c.mass, w = Math.sqrt(mu / (R * R * R)) * (y - last.t) + turn;   // рад (а.е., годы)
+      const c = MSYS.bodyAt(SYS, TGT, last.t), rx = last.y[0] - c.r[0], ry = last.y[1] - c.r[1], rz = last.y[2] - c.r[2];
+      const R = Math.hypot(rx, ry, rz), mu = ORB.units.MU_SUN * SYS.bodies[TGT].mass, w = Math.sqrt(mu / (R * R * R)) * (y - last.t) + turn;   // рад (а.е., годы)
       const cw = Math.cos(w), sw = Math.sin(w);                          // обращение — в плоскости орбит (вокруг n), как у планеты
       return tsysAx.C0.clone().add(cPos(y0)).add(sysVec([rx * cw - ry * sw, rx * sw + ry * cw, rz]));
     }
@@ -2014,7 +2031,7 @@
     const fp = flightPos(world.year); if (fp) return fp;
     const p = pathPoint(distLy(world.year)), A = world.arrive;
     // у ε Индейца без маршрута: последние три года траектория плавно сходит к планете c (0,5 а.е. от звезды), а не к точке прямой
-    if (A && tsysAx && targetInfo.star === EIND.name && !world.flight && world.year > A - 3) {
+    if (A && SYS && targetInfo.star === SYS.id && !world.flight && world.year > A - 3) {
       const k = Math.min(1, (world.year - (A - 3)) / 3), sk = k * k * (3 - 2 * k), ar = tsysArrival();
       p.addScaledVector(tsysAx.C0.clone().add(cPos(Math.max(A, world.year))).sub(ar.end), sk);
     }
@@ -2297,7 +2314,7 @@
     cam.focus = p.focus;
     // маршрут целиком: масштаб по расстоянию до цели
     const dist = name === 'route' || name === 'targetRoute' ? T.length() * 1.55 * LY : p.fit === 'bubble' ? 4.2 * bubbleR()
-      : name === 'target' && targetInfo.star === EIND.name ? 40 * AU_LY * LY : name === 'distress' ? distressFrame().d * LY
+      : name === 'target' && SYS && targetInfo.star === SYS.id ? lookOf().view * AU_LY * LY : name === 'distress' ? distressFrame().d * LY
       : name === 'epoch3' ? ep3Frame(performance.now()).d * LY : p.dist;
     const to = { F: focusPoint(p.focus), dist, yaw: p.yaw, pitch: p.pitch, pivot: p.pivot };
     if (p.fit === 'arrival' || p.fit === 'home') Object.assign(to, arrivalLook(p.fit));
@@ -2305,7 +2322,7 @@
     if (name === 'epoch3') { const f = ep3Frame(performance.now()); to.yaw = f.yaw; to.pitch = f.pitch; }
     shieldUI.on = p.aim === 'shield';                                     // осмотр — только в ракурсе щита
     if (p.aim === 'shield') { Object.assign(to, shieldAngles()); to.aim = 'shield'; }
-    if (name === 'target' && tsysAx && targetInfo.star === EIND.name) Object.assign(to, frameAngles(tsysAx.n.clone().multiplyScalar(0.8).addScaledVector(tsysAx.p1, 0.6).normalize()));
+    if (name === 'target' && SYS && targetInfo.star === SYS.id) Object.assign(to, frameAngles(tsysAx.n.clone().multiplyScalar(0.8).addScaledVector(tsysAx.p1, 0.6).normalize()));
     cam.fit = p.fit === 'arrival' || p.fit === 'home' ? p.fit : null;
     if (instant) { Object.assign(cam, to, { F: to.F }); tween = null; viewUpInit = false; return; }   // мгновенно — и верх кадра заново
     let dy = to.yaw - from.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
@@ -2845,7 +2862,6 @@
     buildSupport();
     buildPlasmaMagnet();
     buildArrival(); buildThawStore(); buildOutpost();
-    buildTargetSystem();
     buildEind();
     buildFlares();
     SUN.copy(sunDirNow()); aimLights();

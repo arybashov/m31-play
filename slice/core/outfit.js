@@ -75,7 +75,7 @@
   const STORM = { strong: 0.4, board: 0.65, fastDead: 18, busDead: 24, protect: 6, block: 2, replace: 3, check: 1, deep: 8, split: 12 };
   const stormU = s => hidden(s, 'supply.storm') ?? 1;
   const boardDamaged = s => stormU(s) < STORM.board;
-  const opYear = s => s.arrive + (s.supplyDays || 0) / 365.25;          // дата внутри операции у форпоста
+  const opYear = s => arrivalAt(s) + (s.supplyDays || 0) / 365.25;          // дата внутри операции у форпоста
   function cargoConnect(st) {                                           // прямое подключение: при трещине — общий отказ
     if (!collectorCracked(st)) return;
     st.cargoFailed = true; st.dead += SUPPLY.cargoDead; st.supplyCrewDead = SUPPLY.cargoDead;

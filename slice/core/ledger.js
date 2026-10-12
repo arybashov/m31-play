@@ -3,10 +3,10 @@
 (function (root) {
   'use strict';
   const ledger = __core => {
-    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag,
-    lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src,
-    storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
-    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
+    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear,
+    kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport,
+    spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
+    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
     __link();
 
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
@@ -368,7 +368,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
   const thawN = t => Math.max(0, THAW0 - Math.floor(THAW0 - thawLife(t) + 1e-9));
   const lifeAt = v => v >= 33 ? 124.5 + (34 - v) / 2 : v >= 12 ? 125 + (33 - v) * 15 / 21 : 140 + (12 - v) / 1.2;
   const nextLoss = t => thawN(t) > 0 ? lifeAt(thawN(t) - 1) : null;                 // год ближайшей потери
-  const arriveX = s => s.arriveExact == null ? s.arrive : s.arriveExact;
+  const arriveX = s => s.flight ? arriveView(s) : s.arriveExact == null ? s.arrive : s.arriveExact;   // точное прибытие: у полёта внутри системы — к цели
   const f2 = (x, lang) => (lang === 'ru' ? x.toFixed(2).replace('.', ',') : x.toFixed(2));
   const PREP = 8, SHELTER_R = 15, RESTORE = 10, MOVE = 2;
   const thawLag = s => Math.max(1, Math.round(M.star(s.target).d - M.distLy(Y(s, 0.5), s.beta, s.arrive, s.tMag, M.star(s.target).d)));

@@ -5,7 +5,7 @@
   const act3 = K => {
     const {
       DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arrivalAt, arrivalYear, arriveX, bad, brakeApply,
-      flightOptions, flightChoose, nf, yrsG,
+      flightOptions, flightChoose, flightWho, nf, yrsG,
       brakeSettle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, connectNeed, connectOptions, contactRun, crewOf, darkAt, days,
       daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dvPct, eqOf, f1, f2, fb, greetR, hasIR, heatAgo, homeOptionsR, housedOf, incident,
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
@@ -370,17 +370,18 @@ The acceleration stage passed the system ${yrsEn(s.arrive - 4 - stagePass(s))} a
       id: 'd.approach', scene: 'flip', kind: 'decision', year: s => s.arrive - 4, when: s => !!(s.flight && flightOptions(s).early),
       title: { ru: 'План встречи', en: 'The rendezvous plan' },
       rec: s => { const o = flightOptions(s), dd = Math.round((o.late.planetOrbitAt - o.early.planetOrbitAt) * 365.25), dp = 100 * (o.early.dv - o.late.dv) / s.reserveDv;
+        if (rescueS(s) && dp <= 3) return { id: 'early', why: { ru: 'у склада каждые сутки — капсулы протекающей секции', en: 'at the store every day costs capsules in the leaking section' } };
         return dd >= 20 && dp <= 3 ? { id: 'early', why: { ru: `${dd} суток вахты дороже ${nf(dp, 1, 'ru')}% резерва`, en: `${dd} days of watch cost more than ${nf(dp, 1, 'en')}% of the reserve` } }
           : { id: 'late', why: { ru: 'топливо нужнее у цели, чем несколько дней', en: 'propellant is worth more at the target than a few days' } }; },
       context: {
-        ru: s => `Двигатель включён. До 50 а.е. от звезды — около ${yrsG(Math.max(1, s.flight.entryAt - s.year))}, дальше — тяга к планете ${s.flight.body}. Навигаторы рассчитали два плана встречи.`,
-        en: s => `The engine is on. About ${yrsEn(Math.max(1, s.flight.entryAt - s.year))} to 50 AU from the star, then thrust toward planet ${s.flight.body}. The navigators have worked out two rendezvous plans.`
+        ru: s => `Двигатель включён. До 50 а.е. от звезды — около ${yrsG(Math.max(1, s.flight.entryAt - s.year))}, дальше — тяга ${flightWho(s).to[0]}. Навигаторы рассчитали два плана встречи.`,
+        en: s => `The engine is on. About ${yrsEn(Math.max(1, s.flight.entryAt - s.year))} to 50 AU from the star, then thrust ${flightWho(s).to[1]}. The navigators have worked out two rendezvous plans.`
       },
       options: s => { const o = flightOptions(s), base = o.late, kms = x => Math.round(x * 299792.458), res = x => Math.max(0, s.reserve - 100 * (x.dv - (s.flight.variant === 'early' ? o.early : o.late).dv) / s.reserveDv);
         const opt = (v, ru, en, k) => ({ id: v, label: { ru, en },
-          known: { ru: [`Орбита планеты ${s.flight.body} — год ${nf(o[v].planetOrbitAt, 2, 'ru')}${v === 'early' ? `, на ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} суток раньше` : ''}.`,
+          known: { ru: [`${flightWho(s).arr[0]} — год ${nf(o[v].planetOrbitAt, 2, 'ru')}${v === 'early' ? `, на ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} суток раньше` : ''}.`,
               `Маршрут — ${kms(o[v].dv)} км/с${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; резерв манёвров после — ${f1(res(o[v]), 'ru')}%; тяга — до ${Math.round(100 * o[v].ratio)}% предела.`],
-            en: [`Orbit of planet ${s.flight.body} — year ${nf(o[v].planetOrbitAt, 2, 'en')}${v === 'early' ? `, ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} days earlier` : ''}.`,
+            en: [`${flightWho(s).arr[1]} — year ${nf(o[v].planetOrbitAt, 2, 'en')}${v === 'early' ? `, ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} days earlier` : ''}.`,
               `Route — ${kms(o[v].dv)} km/s${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; manoeuvre reserve after — ${f1(res(o[v]), 'en')}%; thrust up to ${Math.round(100 * o[v].ratio)}% of the limit.`] },
           effect: st => flightChoose(st, v),
           record: { ru: `Совет утверждает план: ${k.ru}. Навигаторы закладывают его в программу двигателя.`, en: `The council approves the plan: ${k.en}. The navigators load it into the engine programme.` } });
@@ -392,10 +393,10 @@ The acceleration stage passed the system ${yrsEn(s.arrive - 4 - stagePass(s))} a
       effect: s => brakeSettle(s),
       title: { ru: 'Навигационный журнал · исправленная дата', en: 'Navigation log · the corrected date' },
       text: {
-        ru: s => `Навигационная сверка завершена. Прибытие — год ${f2(arriveX(s), 'ru')}; ${s.brakeDelay ? `позже паспорта на ${dd(s.brakeDelay, 'ru')}: участок разрежения оказался протяжённым` : 'по паспорту'}.${s.brakeMethod === 'burn' || s.brakeFound ? (s.brakeLong ? ' Импульс пригодился: без него опоздание было бы ' + dd(RESCUE.delay, 'ru') + '.' : ' Участок оказался коротким: импульс не понадобился.') : ''}
+        ru: s => `Навигационная сверка завершена. Прибытие — год ${f2(arriveX(s), 'ru')}; ${s.brakeDelay ? `позже плана на ${dd(Math.max(1, Math.round((arriveX(s) - s.arrivePlan) * YD)), 'ru')}: участок разрежения оказался протяжённым${s.flight ? ', окно у цели — другое' : ''}` : 'по плану'}.${s.brakeMethod === 'burn' || s.brakeFound ? (s.brakeLong ? ' Импульс пригодился: без него опоздание было бы ' + dd(RESCUE.delay, 'ru') + '.' : ' Участок оказался коротким: импульс не понадобился.') : ''}
 
 Селина отправляет исправленную лоцию и сохраняет прежнюю рядом. В строке Оттепели отдельно стоят прогноз живых к завершению помощи и ближайший порог потери.`,
-        en: s => `The navigation check is complete. Arrival: year ${f2(arriveX(s), 'en')}; ${s.brakeDelay ? `${dd(s.brakeDelay, 'en')} later than the passport: the sparse stretch was extensive` : 'as in the passport'}.${s.brakeMethod === 'burn' || s.brakeFound ? (s.brakeLong ? ` The impulse paid off: without it we would be ${dd(RESCUE.delay, 'en')} late.` : ' The stretch was short: the impulse was not needed.') : ''}
+        en: s => `The navigation check is complete. Arrival: year ${f2(arriveX(s), 'en')}; ${s.brakeDelay ? `${dd(Math.max(1, Math.round((arriveX(s) - s.arrivePlan) * YD)), 'en')} later than planned: the sparse stretch was extensive${s.flight ? ', and the window at the target has moved' : ''}` : 'as planned'}.${s.brakeMethod === 'burn' || s.brakeFound ? (s.brakeLong ? ` The impulse paid off: without it we would be ${dd(RESCUE.delay, 'en')} late.` : ' The stretch was short: the impulse was not needed.') : ''}
 
 Selina sends the corrected sailing directions and keeps the original beside them. Thaw's entry lists the forecast living count at the end of assistance and the next loss threshold separately.`
       }
@@ -844,7 +845,7 @@ Here an answer comes at once: there is no transmitter between them, no years of 
     { id: 's.e6', kind: 'skip', toYear: s => arrivalYear(s) + 1,
       label: { ru: 'Промотать год ожидания', en: 'Skip the year of waiting' } },
     {
-      id: 'a3.wait1', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: supplyS,
+      id: 'a3.wait1', scene: 'home', kind: 'transcript', year: s => arrivalYear(s) + 1, when: supplyS,
       effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead; },
       title: { ru: 'Совет у цели', en: 'Council at the target' },
       text: {
@@ -873,7 +874,7 @@ Dasser signs the report after the local council, not in its place.`
       }
     },
     {
-      id: 'a3.wait3', scene: 'home', kind: 'transcript', year: s => s.arrive + 1, when: rescueS,
+      id: 'a3.wait3', scene: 'home', kind: 'transcript', year: s => arrivalYear(s) + 1, when: rescueS,
       effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead; },
       title: { ru: 'Подписанный прогноз', en: 'The signed forecast' },
       text: {
@@ -894,7 +895,7 @@ Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}.`
       }
     },
     {
-      id: 'a4r.volcano', scene: 'home', kind: 'instrument', year: s => s.arrive + 1, when: rescueS,
+      id: 'a4r.volcano', scene: 'home', kind: 'instrument', year: s => arrivalYear(s) + 1, when: rescueS,
       act: { ru: 'Акт IV · Оттепель повторяется', en: 'Act IV · Thaw happens again' },
       title: { ru: 'Журнал разведки · шлейф над старой площадкой', en: 'Survey log · a plume over the old site' },
       text: {
@@ -1045,7 +1046,7 @@ Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}${s
     },
     sosEnd('home', 'home'),
     {
-      id: 'a4r.siteResult', scene: 'home', kind: 'instrument', year: s => s.arrive + 1 + ((s.siteDays || 0) + (s.site === 'evacuated' ? 30 : 0)) / YD, when: s => rescueS(s) && !s.sos,
+      id: 'a4r.siteResult', scene: 'home', kind: 'instrument', year: s => arrivalYear(s) + 1 + ((s.siteDays || 0) + (s.site === 'evacuated' ? 30 : 0)) / YD, when: s => rescueS(s) && !s.sos,
       title: { ru: 'Журнал поселения · принятая площадка', en: 'Settlement log · the accepted site' },
       text: { ru: s => siteRecord(s, 'ru'), en: s => siteRecord(s, 'en') }
     },
