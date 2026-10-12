@@ -222,6 +222,7 @@
   function groupDecay(s, g) { const x = s.human.groups[g]; x.decay = null; if (x.trust >= 1 && x.trust <= 1) trustMove(s, g, -1, x.why); }
   function humanGroupDecision(s, ev) {
     const g = ev.g, x = s.human.groups[g], yl = Math.max(1, Math.round(arriveView(s) - s.year)), why = l => x.why ? ` — ${GROUP_WHY[x.why][l === 'ru' ? 0 : 1]}` : '';
+    const grudge = GRUDGE.includes(x.why);                               // необратимая обида: смена её не снимает, голос в Совете — снимает
     const lift = y => { const z = y.human.groups[g]; z.trust = Math.min(3, z.trust + 1); z.ask = false; return z; };
     const opts = [{
       id: 'seat', label: { ru: 'Место в Совете', en: 'A seat on the Council' },
@@ -231,9 +232,9 @@
       record: { ru: `${repName(g, 'ru')} — в Совете. Протокол теперь подписывают и ${groupName(g, 'ru')}.`, en: `${repName(g, 'en')} is on the Council. ${groupName(g, 'en').replace(/^the/, 'The')} now sign the minutes too.` }
     }, {
       id: 'rotate', label: { ru: 'Досрочная смена', en: 'An early relief' },
-      known: { ru: y => ['Уставших отпускают в сон раньше срока; будят замену — полгода обучения с наставником, регламент это время отстаёт.', 'Доверие восстанавливается.'],
-        en: y => ['The tired go to sleep ahead of time; a relief is woken — half a year of training with a mentor, maintenance falls behind meanwhile.', 'Trust is restored.'] },
-      effect: y => { lift(y); y.human.stats.early = (y.human.stats.early || 0) + 1;
+      known: { ru: y => ['Уставших отпускают в сон раньше срока; будят замену — полгода обучения с наставником, регламент это время отстаёт.', grudge ? 'Доверие восстанавливается, обида остаётся: у цели часть из них может не высадиться.' : 'Доверие восстанавливается.'],
+        en: y => ['The tired go to sleep ahead of time; a relief is woken — half a year of training with a mentor, maintenance falls behind meanwhile.', grudge ? 'Trust is restored, the grievance stays: at the target some of them may refuse to land.' : 'Trust is restored.'] },
+      effect: y => { const z = lift(y); if (grudge) z.grudge = true; y.human.stats.early = (y.human.stats.early || 0) + 1;
         if (y.jobs) JB.enqueue(y.jobs, { owner: 'wear', ref: 'mentor', type: 'wear.mentor', prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 1, work: MENTOR_DAYS, hold: 0 }, y.year, pools(y)); },
       record: { ru: `${groupName(g, 'ru').replace(/^./, c => c.toUpperCase())} уходят в сон раньше срока; замена учится у наставника.`, en: `${groupName(g, 'en').replace(/^the/, 'The')} go to sleep ahead of time; the relief trains under a mentor.` }
     }, {
@@ -256,12 +257,13 @@
     };
   }
   const groupTrust = (s, g) => s.human && s.human.groups ? s.human.groups[g].trust : 2;
-  // отказ от высадки (у цели): группы без доверия (0) или против цели (позиция 2) — часть людей остаётся на корабле
-  const REFUSE = { distrust: 0.4, object: 0.25 };
+  // отказ от высадки (у цели): группы без доверия (0) или против цели (позиция 2) — часть людей остаётся на корабле; необратимая
+  // обида (погибшие в пути, годы сверх обещанного), снятая только досрочной сменой, — меньшая часть
+  const REFUSE = { distrust: 0.4, object: 0.25, grudge: 0.15 }, GRUDGE = ['capsule', 'extend'];
   function refuseOf(s) {
     const G = s.human && s.human.groups; if (!G) return null;
     const per = aliveOf(s) / 4, list = [];
-    for (const g of Object.keys(GROUPS)) { const k = G[g].trust === 0 ? REFUSE.distrust : G[g].stance >= 2 ? REFUSE.object : 0; if (k) list.push([g, Math.round(per * k)]); }
+    for (const g of Object.keys(GROUPS)) { const k = G[g].trust === 0 ? REFUSE.distrust : G[g].stance >= 2 ? REFUSE.object : G[g].grudge && !G[g].seat ? REFUSE.grudge : 0; if (k) list.push([g, Math.round(per * k)]); }
     const n = list.reduce((a, x) => a + x[1], 0); return n ? { n, groups: list.map(x => x[0]) } : null;
   }
   function refuseLine(s, lang) {
@@ -309,7 +311,7 @@
         LOAD, DAYS, humanStart, loadBase, regFrom, loadMove, loadPiece, humanSpan, loadLevel, REWORK, REWORK_KINDS, humanSnap, reworkRisk, TERM,
         termStart, termNext, termRotate, termWake, humanTermDecision, costLine, costTerm, GROUPS, GROUP_NAME, GROUP_WHY, GROUP_HITS, OVER_DAYS,
         groupsStart, trustMove, groupsDecided, groupsLoss, groupLines, groupsView, groupName, repName, SEAT_YEARS, groupsNext, groupDecay,
-        humanGroupDecision, groupTrust, REFUSE, refuseOf, refuseLine, REST, restN, restFor, humanNext, humanMark
+        humanGroupDecision, groupTrust, REFUSE, GRUDGE, refuseOf, refuseLine, REST, restN, restFor, humanNext, humanMark
       },
       link: __link
     };
