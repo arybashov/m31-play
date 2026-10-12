@@ -4,8 +4,8 @@
 (function (root) {
   'use strict';
   const flight = __core => {
-    let M, f1, fuelSync, hidden, legAdd, legCut, nf, plural, rescueS, wearNote, wearTerminal;
-    const __link = () => { ({ M, f1, fuelSync, hidden, legAdd, legCut, nf, plural, rescueS, wearNote, wearTerminal } = __core); };
+    let M, f1, fuelSync, groupTrust, hidden, legAdd, legCut, nf, plural, repName, rescueS, wearNote, wearTerminal;
+    const __link = () => { ({ M, f1, fuelSync, groupTrust, hidden, legAdd, legCut, nf, plural, repName, rescueS, wearNote, wearTerminal } = __core); };
     __link();
 
   // ---- полёт внутри системы (DOC «Полёт внутри системы v1 — проект», шаг 4). Контакт к цели с данными системы (systems.js)
@@ -112,10 +112,11 @@
   function flightMark(s, m) {
     const fl = s.flight; (fl.marks = fl.marks || []).push(m);
     // отклонение — решение совета; коррекция дольше оборота цели (у красных карликов — ~10 суток) — выбора нет: ожидание сразу
-    if (m === 'nav') { const d = navRoll(s), at = navAt(fl); if (d && navFix(s, at, d.km)) return { kind: 'wear', type: 'nav', at, km: d.km, ahead: d.ahead };
+    if (m === 'nav') { const d = navRoll(s), at = navAt(fl), refuse = groupTrust(s, 'engine') === 0;   // ядро Б: смены двигателя без доверия — без коррекции на пределе
+      if (d && !refuse && navFix(s, at, d.km)) return { kind: 'wear', type: 'nav', at, km: d.km, ahead: d.ahead };
       if (d) { navHold(s, at); if (s.wear) { const W = flightWho(s), P = Math.round(fl.hold.dur * 365.25), tk = Math.round(d.km / 1000);
-        wearNote(s, `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${d.ahead ? 'впереди' : 'позади'} расчёта. Сдвиг займёт дольше оборота цели — корабль ждёт следующего окна ${W.at[0]}: ${navDays(P, 'ru')}.`,
-          `Navigation has refined the orbit of ${W.gen[1]}: it is ${tk} thousand km ${d.ahead ? 'ahead of' : 'behind'} the computed place. A shift would take longer than one revolution of the target — the ship waits for the next window ${W.at[1]}: ${navDays(P, 'en')}.`); }
+        wearNote(s, `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${d.ahead ? 'впереди' : 'позади'} расчёта. ${refuse ? `${repName('engine', 'ru')}: смены двигателя на коррекцию на пределе не идут — Совету не доверяют;` : 'Сдвиг займёт дольше оборота цели —'} корабль ждёт следующего окна ${W.at[0]}: ${navDays(P, 'ru')}.`,
+          `Navigation has refined the orbit of ${W.gen[1]}: it is ${tk} thousand km ${d.ahead ? 'ahead of' : 'behind'} the computed place. ${refuse ? `${repName('engine', 'en')}: the engine shifts will not run a correction at the limit — they do not trust the Council;` : 'A shift would take longer than one revolution of the target —'} the ship waits for the next window ${W.at[1]}: ${navDays(P, 'en')}.`); }
         return null; } }
     if (!s.wear) return null;                                            // журнал вахты — у модели износа
     const kms = x => Math.round(x * FL.units.C_KMS), days = Math.round((fl.planetOrbitAt - fl.entryAt) * 365.25), W = flightWho(s), dd = (t0, t1, l) => navDays(Math.round((t1 - t0) * 365.25), l);

@@ -5,7 +5,7 @@
   const act3 = K => {
     const {
       DV, EPOCH3, GREET_LAST, M, RESCUE, SHELTER_R, STORM, STREAM, THAW0, THAW_LOSS, Y, Y3, YD, addPct, agroLost, aliveOf, arrivalAt, arrivalYear, arriveX, bad, brakeApply,
-      flightOptions, flightChoose, flightWho, nf, yrsG,
+      flightOptions, flightChoose, flightWho, refuseLine, nf, yrsG,
       brakeSettle, burnDays, busCheck, busRecord, busRestart, busSplit, canEvade, connectNeed, connectOptions, contactRun, crewOf, darkAt, days,
       daysTo, dd, deadCauses, deliverOptions, discText, dockApply, dvPct, eqOf, f1, f2, fb, greetR, hasIR, heatAgo, homeOptionsR, housedOf, incident,
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
@@ -945,8 +945,8 @@ Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}${s
           : id === 'stay' ? { id, why: { ru: 'сохранить доступное размещение', en: 'preserve the available accommodation' }, assume: { ru: 'непокрытые обязательства остаются открытыми', en: 'uncovered commitments remain open' } }
           : { id, why: { ru: 'независимое обеспечение исключает местную воду', en: 'independent supply excludes local water' }, assume: { ru: 'материалов хватит на постоянное обеспечение', en: 'the materials will cover permanent supply' } }; },
       context: {
-        ru: s => agroLost(s, 'ru') + (rescueS(s) ? (s.rescued ? 'Площадку выбирают вместе с пробуждёнными жителями Оттепели.' : 'Оттепели помочь не успели: площадку выбирает экипаж.') + ' Чем проверять воду и сколько платить за уверенность — решение совета.' : bad(M.worldOf(s.target)) ? 'Высадиться нельзя. Корабль строили и как основу поселения — это последний довод конструкторов.' : 'Мир пригоден. Вопрос — когда спускаться и сколько знать до спуска.'),
-        en: s => agroLost(s, 'en') + (rescueS(s) ? (s.rescued ? "The site is chosen together with Thaw's awakened residents." : 'Thaw could not be helped in time: the crew chooses the site.') + " How to test the water and how much to pay for certainty is the council's decision." : bad(M.worldOf(s.target)) ? 'No landing is possible. The ship was built as the core of a settlement too — the designers\' last argument.' : 'The world is habitable. The question is when to go down and how much to know first.')
+        ru: s => agroLost(s, 'ru') + refuseLine(s, 'ru').trim() + (refuseLine(s, 'ru') ? ' ' : '') + (rescueS(s) ? (s.rescued ? 'Площадку выбирают вместе с пробуждёнными жителями Оттепели.' : 'Оттепели помочь не успели: площадку выбирает экипаж.') + ' Чем проверять воду и сколько платить за уверенность — решение совета.' : bad(M.worldOf(s.target)) ? 'Высадиться нельзя. Корабль строили и как основу поселения — это последний довод конструкторов.' : 'Мир пригоден. Вопрос — когда спускаться и сколько знать до спуска.'),
+        en: s => agroLost(s, 'en') + refuseLine(s, 'en').trim() + (refuseLine(s, 'en') ? ' ' : '') + (rescueS(s) ? (s.rescued ? "The site is chosen together with Thaw's awakened residents." : 'Thaw could not be helped in time: the crew chooses the site.') + " How to test the water and how much to pay for certainty is the council's decision." : bad(M.worldOf(s.target)) ? 'No landing is possible. The ship was built as the core of a settlement too — the designers\' last argument.' : 'The world is habitable. The question is when to go down and how much to know first.')
       },
       options: s => { if (rescueS(s)) return homeOptionsR(s); const w = M.worldOf(s.target), L = s.kits.includes('landing'), low = s.reserve < 40;
         const orbit = {

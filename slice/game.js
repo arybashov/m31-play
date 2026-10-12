@@ -194,14 +194,20 @@
     // и открывает его карточку ниже, голосование — кнопкой карточки. Голосование по заявкам: в строке — звезда и
     // расстояние, метка — по объекту заявки (как в архиве), нажатие подводит камеру к системе
     const agenda = b.ui === 'agenda';
-    const sel = stop.options.find(o => o.id === votePick) || (rec && stop.options.find(o => o.id === rec.id)) || stop.options[0];
+    // по умолчанию не выбрано ничего: карточка варианта (что известно, цена, мнение Совета) — по нажатию на строку (реестр, п. 26)
+    const sel = stop.options.find(o => o.id === votePick) || null;
     const reqOf = o => agenda ? C.requests.get(o.id) : null;
     const rowNote = o => { const q = reqOf(o); return q ? `${M.nameOf(q.star, lang)} · ${num(M.star(q.star).d, 1)}` : ''; };
     // в строках — без пометки рекомендации: рекомендация Совета с основанием — только в карточке варианта (реестр, п. 18)
     const rowCls = o => { const q = reqOf(o); return q ? `st-${reqStatus(q)}` : 'st-plain'; };
-    const rows = stop.options.map(o => `<button class="colrow optrow ${rowCls(o)}" data-sel="${esc(o.id)}" aria-pressed="${o === sel}"><span class="dot"></span>${esc(t(o.label, pub))}<i>${esc(rowNote(o))}</i></button>`).join('');
-    const q = reqOf(sel);
-    const detail = `<div class="option${rec && rec.id === sel.id ? ' rec' : ''}"><h4>${esc(t(sel.label, pub))}</h4>${recHtml(sel)}<p class="knownlabel">${esc(u.known)}</p>
+    // порядок строк — перетасован по сиду партии: в одной партии карточка всегда та же, в другой — иначе; верхняя строка ничего
+    // не подсказывает (реестр, п. 26). Голосование по заявкам — по расстоянию (п. 17), «Где будет дом» — авторский порядок
+    const order = agenda || KEEP_ORDER.has(b.id) ? stop.options
+      : stop.options.map(o => [C.hashU32(`${riskSeed || exp || ''}|${b.id}|${o.id}`), o]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+    const rows = order.map(o => `<button class="colrow optrow ${rowCls(o)}" data-sel="${esc(o.id)}" aria-pressed="${o === sel}"><span class="dot"></span>${esc(t(o.label, pub))}<i>${esc(rowNote(o))}</i></button>`).join('');
+    const q = sel && reqOf(sel);
+    const detail = !sel ? `<p class="muted pickhint">${esc(u.pickHint)}</p>`
+      : `<div class="option${rec && rec.id === sel.id ? ' rec' : ''}"><h4>${esc(t(sel.label, pub))}</h4>${recHtml(sel)}<p class="knownlabel">${esc(u.known)}</p>
         <ul>${knownOf(sel, pub).map(k => `<li>${esc(k)}</li>`).join('')}</ul>${afterOf(sel)}${q ? starFacts(q.star) : ''}
         <button class="action" data-act="vote" data-option="${esc(sel.id)}">${esc(u.vote)}</button></div>`;
     return `<section class="card vote"><header>${esc(u.decision)} · ${esc(fmtYear(stop.state.year))}</header>
@@ -210,6 +216,7 @@
   }
 
   const knownOf = (o, st) => (typeof o.known[lang] === 'function' ? o.known[lang](st) : o.known[lang]);
+  const KEEP_ORDER = new Set(['d.home']);                               // строки — в авторском порядке (не перетасовываются)
   const voteHead = (stop, b) => `<header>${esc(C.ui[lang].decision)} · ${esc(fmtYear(stop.state.year))}</header>
       <h3>${esc(t(b.title, stop.state))}</h3><p class="muted">${esc(t(b.context, stop.state))}</p>`;
   const lyWord = () => (lang === 'ru' ? 'св. года' : 'ly');
@@ -1153,14 +1160,15 @@
     if (b && b.kind === 'decision' && b.ui !== 'passport') {
       const rows = document.querySelectorAll('#stop .optrow').length, cards = document.querySelectorAll('#stop .option').length;
       ck('выбор — списком строк, по строке на вариант', rows === st.options.length, `${rows} строк / ${st.options.length} вариантов`);
-      ck('одна карточка выбранного варианта', cards === 1, `${cards} карточек`);
-      ck('кнопка решения — одна, в карточке', document.querySelectorAll('#stop [data-act="vote"]').length === 1 && document.querySelectorAll('#stop .option [data-act="vote"]').length === 1);
+      const picked = document.querySelectorAll('#stop .optrow[aria-pressed="true"]').length, votes = document.querySelectorAll('#stop [data-act="vote"]').length;
+      ck('по умолчанию ничего не выбрано; выбран — одна карточка', picked === cards && cards <= 1 && (cards || document.querySelector('#stop .pickhint')), `${picked} выбрано, ${cards} карточек`);
+      ck('кнопка решения — только в карточке выбранного', votes === cards && document.querySelectorAll('#stop .option [data-act="vote"]').length === cards);
       if (b.ui === 'agenda') {
         ck('голосование — по заявкам, без выбора звезды', st.options.every(o => C.requests.get(o.id)), st.options.map(o => o.id).join(', '));
         const stars = new Set(st.options.map(o => C.requests.get(o.id).star)), doneStars = new Set((world.requestsDone || []).map(id => (C.requests.get(id) || {}).star));
         const miss = M.knownAtStart().filter(o => M.reachable().some(x => x.name === o.star) && !stars.has(o.star) && !doneStars.has(o.star)).map(o => o.id);
         ck('каждая цель архива — заявка в списке (отдельного архива нет)', !miss.length && !document.querySelector('#stop .colonies'), miss.join(', '));
-        ck('в карточке заявки — справка о звезде', document.querySelectorAll('#stop .option .knownlabel').length >= 2);
+        ck('в карточке заявки — справка о звезде (заявка выбрана)', !cards || document.querySelectorAll('#stop .option .knownlabel').length >= 2);
         ck('строка заявки — звезда и расстояние', [...document.querySelectorAll('#stop .optrow i')].every(i => i.textContent.trim().length > 0));
       }
     }

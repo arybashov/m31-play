@@ -4,9 +4,9 @@
   'use strict';
   const notes = __core => {
     let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough,
-    crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd,
-    shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
-    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
+    crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural,
+    pools, ppl, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
+    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
     __link();
 
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -164,7 +164,7 @@
     return { year: s.year, watch: s.watch, awake: awakeOf(s, ids), crew: crewOf(s), alive: aliveOf(s), dead: s.dead || 0, deadHere: s.deadHere || 0, out: s.outpostDead || 0,
       L: lossesOf(s, Math.max(0, Math.min(s.year, arrivalAt(s)))), reserve: s.reserve, materials: s.materials, highPower: !!s.highPower,
       inc: (s.incidents || []).length, regMat: regSpent(s), shield: s.shield ? { eroded: s.shield.erodedKg / SH.AREA, hits: s.shield.hits.length } : null,
-      hl: s.human ? { v: s.human.load.v, d2: s.human.stats.d2, rest: s.human.rest || 0, src: Object.assign({}, s.human.stats.src) } : null };
+      hl: s.human ? { v: s.human.load.v, d2: s.human.stats.d2, rest: s.human.rest || 0, src: Object.assign({}, s.human.stats.src) } : null, gr: groupsView(s) };
   }
   // нагрузка вахты за период (человеческий фактор, шаг А2) — одна строка: перегрузка или отдых, их главная причина; null — штатно
   const HL_SRC = { aural: ['авралы', 'all-hands repairs'], busy: ['работы на последнем резерве', 'work on the last reserve'] };   // перегрузку дают острые источники
@@ -247,6 +247,7 @@
       : ev.kind === 'event' ? (ru ? `Требуется решение совета: ${EV.TYPES[ev.type].name.ru}.` : `Council decision required: ${EV.TYPES[ev.type].name.en}.`)
       : ev.kind === 'wear' ? (ev.type === 'shop' ? (ru ? 'Требуется решение совета: что мастерская делает со снятыми насосами.' : 'Council decision required: what the workshop does with removed pumps.')
         : ev.type === 'reg' ? (ru ? 'Требуется решение совета: регламент не успевает.' : 'Council decision required: maintenance is falling behind.')
+        : ev.type === 'groups' ? (ru ? `Требуется решение совета: ${repName(ev.g, 'ru')} просит слова.` : `Council decision required: ${repName(ev.g, 'en')} asks to speak.`)
         : ev.type === 'term' ? (ru ? 'Требуется решение совета: смена отслужила обещанный срок.' : 'Council decision required: the watch has served its promised term.')
         : ev.type === 'nav' ? (ru ? 'Требуется решение совета: отклонение навигации перед встречей.' : 'Council decision required: a navigation offset before the rendezvous.')
         : ev.type === 'danger' ? (/^C\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — груз ${ev.id}.` : `Council decision required: a dangerous node — cargo ${ev.id}.`)
@@ -301,7 +302,7 @@
     // спокойный период — две строки: без событий, потерь, работ и перемен
     const data = { y0, y1, losses: dl, reest, crewDead: dInc, alive: now.alive, interrupted: !!ev };   // числа периода — для перемотки и проверок
     const hline = loadLine(base, now, lang);
-    const calm = !ev && !events.length && !envs.length && !dl && !dInc && !others.length && !reest && !res.length && !mat.length && shieldSame && now.awake === base.awake && now.highPower === base.highPower && !hline
+    const calm = !ev && !events.length && !envs.length && !dl && !dInc && !others.length && !reest && !res.length && !mat.length && shieldSame && now.awake === base.awake && now.highPower === base.highPower && !hline && !groupLines(base, now, lang).length
       && !(s.wear && W.observe(s.wear).groups.some(g => g.sleep && g.heat));   // группы на тепловом резерве — не спокойный период
     if (calm) return { title, data, details: det.join('\n\n'), text: [ru ? `Передаём корабль без происшествий. ${watchLine}, живы — ${now.alive}; запасы${s.shield ? ' и щит' : ''} без изменений.`
       : `We hand over the ship with no incidents. ${watchLine}, alive — ${now.alive}; stores${s.shield ? ' and shield' : ''} unchanged.`, way.join(' ')].join('\n\n') };
@@ -309,6 +310,7 @@
     const people = [`${watchLine}.`, dl ? (ru ? `Расчётные потери за период — ${ppl(dl)}: ${cats}.` : `Estimated losses over the period — ${dl}: ${cats}.`)
       : (ru ? 'Расчётных потерь за период нет.' : 'No estimated losses over the period.')];
     if (hline) people.push(hline);
+    for (const g of groupLines(base, now, lang)) people.push(g);         // ядро Б: группа просит слова — ранний признак
     if (dInc) people.push(ru ? `В происшествиях погибли ${ppl(dInc)} экипажа.` : `${dInc} of the crew died in incidents.`);
     if (others.length) people.push(ru ? `Погибли ${others.map(([p, n]) => `${ppl(n)}${POP_WHO[p][0]}`).join(' и ')}.` : `${others.map(([p, n]) => `${n}${POP_WHO[p][1]}`).join(' and ')} died.`);
     if (reest) people.push(ru ? `Оценка потерь за прошлые годы пересчитана под новый штат вахты: ${reest > 0 ? '+' : '−'}${Math.abs(reest)}.`

@@ -4,9 +4,9 @@
   'use strict';
   const outfit = __core => {
     let BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit,
-    dd, f1, f2, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost,
-    supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG;
-    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit, dd, f1, f2, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
+    dd, f1, f2, groupsLoss, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5,
+    supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG;
+    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit, dd, f1, f2, groupsLoss, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
     __link();
 
   // ---- оснащение: что даёт каждая позиция (mission.js: EQUIP). До паспорта — базовое.
@@ -201,6 +201,7 @@
   // extra.ids — заданные погибшие (реестр Оттепели: сроки капсул, секция), extra.beat — решение, к которому относится запись
   function incident(s, kind, dead, extra, pop) {
     const ids = extra && extra.ids ? extra.ids : victims(s, kind, dead, pop);
+    groupsLoss(s, dead, pop);                                            // ядро Б: гибель экипажа в пути — доверие жизнеобеспечения
     const beat = extra && extra.beat || (kind === 'stream' && s.choices['d.streamRoute'] ? 'd.streamRoute' : INCIDENT_BEAT[kind]);
     (s.incidents = s.incidents || []).push(Object.assign({ kind, year: s.year, dead, ids, pop: pop || 'crew', names: { ru: ids.map(i => popName(s, pop, i, 'ru')), en: ids.map(i => popName(s, pop, i, 'en')) },
       rec: (s.recs || {})[beat] || null, choice: s.choices[beat] || null }, extra || {}));

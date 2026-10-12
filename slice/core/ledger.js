@@ -3,10 +3,10 @@
 (function (root) {
   'use strict';
   const ledger = __core => {
-    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear,
-    kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport,
-    spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
-    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
+    let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, groupsDecided, hasIR,
+    hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance,
+    simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
+    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, groupsDecided, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
     __link();
 
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
@@ -44,7 +44,7 @@
   const navDeparture = s => s.nav ? s.nav.revs.filter(r => r.at <= 0).pop() || null : null;
   const sim = { active: () => true, advance: simAdvance, notes: simNotes,
     decision: (s, ev) => ev.kind === 'event' ? EV.decision(s, ev) : ev.kind === 'wear' ? wearDecision(s, ev) : serviceDecision(s, ev),
-    decided: (s, beat) => { EV.decided(s); wearSync(s); track(s, beat ? `${beat.id}/${s.choices[beat.id]}` : 'model'); },   // плановый совет, вахта в зале, ревизия маршрута, журнал
+    decided: (s, beat) => { EV.decided(s); wearSync(s); track(s, beat ? `${beat.id}/${s.choices[beat.id]}` : 'model'); groupsDecided(s, beat); },   // плановый совет, вахта в зале, ревизия маршрута, журнал
     applied: (s, beat) => { wearSync(s); track(s, beat.id); }, observe: observeShip, report: simReport, calendar: CAL.map(c => c.id),
     terminal: s => s.terminalAt != null, endBeat: s => terminalBeat(s) };   // рейс окончен состоянием корабля (шаг 3d)
   // прибор щита: минимум остатка по панелям — среднее скрыло бы опасную дыру
