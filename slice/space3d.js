@@ -1484,8 +1484,242 @@
       src.push({ ndc: v, k: 0.8 * k * (0.35 + 0.65 * f.s), color, size: 0.35 + 0.65 * f.s, ghosts: 0.6 * f.s, streak: 0.5 + 0.5 * f.s, occluded: occ }); };
     if (solar && solar.visible) { const p = starsGroup.localToWorld(new THREE.Vector3()); if (!sysOcc.sun) sysOcc.sun = bodiesOf(solar, solar.children.find(o => o.isMesh));
       put(sysFlare.sun, p, 0xfff0d8, () => occludedSys(sysOcc.sun, p, 696000 * KM_LY)); }
-    if (tsys && tsys.visible) { const p = tsys.getWorldPosition(new THREE.Vector3()); if (!sysOcc.tgt) sysOcc.tgt = bodiesOf(tsys, tsys.children.find(o => o.isMesh));
+    if (tsys && tsys.visible && starM.vis < 0.3) { const p = tsys.getWorldPosition(new THREE.Vector3()); if (!sysOcc.tgt) sysOcc.tgt = bodiesOf(tsys, tsys.children.find(o => o.isMesh));
       put(sysFlare.tgt, p, starColor(targetInfo.sp), () => occludedSys(sysOcc.tgt, p, SYS.star.R_km * KM_LY)); }
+  }
+
+  // ---------------------------------------------------------------- звезда цели вблизи: поверхность, арки, вспышка и выброс
+  // (DOC «Вспышки звезды цели — проект v1», шаг В5; автор 13.10: «вблизи звезда — с арками», «выброс чтобы был красивый»).
+  // Арки — силовые линии поля магнитных полюсов: та же модель, что у автора в Houdini (logo4.hip, сеть MagneticFields:
+  // volumewrangle1 — поле — сумма q·(P − p)/|P − p|² по полюсам на сфере, volumetrail — линии от «+» к «−»). Полюса — пары у
+  // активных областей (как пятна), линии считаются один раз при постройке; по линии — нить плазмы, сгустки бегут вдоль.
+  // Поверхность — шейдер: грануляция, потемнение к краю, пятна и факелы у полюсов. Вспышка — ленты у основания главной арки и
+  // блик объектива; выброс — петля протуберанца поднимается и раскручивается, за ней расширяется фронт из волокон, внизу —
+  // аркада послевспышечных петель. Всё — нитями и частицами, без мягкого ореола (реестр интерфейса, п. 22). Масштаб группы —
+  // радиус звезды: геометрия — в радиусах
+  const R_SUN_KM = 696000;
+  function starRadiusKm(name, sp) {
+    const sys = MSYS && MSYS.system(name); if (sys && sys.star && sys.star.R_km) return sys.star.R_km;
+    const m = /([OBAFGKM])(\d(\.\d)?)?/.exec(sp || 'G'), c = m ? m[1] : 'G', k = m && m[2] ? +m[2] : 5;
+    if (c === 'M') return R_SUN_KM * Math.max(0.1, 0.62 - 0.08 * k);    // M0 — 0,62, M4 — 0,30 радиуса Солнца
+    if (c === 'K') return R_SUN_KM * (0.9 - 0.03 * k);
+    return R_SUN_KM * ({ O: 6, B: 4, A: 1.8, F: 1.3, G: 1 }[c] || 1);
+  }
+  // полюса: область вспышки — на +Y (ось выброса), остальные — случайно, не рядом с ней
+  function starPoles(seed) {
+    const rnd = mulberry(seed), poles = [];
+    const region = (c, sep, tilt, s, id) => { const e = new THREE.Vector3(0, 1, 0).cross(c); if (e.lengthSq() < 1e-6) e.set(1, 0, 0); e.normalize();
+      const n = c.clone().cross(e).normalize(), d = e.multiplyScalar(Math.cos(tilt)).addScaledVector(n, Math.sin(tilt)).multiplyScalar(sep / 2);
+      poles.push({ p: c.clone().add(d).normalize(), q: s, id }, { p: c.clone().sub(d).normalize(), q: -s, id }); };
+    region(new THREE.Vector3(0, 1, 0), 0.26, 0.25, 1.5, 0);
+    for (let k = 1, guard = 0; k < 10 && guard < 200; guard++) {
+      // локальная Z смотрит на наблюдателя (кадр поворачивает звезду): две трети областей — у края диска, где арки стоят в профиль
+      const zc = k <= 6 ? (rnd() - 0.5) * 0.5 : rnd() * 0.9, a = rnd() * 2 * Math.PI, rr = Math.sqrt(1 - zc * zc), c = new THREE.Vector3(rr * Math.cos(a), rr * Math.sin(a), zc);
+      if (c.y > 0.8 || poles.some(P => P.p.dot(c) > 0.97)) continue;
+      region(c, 0.1 + 0.2 * rnd(), (rnd() - 0.5) * 1.2, 0.45 + 0.8 * rnd(), k); k++;
+    }
+    return poles;
+  }
+  // источники поля — под поверхностью (как у пятен): над полюсом поле вертикальное, линии поднимаются аркой; затухание 1/r²
+  const POLE_DEPTH = 0.06;
+  function starField(x, poles, out) {
+    out.set(0, 0, 0);
+    for (const P of poles) { const k = 1 - POLE_DEPTH, dx = x.x - P.p.x * k, dy = x.y - P.p.y * k, dz = x.z - P.p.z * k, r2 = dx * dx + dy * dy + dz * dz + 1e-6, r3 = r2 * Math.sqrt(r2);
+      out.x += P.q * dx / r3; out.y += P.q * dy / r3; out.z += P.q * dz / r3; }
+    return out;
+  }
+  // силовые линии от «+»: шаг RK2 по направлению поля; линия, вернувшаяся на поверхность невысокой аркой, — в арки
+  function starLines(poles, rnd) {
+    const lines = [], B = new THREE.Vector3(), B2 = new THREE.Vector3(), x = new THREE.Vector3(), m = new THREE.Vector3();
+    for (const P of poles) if (P.q > 0) {
+      const t1 = new THREE.Vector3(0, 1, 0).cross(P.p); if (t1.lengthSq() < 1e-6) t1.set(1, 0, 0); t1.normalize();
+      const t2 = P.p.clone().cross(t1).normalize(), n = Math.round(14 + 14 * P.q);
+      for (let i = 0; i < n; i++) {
+        const a = 2 * Math.PI * (i + 0.6 * rnd()) / n, r0 = 0.01 + 0.025 * rnd();
+        x.copy(P.p).addScaledVector(t1, r0 * Math.cos(a)).addScaledVector(t2, r0 * Math.sin(a)).setLength(1.001);
+        const pts = [x.clone()]; let ok = false, top = 0;
+        for (let k = 0; k < 900; k++) {
+          const h = 0.004 + 0.01 * Math.min(1, (x.length() - 1) * 8);
+          starField(x, poles, B).normalize(); m.copy(x).addScaledVector(B, h / 2); starField(m, poles, B2).normalize(); x.addScaledVector(B2, h);
+          if (k % 2 === 1) pts.push(x.clone()); top = Math.max(top, x.length() - 1);
+          if (x.length() < 1) { x.setLength(1); pts.push(x.clone()); ok = true; break; }
+          if (x.length() > 1.9) break;
+        }
+        const chord = pts[0].distanceTo(pts[pts.length - 1]);
+        if (ok && pts.length > 8 && top > 0.015 && top < 0.32 && chord > 0.05 && chord < 0.45 && top > 0.22 * chord && pts[pts.length - 1].distanceTo(P.p) > 0.05) lines.push({ pts, q: P.q, id: P.id, top });
+      }
+    }
+    return lines;
+  }
+  const STAR_VS = `#include <common>
+    #include <logdepthbuf_pars_vertex>
+    varying vec3 vO; varying vec3 vNv; varying vec3 vV;
+    void main(){ vO = position; vNv = normalMatrix * normal; vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv;
+      #include <logdepthbuf_vertex>
+    }`;
+  const NOISE_GLSL = `
+    float h31(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+    float vn(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
+                 mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+    float fbm(vec3 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++){ s += a * vn(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return s; }`;
+  const STAR_FS = `#include <logdepthbuf_pars_fragment>
+    uniform float uT, uFlash; uniform vec3 uCol; uniform vec3 uP[20]; uniform float uQ[20]; uniform int uN;
+    varying vec3 vO; varying vec3 vNv; varying vec3 vV;
+    ${NOISE_GLSL}
+    void main(){
+      #include <logdepthbuf_fragment>
+      vec3 o = normalize(vO);
+      float mu = clamp(dot(normalize(vNv), normalize(vV)), 0.0, 1.0);
+      float limb = 1.0 - 0.62 * (1.0 - mu) - 0.22 * (1.0 - mu) * (1.0 - mu);   // потемнение к краю — квадратичный закон
+      float g = fbm(o * 90.0 + vec3(uT * 0.04, uT * 0.03, 0.0)), g2 = fbm(o * 14.0 - vec3(0.0, uT * 0.006, 0.0));
+      float cells = smoothstep(0.32, 0.72, g) * (0.85 + 0.3 * g2);          // гранулы и супергрануляция
+      float spot = 0.0, plage = 0.0, rib = 0.0;
+      for (int i = 0; i < 20; i++) { if (i >= uN) break; float d = distance(o, uP[i]), a = abs(uQ[i]);
+        spot += (1.0 - smoothstep(0.004, 0.018 + 0.016 * a, d)) * min(1.0, a);
+        plage += a * exp(-d * d / (0.006 + 0.01 * a)) * smoothstep(0.012, 0.04, d); }
+      // ленты вспышки: по обе стороны линии раздела главной области (полюса 0 и 1), расходятся по мере вспышки
+      vec3 m = normalize(uP[0] + uP[1]), ax = normalize(uP[0] - uP[1]);
+      float along = dot(o - m, normalize(cross(m, ax))), across = dot(o - m, ax), sep = 0.02 + 0.05 * (1.0 - uFlash);
+      float ds = abs(across) - sep; rib = exp(-ds * ds / 0.00012) * exp(-along * along / 0.004) * (1.0 - smoothstep(0.0, 0.08, distance(o, m) - 0.05));
+      vec3 col = uCol * (0.86 + 0.26 * cells) * limb * mix(vec3(1.0, 0.5, 0.32), vec3(1.0), pow(mu, 0.45));   // к краю — краснее
+      col *= 1.0 - 0.75 * clamp(spot, 0.0, 1.0);
+      col += uCol * 0.5 * clamp(plage, 0.0, 1.5) * limb;
+      col += vec3(1.0, 0.96, 0.9) * rib * uFlash * 2.5;
+      gl_FragColor = vec4(col, 1.0);
+    }`;
+  const ARCH_VS = `#include <common>
+    #include <logdepthbuf_pars_vertex>
+    attribute float aPh; attribute float aFl; uniform float uT, uLift;
+    varying float vU; varying float vPh; varying float vH; varying float vFl;
+    void main(){ vU = uv.x; vPh = aPh; vFl = aFl; vH = length(position) - 1.0;
+      vec3 p = position + normal * 0.0025 * sin(uT * 1.3 + aPh * 6.28 + uv.x * 11.0);
+      p *= 1.0 + aFl * uLift * sin(3.14159 * uv.x);                          // главная арка вспухает перед выбросом
+      vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+      #include <logdepthbuf_vertex>
+    }`;
+  const ARCH_FS = `#include <logdepthbuf_pars_fragment>
+    uniform float uT, uFlash, uA, uGone; uniform vec3 uCol;
+    varying float vU; varying float vPh; varying float vH; varying float vFl;
+    void main(){
+      #include <logdepthbuf_fragment>
+      float flow = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(vU * 46.0 - uT * (1.4 + 1.6 * vPh) + vPh * 40.0), 3.0);   // сгустки плазмы бегут вдоль
+      float foot = smoothstep(0.0, 0.06, vU) * (1.0 - smoothstep(0.94, 1.0, vU));
+      float hot = 0.55 + 0.9 * exp(-vH * 9.0);                                 // у основания ярче и горячее
+      vec3 c = mix(uCol * vec3(1.0, 0.62, 0.42), vec3(1.0, 0.82, 0.5), 0.2 + 0.45 * exp(-vH * 16.0));
+      float k = 1.1 * flow * hot * (0.35 + 0.65 * foot) * (1.0 + vFl * uFlash * 1.2) * (1.0 - vFl * uGone);
+      gl_FragColor = vec4(c * k * uA, 1.0);
+    }`;
+  // выброс: kind 0 — петля протуберанца (скрученная трубка по главной арке), 1 — фронт из волокон, 2 — аркада после вспышки
+  const CME_VS = `#include <common>
+    #include <logdepthbuf_pars_vertex>
+    attribute vec4 aD; uniform float uT, uPx, uR; uniform vec3 uA, uB;
+    varying float vA; varying vec3 vC;
+    float sm(float a, float b, float x){ return clamp((x - a) / (b - a), 0.0, 1.0); }
+    void main(){
+      float kind = aD.x, s = aD.y, v = aD.z, rn = aD.w, t = uT; vec3 P; float a = 0.0, sz = 1.0;
+      vec3 m = normalize(uA + uB), ax = normalize(uA - uB), side = normalize(cross(m, ax));
+      if (kind < 0.5) {                                                       // петля: поднимается, раздувается, раскручивается
+        float u = sm(0.5, 9.0, t), H = 0.1 + 1.05 * pow(u, 1.5), w = min(length(uA - uB) * 0.5 * (1.0 + 4.5 * H), 0.75 * H + 0.13);
+        float ang = 3.14159 * s; vec3 c = m * (1.0 + H * sin(ang)) + ax * (w * cos(ang));
+        vec3 tg = normalize(ax * (-w * sin(ang)) + m * (H * cos(ang)) + 1e-4);
+        vec3 n1 = normalize(cross(tg, side)), n2 = cross(tg, n1);
+        float tw = v * 6.28318 + s * 9.0 * (1.0 + u) + t * 0.6, rr = (0.012 + 0.16 * u) * (0.55 + 0.45 * rn) * (0.6 + 0.4 * sin(ang));
+        P = c + (n1 * cos(tw) + n2 * sin(tw)) * rr;
+        a = sm(0.3, 1.2, t) * (1.0 - sm(7.0, 11.0, t)) * (0.6 + 0.4 * sin(s * 30.0 + t * 3.0 + rn * 6.0));
+        vC = mix(vec3(1.0, 0.36, 0.42), vec3(1.0, 0.75, 0.55), 0.25 + 0.35 * (1.0 - u)); sz = 1.4;
+      } else if (kind < 1.5) {                                                // фронт: купол волокон над петлёй
+        float u = sm(1.0, 11.0, t), Rf = 0.1 + 0.88 * pow(u, 1.2), lat = s * 1.75, lon = v * 6.28318;
+        vec3 C = m * (1.0 + Rf * 0.85);
+        vec3 dir = normalize(m * cos(lat) + (ax * cos(lon) + side * sin(lon)) * sin(lat));
+        float wig = 0.06 * sin(lat * 7.0 + rn * 20.0 + t) * Rf;
+        P = C + dir * (Rf * (0.9 + 0.1 * rn + 0.06 * sin(lon * 5.0 + t * 0.7))) + (ax * cos(lon + 1.57) + side * sin(lon + 1.57)) * wig;
+        if (dot(P, m) < 1.02) P += m * (1.02 - dot(P, m));
+        float rim = 1.0 - abs(normalize(normalMatrix * dir).z);              // оболочка по касательной к лучу зрения — яркий обод
+        a = sm(1.0, 2.5, t) * (1.0 - sm(8.0, 13.0, t)) * (0.12 + 0.88 * pow(rim, 3.0)) * (0.35 + 0.65 * cos(lat * 0.8) * cos(lat * 0.8)) * (0.35 + 0.65 * step(0.5, fract(v * 31.0 + rn * 0.3)));
+        vC = vec3(0.85, 0.9, 1.0) * 1.4; sz = 1.1 + 1.0 * u;
+      } else {                                                                // аркада: низкие петли вдоль линии раздела
+        float z = (v - 0.5) * 0.22, hh = 0.03 + 0.03 * rn, ang = 3.14159 * s;
+        vec3 base = normalize(m + side * z);
+        P = base * (1.0 + hh * sin(ang)) + ax * (0.035 * cos(ang));
+        a = sm(1.5, 3.5, t) * (1.0 - sm(10.0, 16.0, t));
+        vC = vec3(1.0, 0.8, 0.6) * 0.35; sz = 0.7;
+      }
+      vA = a; vec4 mv = modelViewMatrix * vec4(P, 1.0); gl_Position = projectionMatrix * mv;
+      gl_PointSize = clamp(sz * 0.022 * uR * uPx / -mv.z, 1.0, 7.0);
+      #include <logdepthbuf_vertex>
+    }`;
+  const CME_FS = `#include <logdepthbuf_pars_fragment>
+    varying float vA; varying vec3 vC;
+    void main(){
+      #include <logdepthbuf_fragment>
+      vec2 q = gl_PointCoord - 0.5; float r = length(q); if (r > 0.5 || vA < 0.003) discard;
+      gl_FragColor = vec4(vC * vA * (1.0 - r * 2.0) * 0.9, 1.0);
+    }`;
+  const starM = { g: null, key: '', t0: 0, flash: 0, vis: 0, R: 0 };
+  function buildStarModel() {
+    const name = targetInfo.star, key = `${name}|${targetInfo.sp}`; if (starM.key === key) return;
+    if (starM.g) { starsGroup.remove(starM.g); starM.g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    starM.key = key; starM.R = starRadiusKm(name, targetInfo.sp) * KM_LY;
+    let seed = 7; for (const ch of name) seed = (seed * 31 + ch.charCodeAt(0)) | 0;
+    const poles = starPoles(seed), lines = starLines(poles, mulberry(seed ^ 0x5f3759df)), hsl = {}, col = new THREE.Color(starColor(targetInfo.sp));
+    col.getHSL(hsl); col.setHSL(hsl.h * 0.9, Math.min(1, hsl.s * 1.1 + 0.25), 0.5).multiplyScalar(1.1);   // поверхность насыщеннее точки на карте
+    const g = new THREE.Group(); g.visible = false; g.position.copy(T); g.scale.setScalar(starM.R);
+    const uP = []; const uQ = []; for (let i = 0; i < 20; i++) { const P = poles[i]; uP.push(P ? P.p.clone() : new THREE.Vector3(0, 1, 0)); uQ.push(P ? P.q : 0); }
+    const surf = new THREE.Mesh(new THREE.SphereGeometry(1, 160, 120), new THREE.ShaderMaterial({ vertexShader: STAR_VS, fragmentShader: STAR_FS, toneMapped: false,
+      uniforms: { uT: { value: 0 }, uFlash: { value: 0 }, uCol: { value: col.clone() }, uP: { value: uP }, uQ: { value: uQ }, uN: { value: Math.min(20, poles.length) } } }));
+    g.add(surf);
+    const archMat = new THREE.ShaderMaterial({ vertexShader: ARCH_VS, fragmentShader: ARCH_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      uniforms: { uT: { value: 0 }, uFlash: { value: 0 }, uLift: { value: 0 }, uA: { value: 1 }, uGone: { value: 0 }, uCol: { value: col.clone().lerp(new THREE.Color(1, 0.55, 0.35), 0.3) } } });
+    lines.forEach((L, i) => {
+      const curve = new THREE.CatmullRomCurve3(L.pts), geo = new THREE.TubeGeometry(curve, Math.min(140, L.pts.length * 2), 0.0045 + 0.004 * Math.min(1, L.q), 6, false);
+      const n = geo.attributes.position.count, ph = (i * 0.618) % 1;
+      geo.setAttribute('aPh', new THREE.BufferAttribute(new Float32Array(n).fill(ph), 1));
+      geo.setAttribute('aFl', new THREE.BufferAttribute(new Float32Array(n).fill(L.id === 0 ? 1 : 0), 1));
+      g.add(new THREE.Mesh(geo, archMat));
+    });
+    // выброс: петля 5000, фронт 9000, аркада 2400 частиц — положения считает шейдер по времени
+    const N = [5000, 9000, 2400], cnt = N[0] + N[1] + N[2], D = new Float32Array(cnt * 4), rnd = mulberry(seed ^ 0x1234);
+    let j = 0; N.forEach((k, kind) => { for (let i = 0; i < k; i++, j++) { D[j * 4] = kind; D[j * 4 + 1] = rnd(); D[j * 4 + 2] = rnd(); D[j * 4 + 3] = rnd(); } });
+    const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cnt * 3), 3)); cg.setAttribute('aD', new THREE.BufferAttribute(D, 4));
+    cg.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6);
+    const cme = new THREE.Points(cg, new THREE.ShaderMaterial({ vertexShader: CME_VS, fragmentShader: CME_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      uniforms: { uT: { value: 99 }, uPx: { value: 800 }, uR: { value: 1 }, uA: { value: poles[0].p.clone() }, uB: { value: poles[1].p.clone() } } }));
+    cme.frustumCulled = false; g.add(cme);
+    Object.assign(starM, { g, surf, archMat, cme, flareAt: poles[0].p.clone().add(poles[1].p).normalize(), nLines: lines.length, nPoles: poles.length,
+      tops: lines.map(L => +L.top.toFixed(3)) });
+    starsGroup.add(g);
+  }
+  // кадр: звезда видна вблизи (камера ближе 400 радиусов); область вспышки — на краю диска справа вверху (выброс в профиль);
+  // цикл вспышки — 18 с: ленты и блик, петля поднимается, фронт расширяется, аркада догорает, затем спокойная звезда
+  const STAR_CYC = 18;
+  const starQ = new THREE.Quaternion(), starM4 = new THREE.Matrix4();
+  function stepStarModel(dt, now, camLocal) {
+    buildStarModel(); const g = starM.g; g.position.copy(T);
+    const d = camLocal.distanceTo(T), near = band(d / starM.R, 0, 0, 150, 400);
+    starM.vis = near; g.visible = near > 0.002;
+    if (routeAhead) routeDone.visible = routeAhead.visible = !world.preview && near < 0.3;   // у звезды вблизи линия маршрута не режет диск
+    if (tsys) { const sm = tsys.children.find(o => o.isMesh); if (sm) sm.visible = near < 0.5; }   // плоская звезда системы — уступает модели
+    if (!g.visible) { starM.t0 = now; starM.flash = 0; return; }
+    const t = ((now - starM.t0) / 1000) % STAR_CYC, tt = now / 1000;
+    const flash = t < 0.4 ? t / 0.4 : Math.exp(-(t - 0.4) / 1.8) * (t < 9 ? 1 : 0);
+    starM.flash = flash * near;
+    starM.surf.material.uniforms.uT.value = tt; starM.surf.material.uniforms.uFlash.value = flash;
+    const am = starM.archMat.uniforms; am.uT.value = tt; am.uFlash.value = flash; am.uA.value = near;
+    am.uLift.value = t < 1 ? 0.05 * t : Math.max(0, 0.05 - (t - 1) * 0.05); am.uGone.value = t > 1 && t < 12 ? Math.min(1, (t - 1) / 1.5) * (1 - Math.max(0, (t - 9) / 3)) : 0;
+    const cu = starM.cme.material.uniforms; cu.uT.value = t; cu.uR.value = starM.R; cu.uPx.value = (container.clientHeight || 800) / (2 * Math.tan(starCam.fov * Math.PI / 360));
+    // ориентация: область вспышки — на краю диска сверху; выброс уходит вверх, в профиль
+    const v = T.clone().sub(camLocal).normalize(), up = starCam.up.clone().addScaledVector(v, -starCam.up.dot(v)).normalize();
+    const right = v.clone().cross(up).normalize(), Y = up.clone().multiplyScalar(Math.cos(0.3)).addScaledVector(right, -Math.sin(0.3)).normalize();   // выброс — вверх и чуть влево, в свободное небо
+    const Z = v.clone().negate(), X = Y.clone().cross(Z).normalize(); starM4.makeBasis(X, Y, Z); starQ.setFromRotationMatrix(starM4);
+    if (starM.fresh !== false) { g.quaternion.copy(starQ); starM.fresh = false; } else g.quaternion.slerp(starQ, 1 - Math.exp(-dt * 2.5));
+  }
+  // блик объектива от вспышки — у области вспышки
+  function starModelFlares(src) {
+    if (!starM.g || !starM.g.visible || starM.flash < 0.02) return;
+    const p = starM.flareAt.clone().multiplyScalar(1.02).applyQuaternion(starM.g.quaternion).multiplyScalar(starM.R).add(starM.g.position).add(starsGroup.position);
+    const v = p.project(starCam); if (v.z >= 1) return;
+    src.push({ ndc: v, k: 1.1 * starM.flash, color: 0xfff0dc, size: 0.75, ghosts: 0.45, streak: 0.9 });
   }
 
   // ---------------------------------------------------------------- звёзды и маршрут
@@ -1964,6 +2198,7 @@
     // карта цели заявки: тот же маршрут с другой стороны — цель слева, у её длинной подписи есть место до карточек
     targetRoute: { focus: 'route', dist: 15 * LY, yaw: 1.4 - Math.PI, pitch: 1.05, pivot: -1400 },
     target: { focus: 'target', dist: 0.8 * LY, yaw: 2.6, pitch: 0.35, pivot: -1400 },
+    star: { focus: 'target', dist: 1, yaw: 2.4, pitch: 0.22, pivot: -1400, move: 5000 },   // звезда цели вблизи: арки, вспышка (дистанция — 6,2 радиуса звезды: арки видны, выброс — в кадре)
     sun: { focus: 'sun', dist: 0.004 * LY, yaw: 0, pitch: 0, pivot: -1400, frame: 'galactic' },   // углы — от полюса эклиптики, ниже
     map: { focus: 'sun', dist: 95 * LY, yaw: 1.2, pitch: 1.0, pivot: -1400 },
     agenda: { focus: 'sun', dist: 46 * LY, yaw: 1.2, pitch: 0.95, pivot: -1400 },   // голосование Совета: все звёзды заявок вокруг Солнца
@@ -2314,7 +2549,7 @@
     cam.focus = p.focus;
     // маршрут целиком: масштаб по расстоянию до цели
     const dist = name === 'route' || name === 'targetRoute' ? T.length() * 1.55 * LY : p.fit === 'bubble' ? 4.2 * bubbleR()
-      : name === 'target' && SYS && targetInfo.star === SYS.id ? lookOf().view * AU_LY * LY : name === 'distress' ? distressFrame().d * LY
+      : name === 'target' && SYS && targetInfo.star === SYS.id ? lookOf().view * AU_LY * LY : name === 'star' ? 6.2 * starRadiusKm(targetInfo.star, targetInfo.sp) * 1000 : name === 'distress' ? distressFrame().d * LY
       : name === 'epoch3' ? ep3Frame(performance.now()).d * LY : p.dist;
     const to = { F: focusPoint(p.focus), dist, yaw: p.yaw, pitch: p.pitch, pivot: p.pivot };
     if (p.fit === 'arrival' || p.fit === 'home') Object.assign(to, arrivalLook(p.fit));
@@ -2465,11 +2700,11 @@
 
   // ---------------------------------------------------------------- подписи и шкала
   const TXT = {
-    ru: { ship: 'Корабль', route: 'Маршрут', target: 'Цель', sun: 'Солнце', map: 'Карта', hint: 'тянуть — вращать · колесо — масштаб',
+    ru: { ship: 'Корабль', route: 'Маршрут', target: 'Цель', star: 'Звезда', sun: 'Солнце', map: 'Карта', hint: 'тянуть — вращать · колесо — масштаб',
       sunL: 'Солнце', gcL: 'центр Галактики', linkL: d => `${Math.round(d)} св. лет: вопрос идёт ${Math.round(d)} лет, ответ приходит через ${Math.round(2 * d)}`, targetL: 'цель', requestL: 'заявка', shipL: 'Сорок первая', scoutL: 'зонд', kits: { materials: 'материалы и запчасти', landing: 'расширенная посадка', probes: 'зонды-разведчики', ir: 'ИК-обсерватория', agro: 'второй агромодуль' }, cloudL: 'облако D2', scale: 'до камеры',
       sosL: 'сорок первая · сигнал бедствия', hearL: y => `сигнал — год ${y}`, rescuerL: 'спасатель', earthL: 'Земля', epoch3L: 'парус эпохи III · 0,2c',
       legacyL: n => `спасённые прошлой экспедиции · ${n}` },
-    en: { ship: 'Ship', route: 'Route', target: 'Target', sun: 'Sun', map: 'Map', hint: 'drag — rotate · wheel — zoom',
+    en: { ship: 'Ship', route: 'Route', target: 'Target', star: 'Star', sun: 'Sun', map: 'Map', hint: 'drag — rotate · wheel — zoom',
       sunL: 'Sun', gcL: 'Galactic centre', linkL: d => `${Math.round(d)} ly: a question takes ${Math.round(d)} years, the answer comes after ${Math.round(2 * d)}`, targetL: 'target', requestL: 'request', shipL: 'Forty-First', scoutL: 'probe', kits: { materials: 'materials and spares', landing: 'extended landing kit', probes: 'scout probes', ir: 'IR observatory', agro: 'second agro module' }, cloudL: 'D2 cloud', scale: 'to camera',
       sosL: 'Forty-First · distress signal', hearL: y => `signal in year ${y}`, rescuerL: 'rescuer', earthL: 'Earth', epoch3L: 'epoch III sail · 0.2c',
       legacyL: n => `rescued by a past expedition · ${n}` }
@@ -2482,7 +2717,7 @@
     return `${f(m / LY, m < LY ? 2 : 1)} ${ru ? 'св. года' : 'ly'}`;
   }
   function buildBar() {
-    barEl.innerHTML = ['ship', 'route', 'target', 'sun', 'map'].map(k =>
+    barEl.innerHTML = ['ship', 'route', 'target', 'star', 'sun', 'map'].map(k =>
       `<button type="button" data-go="${k}">${TXT[lang][k]}</button>`).join('') + `<span class="scale" id="spaceScale"></span><span class="hint">${TXT[lang].hint}</span>`;
   }
   function highlight(name) {
@@ -2512,7 +2747,7 @@
     const localBase = distress.visible ? world.relief.list.find(b => b.id === 'local') : null;
     const tFree = world.preview && !world.inspect;                       // до выбора звезды цели нет: её подписывают как любую другую
     const tSuffix = world.preview ? ((world.requestStars || []).includes(targetInfo.star) ? ` · ${TXT[lang].requestL}` : '') : ` · ${shipAtT ? TXT[lang].shipL : TXT[lang].targetL}`;
-    if (!galactic && (!world.preview || world.inspect)) put(rel(T), `${targetInfo[lang]}${tSuffix}`
+    if (!galactic && (!world.preview || world.inspect) && starM.vis < 0.3) put(rel(T), `${targetInfo[lang]}${tSuffix}`
       + (localBase ? ` · ${baseName(localBase)} · ${TXT[lang].hearL(Math.round(localBase.hear))}` : tgtObj && CC && !distress.visible ? ` · ${CC.archiveShort(tgtObj.userData, lang, world.year, true)}` : ''), 'target');
     // на карте сигнала бедствия подписи — у баз; здесь только метки
     if (colonyMarks.visible && CC && !distress.visible) colonyMarks.children.forEach(m => { const o = m.userData; if (o.star !== targetInfo.star || tFree) put(rel(m.position), CC.archiveShort(o, lang, world.year, true), 'colony st-' + o.status); });
@@ -2667,8 +2902,8 @@
     galaxy.children[0].visible = galaxy.children[1].visible = U_.galaxy.value > 0.002;
     galaxy.children[2].visible = U_.dust.value > 0.002;
     animateNet(dt, now);
-    fadeObj(targetMark, band(dly, 0, 0, 150, 300), 1);
-    fadeObj(targetStar, band(dly, 0.05, 0.5, 150, 300) * (!world.preview || world.inspect ? 1 : 0), 1);
+    fadeObj(targetMark, band(dly, 0, 0, 150, 300) * (1 - starM.vis), 1);   // кольцо цели — не поверх звезды вблизи
+    fadeObj(targetStar, band(dly, 0.05, 0.5, 150, 300) * (!world.preview || world.inspect ? 1 : 0) * (1 - starM.vis), 1);
     catalogPts.visible = dly < 400; catalogPts.material.uniforms.fade.value = band(dly, 0, 0, 200, 400);
     updateSolar(dly);
     updateTargetSystem(dly);
@@ -2715,6 +2950,7 @@
     starCam.position.copy(dir).multiplyScalar(dly);
     starCam.up.copy(vUp); starCam.near = Math.max(dly * 1e-3, 1e-12); starCam.far = 1e6;
     starCam.lookAt(0, 0, 0); starCam.updateProjectionMatrix();
+    stepStarModel(dt, now, starCam.position.clone().sub(starsGroup.position));   // звезда цели вблизи (вспышки, шаг В5)
     // свечение корабля вдали: вблизи его нет (виден сам корабль), с отъездом проявляется, дальше сжимается в точку
     const camLy = cam.F.clone().addScaledVector(dir, dly), shipM = camLy.distanceTo(shipPos()) * LY;
     shipFarM = shipM;
@@ -2800,12 +3036,13 @@
       if (mA > 0.01) { const v = shipLocal(-900).project(shipCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }   // корабль вдали
       supFlare(src);
       sysFlares(src, 1 - glareA);                                         // звёзды систем — когда блики с корабля погасли
+      starModelFlares(src);
       drawFlares(src, cen);
     } else {
       const src = [];
       if (mA > 0.01) { const v = relGroup.position.clone().add(marker.position).project(starCam); if (v.z < 1) src.push(shipFlare(v, mA, mS, shipCol)); }
       supFlare(src);
-      sysFlares(src, 1);
+      sysFlares(src, 1); starModelFlares(src);
       drawFlares(src, new THREE.Vector3(0, 0, 0).project(starCam));       // центр кадра — как у ближней ветки вдали
     }
     drawLabels();
@@ -2888,6 +3125,7 @@
   api.debugShipAt = function (y) { const y0 = world.year; world.year = y; const p = shipPos(); world.year = y0; return [p.x, p.y, p.z]; };
   api.debugView = function () { const c = COM.clone().applyQuaternion(shipQBase).project(shipCam); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), turn: +rotQ.t.toFixed(3), deg: +(ship.quaternion.angleTo(shipQBase) * 180 / Math.PI).toFixed(1), year: +world.year.toFixed(3), pm: +pm.a.toFixed(3), dist: Math.round(cam.dist), focus: cam.focus, arrive: world.arrive, tMag: world.tMag, probes: launch.live.map(p => Math.round(p.g.position.distanceTo(ship.position))) }; };
   const goLog = []; api.debugGoLog = () => goLog.slice();
+  api.debugStar = () => ({ key: starM.key, vis: +starM.vis.toFixed(3), lines: starM.nLines, poles: starM.nPoles, tops: starM.tops });
   api.debugTick = function (ms) { let t = Math.max(last, performance.now()); const end = t + ms; while (t < end) { t += 16; frame(t, true); } };   // отладка: прокрутить кадры
   // Кадры заявочного плана: точка фокуса в св. годах, дистанция, ракурс, эффекты
   let shotRing = 0;

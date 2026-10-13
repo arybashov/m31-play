@@ -4,9 +4,9 @@
   'use strict';
   const notes = __core => {
     let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough,
-    crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural,
-    pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn;
-    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn } = __core); };
+    crewName, crewOf, dvPct, edgeDays, eqOf, flareLine, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM,
+    plural, pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn;
+    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, flareLine, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn } = __core); };
     __link();
 
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -249,6 +249,7 @@
         : ev.type === 'reg' ? (ru ? 'Требуется решение совета: регламент не успевает.' : 'Council decision required: maintenance is falling behind.')
         : ev.type === 'groups' ? (ru ? `Требуется решение совета: ${repName(ev.g, 'ru')} просит слова.` : `Council decision required: ${repName(ev.g, 'en')} asks to speak.`)
         : ev.type === 'term' ? (ru ? 'Требуется решение совета: смена отслужила обещанный срок.' : 'Council decision required: the watch has served its promised term.')
+        : ev.type === 'flare' ? (ru ? 'Требуется решение совета: звезда цели активна — режим подхода.' : 'Council decision required: the target star is active — the approach mode.')
         : ev.type === 'nav' ? (ru ? 'Требуется решение совета: отклонение навигации перед встречей.' : 'Council decision required: a navigation offset before the rendezvous.')
         : ev.type === 'danger' ? (/^C\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — груз ${ev.id}.` : `Council decision required: a dangerous node — cargo ${ev.id}.`)
           : /^T\d$/.test(ev.id) ? (ru ? `Требуется решение совета: опасный узел — течь бака ${ev.id}.` : `Council decision required: a dangerous node — a leak in tank ${ev.id}.`)
@@ -326,6 +327,7 @@
     if (now.highPower !== base.highPower) sys.push(now.highPower ? (ru ? 'Контуру вернули резерв мощности.' : 'The loop has its high-power reserve back.')
       : (ru ? 'Контур остался без резерва мощности.' : 'The loop is left without its high-power reserve.'));
     if (s.wear) sys.push(coolLine(s.wear, lang));
+    { const fl = flareLine(s, y0, y1, lang); if (fl) sys.push(fl); }
     if (s.shield) sys.push(shieldSame ? (ru ? `Щит без изменений: ${shieldNow}.` : `Shield unchanged: ${shieldNow}.`)
       : (ru ? `Щит: за период пыль сняла ${gT} проекции; ${shieldNow}.` : `Shield: the dust removed ${gT} of projected area over the period; ${shieldNow}.`));
     return { title, data, text: [head.join(' '), people.join(' '), sys.join(' '), way.join(' ')].join('\n\n'), details: det.join('\n\n') };

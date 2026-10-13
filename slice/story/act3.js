@@ -235,22 +235,7 @@ They can go on to the target as they are. Or everyone but twelve can go to sleep
     sosEnd('stream', 'vault'),
     // ---- у других целей
     {
-      id: 'a3.flare', scene: 'drift', kind: 'instrument', year: s => s.arrive - 5, when: s => !src(s) && M.isRedDwarf(s.target) && !ownStory(s),
-      effect: s => { if (!hasIR(s)) s.materials -= 5; },
-      title: { ru: 'Журнал вахты · вспышка звезды', en: 'Watch log · stellar flare' },
-      text: {
-        ru: s => `Скорость ${fb(vAt(s, s.arrive - 5), 'ru')}. Вспышка ${nmG(s)}: за несколько минут звезда стала ярче в рентгене в тысячи раз. Красные карлики вспыхивают часто; у самой звезды такие потоки сдирают атмосферы планет.
-` + (hasIR(s)
-          ? 'Инфракрасная обсерватория заметила рост активного пятна за трое суток. Вахта заранее ушла в убежище, корабль развернули щитом к звезде. Потерь нет.'
-          : 'Предупреждения не было. Вахта добралась до убежища за сорок минут; доза — как за год дрейфа. Антенны плазменного магнита и радиаторы обожжены; ремонт — из материалов для высадки, −5%.'),
-        en: s => `Velocity ${fb(vAt(s, s.arrive - 5), 'en')}. A flare on ${nm(s, 'en')}: within minutes the star grew thousands of times brighter in X-rays. Red dwarfs flare often; close to the star such storms strip the atmospheres off planets.
-` + (hasIR(s)
-          ? 'The infrared observatory saw the active spot growing three days ahead. The watch went to the shelter in advance and the ship was turned shield-first to the star. No losses.'
-          : 'There was no warning. The watch reached the shelter in forty minutes; the dose was a year of drift. The plasma magnet antennas and the radiators are scorched; repairs from landing materials, −5%.')
-      }
-    },
-    {
-      id: 'a3.approach', scene: 'drift', kind: 'instrument', year: s => s.arrive - 5, when: s => !src(s) && !M.isRedDwarf(s.target),
+      id: 'a3.approach', scene: 'drift', kind: 'instrument', year: s => s.arrive - 5, when: s => !src(s),
       title: { ru: 'Навигационный журнал · вход в систему', en: 'Navigation log · entering the system' },
       text: {
         ru: s => `Скорость ${fb(vAt(s, s.arrive - 5), 'ru')}. Вход в систему ${nmG(s)}. Телескоп корабля видит планеты сам — без зондов и снимков Кольца.` + (s.worldSeen ? ' То, что было известно, подтверждается.' : ' Какой там мир, станет ясно у орбиты.'),

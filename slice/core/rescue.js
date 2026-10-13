@@ -91,7 +91,7 @@
     && (s.pipeTorn || s.sectionEnd <= storeNow(s) + opNormal(s) + 1e-9);
   // прямое подключение сорванной линии: отказ уходит в охлаждение корабля — шестеро погибших, аварийный сон
   function directFail(st) {
-    st.deadHere += RESCUE.dockDead; st.rescueCrewDead = (st.rescueCrewDead || 0) + RESCUE.dockDead;
+    st.deadHere += RESCUE.dockDead; st.crewHereDead = (st.crewHereDead || 0) + RESCUE.dockDead;
     incident(st, 'rescueDock', RESCUE.dockDead, { check: st.dockMethod, year: storeNow(st) });
     st.sos = 'rescueDock';
   }
@@ -141,7 +141,7 @@
     const y = st.year + (st.siteDays + 30) / YD, check = RESCUE.sense[st.siteMethod] ? st.siteMethod : null;
     const pool = thawAlive(st, Infinity), thaw = st.rescued > 0 ? thawVictims(st, 'water', Math.min(RESCUE.waterThaw, pool.length), pool) : [];
     if (thaw.length) { st.thawDeadIds = st.thawDeadIds.concat(thaw); st.rescued -= thaw.length; st.thawDead += thaw.length; incident(st, 'rescueWater', thaw.length, { ids: thaw, year: y, check }, 'thaw'); }
-    st.deadHere += RESCUE.waterCrew; st.rescueCrewDead = (st.rescueCrewDead || 0) + RESCUE.waterCrew; st.waterDead = thaw.length + RESCUE.waterCrew;
+    st.deadHere += RESCUE.waterCrew; st.crewHereDead = (st.crewHereDead || 0) + RESCUE.waterCrew; st.waterDead = thaw.length + RESCUE.waterCrew;
     incident(st, 'rescueWater', RESCUE.waterCrew, { year: y, check });
     st.site = 'evacuated'; st.housed = st.rescued > 0 && housedOf(st);
     thawShelter(st, 'infirmary', y);                                    // эвакуация: сектор или модуль, иначе лазарет с новым сроком

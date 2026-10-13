@@ -170,9 +170,9 @@
       else if (s.support === 'lost') miss.push(L('Слабый след прочитать не удалось: нет подготовленного читателя и ИК-обсерватории.', 'The faint trace could not be read: neither a trained reader nor an IR observatory was available.'));
     }
     if (had('a3.dark') && hasIR(s)) { help.push(L('ИК-обсерватория вела карликов Тёмной звезды с дальнего подхода: их увидели заранее.', "The IR observatory tracked the Dark Star's dwarfs from afar: they were seen in advance.")); used.add('sensors'); }
-    if (had('a3.flare')) {
-      if (hasIR(s)) { help.push(L('Раннее ИК-предупреждение о вспышке: корабль развернули заранее, 5% материалов ремонта сохранены.', 'Early IR warning of the flare: the ship turned in time, saving 5% of repair materials.')); used.add('sensors'); }
-      else miss.push(L('Раннего ИК-предупреждения о вспышке не было; ремонт потребовал 5% материалов.', 'There was no early IR warning of the flare; repairs used 5% of materials.'));
+    if (s.flare && s.flare.mode === 'work' && s.flare.n) {
+      if (hasIR(s)) { help.push(L('ИК-обсерватория вела активность звезды: наружные бригады уходили со вспышкой раньше.', "The IR observatory tracked the star's activity: outside crews came in earlier with each flare.")); used.add('sensors'); }
+      else miss.push(L('ИК-обсерватории не было: наружные бригады узнавали о вспышке позже.', 'There was no IR observatory: outside crews learned of each flare later.'));
     }
     if (had('a4.energy') && s.support !== 'found' && powerOK(s)) { const src = { grid: L('Сеть колонии обеспечила', 'The colony grid supplied'), reactor5: L('Реактор 5 МВт обеспечил', 'The 5 MW reactor supplied'), dual: L('Независимый блок обеспечил', 'An independent unit supplied') }[eq.energy];
       help.push(L(`${src} энергию поселению: дефицита первой зимы нет.`, `${src} the settlement: no first-winter energy shortage.`)); used.add('energy'); }
@@ -213,7 +213,7 @@
   // год сигнала — целый (у склада — после консервации зала: прибытие округляется вверх)
   const SOS_AT = { cargo: SOS_AT_cargo, drift: loopAt, stream: sosAtStream, home: s => arrivalYear(s) + 1, rescueDock: s => Math.max(s.arrive, Math.ceil(storeNow(s))) };
   function incidentOf(s, cause) {
-    const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, arrivalAt(s))).total + s.dead + (s.rescueCrewDead || 0));
+    const sent = SOS_AT[cause](s), alive = crewOf(s) - (lossesOf(s, Math.min(sent, arrivalAt(s))).total + s.dead + (s.crewHereDead || 0));
     return { id: `${s.target}|${sent}|${cause}`, cause, target: s.target, beta: s.beta, arrive: s.arrive, tMag: s.tMag, capRate: capsSafe(s) ? 1e-4 : 2e-4, sent, mission: s.mission,
       alive, watch: WATCH_SOS, sleepers: alive - WATCH_SOS, hold: sosHold(s), deadline: sent + sosHold(s) };
   }

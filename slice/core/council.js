@@ -330,6 +330,7 @@ Orin silently copies the signal's coordinates into his log.
     scout: { view: 'ship', fallback: 'assets/depart.jpg', label: { ru: 'Корма · запуск зонда', en: 'Stern · probe launch' } },
     stage: { view: 'stage', fallback: 'assets/stage.jpg', label: { ru: 'Отделение ступени разгона', en: 'Acceleration stage separation' } },
     drift: { view: 'drift', fallback: 'assets/drift.jpg', label: { ru: 'Дрейф', en: 'Drift' }, side: 'right' },
+    flare: { view: 'star', fallback: 'assets/drift.jpg', label: { ru: 'Звезда цели', en: 'The target star' }, side: 'right' },   // вспышки: звезда вблизи — арки, выброс
     sail: { view: 'sail', fallback: 'assets/drift.jpg', label: { ru: 'Торможение · плазменный магнит', en: 'Braking · plasma magnet' }, side: 'right' },
     dark: { view: 'dark', fallback: 'assets/drift.jpg', label: { ru: 'Тёмная звезда', en: 'The Dark Star' }, side: 'right' },
     shield: { view: 'shield', fallback: 'assets/drift.jpg', label: { ru: 'Фронтальный щит · осмотр', en: 'Forward shield · inspection' }, side: 'right' },

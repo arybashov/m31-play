@@ -4,9 +4,9 @@
   'use strict';
   const wear = __core => {
     let CLOUD, CLOUD_RHO, EV, JB, M, REWORK_KINDS, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf,
-    edgeIn, edgeOut, energyOK, eqOf, flightBound, flightWho, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN, reworkRisk, src,
-    streamPlan, tankMove, tankSync, termStart, txt, vN, yrs, yrsEn;
-    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, REWORK_KINDS, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, flightBound, flightWho, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN, reworkRisk, src, streamPlan, tankMove, tankSync, termStart, txt, vN, yrs, yrsEn } = __core); };
+    edgeIn, edgeOut, energyOK, eqOf, flareSlowFactor, flightBound, flightWho, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN,
+    reworkRisk, src, streamPlan, tankMove, tankSync, termStart, txt, vN, yrs, yrsEn;
+    const __link = () => { ({ CLOUD, CLOUD_RHO, EV, JB, M, REWORK_KINDS, SH, STREAM, STREAM_MAT5, STREAM_RHO, W, aliveOf, arriveView, book, cap, capsSafe, cloudBand, crewOf, edgeIn, edgeOut, energyOK, eqOf, flareSlowFactor, flightBound, flightWho, fuelSync, hidden, humanSnap, incident, nf, nm, plural, ppl, restN, reworkRisk, src, streamPlan, tankMove, tankSync, termStart, txt, vN, yrs, yrsEn } = __core); };
     __link();
 
   // ---- модель времени (DOC «Симулятор v1 — время и щит», шаг 3): перемотка продвигает модель корабля.
@@ -138,7 +138,7 @@
   // специалисты вахты: шестая часть, без учеников и отдыхающих после перегрузки (не больше четверти; человеческий фактор, шаг
   // А2), затем — невесомость колец (один раз)
   const techs = s => { const n = Math.floor(s.watch / 6) - (s.trainees ? s.trainees.n : 0), r = Math.min(restN(s), Math.ceil(Math.max(0, n) / 4));
-    return Math.max(0, Math.floor((n - r) * zgFactor(s) + 1e-9)); };
+    return Math.max(0, Math.floor((n - r) * zgFactor(s) * flareSlowFactor(s) + 1e-9)); };
   const pools = s => ({ tech: techs(s), shop: !s.wear || W.shopOpen(s.wear) ? 1 : 0 });   // мастерская — один производственный слот (3b); привод в ремонте — закрыта (3c)
   const MENTOR_DAYS = 20;                                               // наставник курса пробуждённой смены, чел.-сут (человеческий фактор, шаг А2)
   const auralN = s => techs(s);

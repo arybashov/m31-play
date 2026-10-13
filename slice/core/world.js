@@ -82,10 +82,10 @@
   }
   // итог спасателя v3: полнота отдельно от названия исхода
   function endR(s, lang) {
-    const ru = lang === 'ru', placed = s.housed ? s.rescued : 0, full = s.rescued === THAW0 && s.housed && !s.rescueCrewDead;
+    const ru = lang === 'ru', placed = s.housed ? s.rescued : 0, full = s.rescued === THAW0 && s.housed && !s.crewHereDead;
     const done = !s.rescued ? (ru ? 'Спасательная задача сорвана.' : 'The rescue mission failed.') : outcomeOf(s) === 'rescueFailed' ? (ru ? 'Обязательство не выполнено: срок лазарета истёк без постоянного жилья.' : 'The commitment failed: the infirmary term ran out without permanent housing.') : full ? (ru ? 'Обязательство выполнено полностью.' : 'The commitment is fully met.') : (ru ? 'Результат частичный.' : 'The result is partial.');
-    return ru ? `Исход: ${OUTCOME[outcomeOf(s)].ru.toLowerCase()}. Живы после помощи ${s.rescued}; устроены ${placed}; дополнительные потери Оттепели — ${s.thawDead}, экипажа в происшествиях — ${s.rescueCrewDead || 0}. ${done} Позади ${yrs(Yepi(s))}: путь, склад, дом, ответ. Имена, причины и обязательства — в итоге ниже.`
-      : `Outcome: ${OUTCOME[outcomeOf(s)].en.toLowerCase()}. Alive after assistance: ${s.rescued}; housed: ${placed}; additional Thaw losses: ${s.thawDead}; crew incident losses: ${s.rescueCrewDead || 0}. ${done} ${yrsEn(Yepi(s))} are behind: the road, the store, the home, the answer. Names, causes and commitments are in the summary below.`;
+    return ru ? `Исход: ${OUTCOME[outcomeOf(s)].ru.toLowerCase()}. Живы после помощи ${s.rescued}; устроены ${placed}; дополнительные потери Оттепели — ${s.thawDead}, экипажа в происшествиях — ${s.crewHereDead || 0}. ${done} Позади ${yrs(Yepi(s))}: путь, склад, дом, ответ. Имена, причины и обязательства — в итоге ниже.`
+      : `Outcome: ${OUTCOME[outcomeOf(s)].en.toLowerCase()}. Alive after assistance: ${s.rescued}; housed: ${placed}; additional Thaw losses: ${s.thawDead}; crew incident losses: ${s.crewHereDead || 0}. ${done} ${yrsEn(Yepi(s))} are behind: the road, the store, the home, the answer. Names, causes and commitments are in the summary below.`;
   }
   // ---- запись экспедиции в мир — один раз по id; Земля узнаёт об итоге, когда дойдёт отчёт
   const MISSION_NAME = { contact: { ru: 'контакт', en: 'contact' }, supply: { ru: 'снабжение', en: 'supply' }, rescue: { ru: 'спасение', en: 'rescue' } };
@@ -115,7 +115,7 @@
     const stranded = (!s.thawStable && !!s.thawConfirmed) || end === 'adrift';   // без торможения — до склада не дошли: живые остаются там
     return { v: 3, rescued: s.rescued, housed: !!s.housed, op: s.rescueOp, thawDead: s.thawDead, stranded,
       alive: stranded ? thawAlive(s, storeNow(s)) : thawAlive(s, Infinity).filter(() => s.rescued > 0), deadIds: (s.thawDeadIds || []).slice(),
-      site: s.site || null, place: s.thawPlace || null, crewDead: s.rescueCrewDead || 0, failed: end === 'rescueFailed', infirmaryUntil: s.infirmaryUntil };
+      site: s.site || null, place: s.thawPlace || null, crewDead: s.crewHereDead || 0, failed: end === 'rescueFailed', infirmaryUntil: s.infirmaryUntil };
   }
   const THAW_PLACE = { sector: { ru: 'в спасательном секторе корабля', en: "in the ship's rescue sector" }, module: { ru: 'в жилом модуле', en: 'in the living module' },
     store: { ru: 'спят на восстановленном складе, ждут жилья', en: 'asleep in the restored store, awaiting housing' }, infirmary: { ru: 'в лазарете корабля', en: "in the ship's infirmary" },
@@ -331,7 +331,7 @@
       thawConfirmed: 0,    // живы по ближней диагностике
       thawDeadIds: [],     // реестр Оттепели: дополнительно погибшие (номера 6–39)
       thawStable: false,   // операция закончена: капсулы больше не стареют
-      rescueCrewDead: 0,   // погибли из экипажа у склада и на площадке
+      crewHereDead: 0,   // погибли из экипажа у цели: у склада, на площадке, от вспышек звезды
       siteMethod: null,    // reuse | check | deep | closed | orbit | stay — дом после выброса
       siteFound: false,    // испытание нашло примесь
       site: null,          // old | closed | orbit | evacuated | null (не выбрано)
