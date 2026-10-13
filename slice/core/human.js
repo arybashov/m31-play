@@ -147,8 +147,14 @@
     if (st && st.seatYears) out.push(ru ? `Места групп в Совете смен стоили вахте ещё ${pyrs(st.seatYears, 'ru')}.` : `The groups' seats on the Shift Council cost the watch ${pyrs(st.seatYears, 'en')} more.`);
     if (st && st.early) out.push(ru ? `Смены групп меняли досрочно ${nTimes(st.early, 'ru')}.` : `Group shifts were relieved early ${nTimes(st.early, 'en')}.`);
     if (s.refuse) { const one = s.refuse.n % 10 === 1 && s.refuse.n % 100 !== 11, N = ppl(s.refuse.n).replace(/^./, c => c.toUpperCase());
-      out.push(s.refuse.down ? (ru ? `${N} ${one ? 'отказался от высадки и остался' : 'отказались от высадки и остались'} на корабле.` : `${s.refuse.n} people refused to land and stayed aboard.`)
-        : ru ? `${N} ${one ? 'заявил' : 'заявили'}, что не спустятся и при высадке.` : `${s.refuse.n} people said they would not go down even if we landed.`); }
+      const k = s.refuse.kind, v = (a, b) => one ? a : b;
+      out.push(ru ? (k === 'land' ? `${N} ${v('отказался от высадки и остался', 'отказались от высадки и остались')} на корабле.`
+          : k === 'base' ? `${N} ${v('отказался переходить на базу и остался', 'отказались переходить на базу и остались')} на корабле.`
+          : k === 'build' ? `${N} ${v('отказался', 'отказались')} работать на стройке дома сверх своих смен: его достроили на ${yrs(BUILD_DELAY)} позже.`
+          : `${N} ${v('заявил', 'заявили')}, что не спустятся и при высадке.`)
+        : k === 'land' ? `${s.refuse.n} people refused to land and stayed aboard.` : k === 'base' ? `${s.refuse.n} people refused to move to the base and stayed aboard.`
+          : k === 'build' ? `${s.refuse.n} people refused to work on building the home beyond their shifts: it was finished ${yrsEn(BUILD_DELAY)} later.`
+          : `${s.refuse.n} people said they would not go down even if we landed.`); }
     const t = out.filter(Boolean); return t.length ? t.join(' ') : null;
   }
   function costTerm(s, lang) {
@@ -188,7 +194,7 @@
   // после решения: сдвиг доверия по таблице; поворот курса (новая ревизия маршрута в пути) — позиция всех групп на шаг
   function groupsDecided(s, beat) {
     const hit = beat && GROUP_HITS[beat.id] && GROUP_HITS[beat.id][s.choices[beat.id]]; if (hit) trustMove(s, hit[0], hit[1], hit[2], true);
-    if (beat && beat.id === 'd.home') { const r = landable(s) && refuseOf(s); if (r) s.refuse = { ...r, down: !STAY_UP.includes(s.choices['d.home']) }; }   // у цели: кто отказался от высадки
+    if (beat && beat.id === 'd.home') { const r = refuseOf(s), k = r && refuseKind(s, s.choices['d.home']); if (k) s.refuse = { ...r, kind: k }; }   // у цели: кто и от чего отказался
     if (!s.human || !s.nav) return;
     const h = s.human; if (h.navRev == null) h.navRev = s.nav.rev;
     if (s.nav.rev > h.navRev) { h.navRev = s.nav.rev; if (s.year > 0) for (const G of Object.values(groupsStart(s))) if (G.stance < 2) { G.stance++; G.swhy = 'turn'; } }
@@ -269,10 +275,16 @@
     for (const g of Object.keys(GROUPS)) { const k = G[g].trust === 0 ? REFUSE.distrust : G[g].stance >= 2 ? REFUSE.object : G[g].grudge && !G[g].seat ? REFUSE.grudge : 0; if (k) list.push([g, Math.round(per * k)]); }
     const n = list.reduce((a, x) => a + x[1], 0); return n ? { n, groups: list.map(x => x[0]) } : null;
   }
-  // высадка возможна: мир пригоден (у непригодного — «высадиться нельзя») или площадка Оттепели; дом без спуска — отказ только заявлен
-  const landable = s => rescueS(s) || !bad(M.worldOf(s.target)), STAY_UP = ['orbit', 'stay', 'sleep', 'beacon', 'return'];
+  // высадка возможна: мир пригоден (у непригодного — «высадиться нельзя») или площадка Оттепели; дом без спуска — отказ только заявлен.
+  // У непригодного мира цена та же по смыслу: база вне корабля — не уходят с корабля; дом на орбите — не работают на стройке
+  // сверх своих смен, дом достраивают на BUILD_DELAY лет позже
+  const landable = s => rescueS(s) || !bad(M.worldOf(s.target)), STAY_UP = ['orbit', 'stay', 'sleep', 'beacon', 'return'], BUILD_DELAY = 2;
+  const refuseKind = (s, home) => landable(s) ? (STAY_UP.includes(home) ? 'declared' : 'land') : ['moons', 'domes'].includes(home) ? 'base' : home === 'orbit' ? 'build' : null;
   function refuseLine(s, lang) {
-    const r = landable(s) && refuseOf(s); if (!r) return ''; const ru = lang === 'ru', names = r.groups.map(g => groupName(g, lang)).join(ru ? ' и ' : ' and ');
+    const r = refuseOf(s); if (!r) return '';
+    if (!landable(s)) { const ru = lang === 'ru', names = r.groups.map(g => groupName(g, lang)).join(ru ? ' и ' : ' and ');
+      return ru ? ` ${ppl(r.n)} — ${names} — не станут работать на стройке дома сверх своих смен и не уйдут с корабля на базу, что бы ни решил Совет.`
+        : ` ${r.n} people — ${names} — will not work on building the home beyond their shifts, nor leave the ship for a base, whatever the Council decides.`; } const ru = lang === 'ru', names = r.groups.map(g => groupName(g, lang)).join(ru ? ' и ' : ' and ');
     return ru ? ` ${ppl(r.n)} — ${names} — отказываются от высадки: останутся на корабле, что бы ни решил Совет.` : ` ${r.n} people — ${names} — refuse to land: they will stay aboard whatever the Council decides.`;
   }
   // отдых при перегрузке (шаг А2): уровень 2 — один техник на восстановлении, предел — двое (не больше четверти специалистов
@@ -316,7 +328,8 @@
         LOAD, DAYS, humanStart, loadBase, regFrom, loadMove, loadPiece, humanSpan, loadLevel, REWORK, REWORK_KINDS, humanSnap, reworkRisk, TERM,
         termStart, termNext, termRotate, termWake, humanTermDecision, costLine, costTerm, GROUPS, GROUP_NAME, GROUP_WHY, GROUP_HITS, OVER_DAYS,
         groupsStart, trustMove, groupsDecided, groupsLoss, groupLines, groupsView, groupName, repName, SEAT_YEARS, groupsNext, groupDecay,
-        humanGroupDecision, groupTrust, REFUSE, GRUDGE, refuseOf, landable, STAY_UP, refuseLine, REST, restN, restFor, humanNext, humanMark
+        humanGroupDecision, groupTrust, REFUSE, GRUDGE, refuseOf, landable, STAY_UP, BUILD_DELAY, refuseKind, refuseLine, REST, restN, restFor,
+        humanNext, humanMark
       },
       link: __link
     };
