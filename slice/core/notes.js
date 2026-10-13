@@ -5,8 +5,8 @@
   const notes = __core => {
     let EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough,
     crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural,
-    pools, ppl, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn;
-    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, wearOn, wearShop, yrs, yrsEn } = __core); };
+    pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn;
+    const __link = () => { ({ EVM, HEADLINE_NAME, INCIDENT_NAME, JB, M, SH, SIM_TITLE, STREAM_MAT5, W, Y, aliveOf, arrivalAt, arriveView, beats, book, cloudSpan, cloudThrough, crewName, crewOf, dvPct, edgeDays, eqOf, groupLines, groupsView, hidden, incYear, jobsLine, kms0, lag, lossesOf, ownStory, pct, pctM, plural, pools, ppl, pplG, profileEnd, repName, shieldGaugeV5, spendPct, streamOn, streamPlan, ui, vN, wearOn, wearShop, yrs, yrsEn } = __core); };
     __link();
 
   // решение по повреждению щита (вставка модели посреди перемотки)
@@ -19,16 +19,16 @@
       id: 'd.shieldService.stream', scene: 'shield', overlay: 'shield', inspect: panel, kind: 'decision',
       title: { ru: `Пробита панель щита ${panel}`, en: `Shield panel ${panel} breached` },
       context: {
-        ru: s => { const h = s.streamImpact; return `Ядро потока. Зерно около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж: панель ${panel} пробита насквозь. ${streamLossLine(s, 'ru')} Щит с открытой пробоиной в 0,06 м².`; },
-        en: s => { const h = s.streamImpact; return `The stream's core. A grain of about ${nf(h.radius * 1000, 1, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ: panel ${panel} breached through. ${streamLossLine(s, 'en')} The shield has an open hole of 0.06 m².`; }
+        ru: s => { const h = s.streamImpact; return `Ядро потока. Зерно радиусом около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж: панель ${panel} пробита насквозь. ${streamLossLine(s, 'ru')} Щит с открытой пробоиной в 0,06 м².`; },
+        en: s => { const h = s.streamImpact; return `The stream's core. A grain of about ${nf(h.radius * 1000, 1, 'en')} mm radius at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ: panel ${panel} breached through. ${streamLossLine(s, 'en')} The shield has an open hole of 0.06 m².`; }
       }
     });
     return Object.assign(serviceOptions(panel, hitId, rec5, cause), {
       id: 'd.shieldService.cloud', scene: 'shield', overlay: 'shield', inspect: panel, kind: 'decision',
       title: { ru: `Пробита панель щита ${panel}`, en: `Shield panel ${panel} breached` },
       context: {
-        ru: s => { const h = s.cloudHit; return `Полоса крупной пыли. Зерно около ${nf(h.radius * 1000, 2, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж. В месте удара выбито ${nf(h.removed, 1, 'ru')} кг/м² из ${s.shield.nominal}: панель ${panel} пробита насквозь. За ней — жилой отсек: разгерметизация, погибли ${ppl(s.cloudDead)} смены, отсек перекрыт. Щит с открытой пробоиной в 0,06 м².`; },
-        en: s => { const h = s.cloudHit; return `A band of coarse dust. A grain of about ${nf(h.radius * 1000, 2, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ. ${nf(h.removed, 1, 'en')} kg/m² of ${s.shield.nominal} knocked out at the impact point: panel ${panel} is breached through. Behind it, a living compartment: decompression, ${s.cloudDead} of the shift dead, the compartment sealed. The shield has an open hole of 0.06 m².`; }
+        ru: s => { const h = s.cloudHit; return `Полоса крупной пыли. Зерно радиусом около ${nf(h.radius * 1000, 2, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж. Удар снимает ${nf(h.removed, 1, 'ru')} кг/м² при толщине панели ${s.shield.nominal}: панель ${panel} пробита насквозь. За ней — жилой отсек: разгерметизация, ${vN(s.cloudDead, ['погиб', 'погибли'])} ${ppl(s.cloudDead)} смены, отсек перекрыт. Щит с открытой пробоиной в 0,06 м².`; },
+        en: s => { const h = s.cloudHit; return `A band of coarse dust. A grain of about ${nf(h.radius * 1000, 2, 'en')} mm radius at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ. The impact removes ${nf(h.removed, 1, 'en')} kg/m² against the panel's ${s.shield.nominal}: panel ${panel} is breached through. Behind it, a living compartment: decompression, ${s.cloudDead} of the shift dead, the compartment sealed. The shield has an open hole of 0.06 m².`; }
       }
     });
   }
@@ -59,8 +59,8 @@
         id: 'patch',
         label: { ru: 'Поставить аварийную заплату', en: 'Fit an emergency patch' },
         known: {
-          ru: [`48 часов работы; материалы для высадки −${SHIELD_WORK.patch}%.`, `Пробоина закрыта: в месте удара ${SH.RULES.patch} кг/м² вместо полного расчёта.`, cause === 'stream' ? 'Слабое место остаётся до прибытия.' : 'Слабое место остаётся — у потока это важно.'],
-          en: [`48 hours of work; landing materials −${SHIELD_WORK.patch}%.`, `The hole is closed: ${SH.RULES.patch} kg/m² at the impact point instead of the full rating.`, cause === 'stream' ? 'A weak spot remains until arrival.' : 'A weak spot remains — it matters at the stream.']
+          ru: [`48 часов работы; материалы для высадки −${SHIELD_WORK.patch}%.`, `Пробоина закрыта: в месте удара ${SH.RULES.patch} кг/м² вместо полного расчёта.`, cause === 'stream' ? 'Слабое место остаётся до прибытия.' : 'Слабое место остаётся: заплата держит хуже целой панели.'],
+          en: [`48 hours of work; landing materials −${SHIELD_WORK.patch}%.`, `The hole is closed: ${SH.RULES.patch} kg/m² at the impact point instead of the full rating.`, cause === 'stream' ? 'A weak spot remains until arrival.' : 'A weak spot remains: a patch protects less than an intact panel.']
         },
         cost: x => { x.materials -= SHIELD_WORK.patch; },
         effect: x => { SH.patch(x.shield, hitId, x.year); x.materials -= SHIELD_WORK.patch; EV.scrap(x, 1); rec5(x).repair = 'patch'; },
@@ -108,8 +108,8 @@
     const ru = lang === 'ru', h = s.streamImpact;
     if (!h || h.level == null) return '';
     if (h.level === 1) return ru ? `В носовом отсеке гибнут ${ppl(s.streamDead)}.` : `${s.streamDead} die in the forward compartment.`;
-    return h.burnt ? (ru ? `Пыль ядра прожгла старое место у облака: удар проходит в зал анабиоза. Погибли ${ppl(s.streamDead)}.` : `The core dust burned through the old spot from the cloud: the strike reaches the anabiosis hall. ${s.streamDead} are dead.`)
-      : (ru ? `Без резерва мощности корабль уходит из ядра сутками: поток успевает пройти по корпусу. Погибли ${ppl(s.streamDead)}.` : `Without the high-power reserve the ship takes days to leave the core: the stream has time to sweep the hull. ${s.streamDead} are dead.`);
+    return h.burnt ? (ru ? `Пробоина у облака${s.cloudHit && s.cloudHit.panel ? ` (${s.cloudHit.panel})` : ''} осталась открытой: пыль ядра проходит через неё в зал анабиоза. ${vN(s.streamDead, ['Погиб', 'Погибли'])} ${ppl(s.streamDead)}.` : `The cloud breach${s.cloudHit && s.cloudHit.panel ? ` (${s.cloudHit.panel})` : ''} was left open: core dust passes through it into the anabiosis hall. ${s.streamDead} are dead.`)
+      : (ru ? `Без резерва мощности корабль уходит из ядра сутками: поток успевает пройти по корпусу. ${vN(s.streamDead, ['Погиб', 'Погибли'])} ${ppl(s.streamDead)}.` : `Without the high-power reserve the ship takes days to leave the core: the stream has time to sweep the hull. ${s.streamDead} are dead.`);
   }
   // журнал прохода края облака: сутки прохода — из профиля, удар и ремонт — из модели щита
   function edgeLogV5(s, lang) {
@@ -124,7 +124,7 @@
     const fix = h.repair === 'replace' ? (ru ? `Панель заменена запасной, −${SHIELD_WORK.replace}% материалов.` : `The panel was replaced with a spare, −${SHIELD_WORK.replace}% of materials.`)
       : h.repair === 'patch' ? (ru ? `Заплата: ${SH.RULES.patch} ${kg} в месте удара, −${SHIELD_WORK.patch}% материалов.` : `Patch: ${SH.RULES.patch} ${kg} at the impact point, −${SHIELD_WORK.patch}% of materials.`)
       : (ru ? 'Ремонт отложен: пробоина открыта.' : 'Repair deferred: the hole is open.');
-    return head + band + (ru ? `\nЗерно пробивает панель ${h.panel}; за ней — жилой отсек кольца. Разгерметизация.\nПогибли ${ppl(s.cloudDead)} смены. Отсек перекрыт. ${fix}`
+    return head + band + (ru ? `\nЗерно пробивает панель ${h.panel}; за ней — жилой отсек кольца. Разгерметизация.\n${vN(s.cloudDead, ['Погиб', 'Погибли'])} ${ppl(s.cloudDead)} смены. Отсек перекрыт. ${fix}`
       : `\nThe grain breaks through panel ${h.panel}; behind it, a living compartment of the ring. Decompression.\n${s.cloudDead} of the shift are dead. The compartment is sealed. ${fix}`);
   }
   function streamLogV5(s, lang) {
@@ -132,13 +132,13 @@
     const head = s.streamRoute === 'evade' ? (ru ? 'Манёвр опоздал: корабль ещё в потоке. ' : 'The manoeuvre came too late: the ship is still in the stream. ')
       : (ru ? 'Корабль идёт по краю потока — и ядро потока на курсе. ' : 'The ship runs along the edge of the stream — and the stream\'s core is on its course. ');
     if (!h) return head;
-    const grain = ru ? `Зерно около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж — пробивает панель ${h.panel}. `
-      : `A grain of about ${nf(h.radius * 1000, 1, 'en')} mm at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ — breaks through panel ${h.panel}. `;
+    const grain = ru ? `Зерно радиусом около ${nf(h.radius * 1000, 1, 'ru')} мм на ${nf(h.beta * 100, 1, 'ru')}% c — ${nf(h.energy / 1e6, 0, 'ru')} МДж — пробивает панель ${h.panel}. `
+      : `A grain of about ${nf(h.radius * 1000, 1, 'en')} mm radius at ${nf(h.beta * 100, 1, 'en')}% c — ${nf(h.energy / 1e6, 0, 'en')} MJ — breaks through panel ${h.panel}. `;
     if (s.lostShip) return head + grain;
     const fix = h.repair === 'replace' ? (ru ? ` Панель заменена запасной, −${SHIELD_WORK.replace}%.` : ` The panel was replaced with a spare, −${SHIELD_WORK.replace}%.`)
       : h.repair === 'patch' ? (ru ? ` Заплата на пробоину, −${SHIELD_WORK.patch}%.` : ` A patch over the hole, −${SHIELD_WORK.patch}%.`)
       : h.repair === 'defer' ? (ru ? ' Ремонт отложен: пробоина открыта.' : ' Repair deferred: the hole is open.') : '';
-    return head + grain + streamLossLine(s, lang) + (ru ? ` Отсеки — материалы для высадки −${STREAM_MAT5[h.level]}%.` : ` The compartments — landing materials −${STREAM_MAT5[h.level]}%.`) + fix;
+    return head + grain + streamLossLine(s, lang) + (ru ? ` Ремонт отсеков — материалы для высадки −${STREAM_MAT5[h.level]}%.` : ` Repairing the compartments — landing materials −${STREAM_MAT5[h.level]}%.`) + fix;
   }
   // сводки износа (summary) — не в ленту, а в ведомость ближайшего отчёта вахты (fold); приёмка — отдельной записью
   const WEAR_TITLE = { ru: 'Приборный журнал · охлаждение', en: 'Instrument log · cooling' };
@@ -179,7 +179,7 @@
   const regSpent = st => st && st.wear && st.wear.reg ? st.wear.reg.spent || 0 : 0;   // материалы, списанные регламентом с начала рейса
   const LOSS_KEYS = ['capsule', 'revival', 'accident', 'cancer'];
   const LOSS_NAME = { capsule: ['отказы капсул', 'capsule failures'], revival: ['при пробуждении', 'on waking'], accident: ['несчастные случаи на вахте', 'accidents on watch'],
-    cancer: ['рак в пути', 'cancers on the road'] };
+    cancer: ['рак в пути', 'cancer deaths on the way'] };
   const phaseAt = (s, y) => { const A = profileEnd(s), b0 = M.brakeStart(A, s.tMag);
     return y < M.ACC ? 'acc' : y >= A ? 'home' : y < b0 ? 'drift' : s.tMag != null && y >= A - M.ENGINE ? 'eng' : 'mag'; };
   const txt = (v, lang, st) => { const x = v && v[lang]; return typeof x === 'function' ? x(st) : (x || ''); };
@@ -237,7 +237,7 @@
       : `an impact on panel ${h.panel} (${yr(h.at)}) — ${h.first === 'breached' ? 'breached through' : 'a scar, the shield holds'}`;
     const events = incs.map(x => { const nm = HEADLINE_NAME[x.kind] ? HEADLINE_NAME[x.kind][ru ? 0 : 1] : INCIDENT_NAME[x.kind] ? INCIDENT_NAME[x.kind][lang] : x.kind;
       const who = POP_WHO[x.pop] ? POP_WHO[x.pop][ru ? 0 : 1] : '';
-      return `${lc1(nm)} (${ru ? 'год' : 'year'} ${incYear(x)})${x.dead ? (ru ? ` — погибли ${ppl(x.dead)}${who}` : ` — ${x.dead}${who} dead`) : ''}`; })
+      return `${lc1(nm)} (${ru ? 'год' : 'year'} ${incYear(x)})${x.dead ? (ru ? ` — ${vN(x.dead, ['погиб', 'погибли'])} ${ppl(x.dead)}${who}` : ` — ${x.dead}${who} dead`) : ''}`; })
       .concat(hits.filter(h => !(ev && ev.id === h.id)).map(hitLine))
       .concat(burnt.map(h => ru ? `пыль прожгла место удара на ${h.panel} (${yr(h.burntAt)})` : `the dust burned through the impact point on ${h.panel} (${yr(h.burntAt)})`))
       .concat(EV.since(s, y0, y1).filter(e => !(ev && ev.id === e.id)).map(e => `${EV.TYPES[e.type].name[lang]} (${yr(e.at)})`))
@@ -268,6 +268,7 @@
     const others = ['outpost', 'thaw'].map(p => [p, incs.filter(x => x.pop === p).reduce((a, x) => a + (x.dead || 0), 0)]).filter(x => x[1]);
     const cats = LOSS_KEYS.filter(k => dk[k]).map(k => `${LOSS_NAME[k][ru ? 0 : 1]} — ${dk[k]}`).join(', ');
     const watchLine = now.awake === now.crew ? (ru ? 'На ногах весь экипаж' : 'The whole crew is awake')
+      : base.awake > 2 * now.awake ? (ru ? `На ногах был ${base.awake === now.crew ? 'весь экипаж' : `${base.awake}`}; к концу периода экипаж ложится в капсулы, на вахте — ${now.awake}` : `${base.awake === now.crew ? 'The whole crew was' : `${base.awake} were`} awake; at the end of the period the crew lies down in the capsules, ${now.awake} on watch`)
       : (ru ? `На вахте — ${now.awake}${now.awake !== base.awake ? ` (было: ${base.awake === now.crew ? 'весь экипаж' : base.awake})` : ''}` : `On watch — ${now.awake}${now.awake !== base.awake ? ` (was: ${base.awake === now.crew ? 'the whole crew' : base.awake})` : ''}`);
     // запасы: изменения — с причиной; без изменений — одной строкой
     const res = resourceMoves(base, items, 'reserve', lang, s, incs), mat = resourceMoves(base, items, 'materials', lang, s, incs);
@@ -290,7 +291,7 @@
     const bul = items.filter(i => i.beat.kind === 'bulletin').length;
     if (bul) way.push(ru ? (bul === 1 ? 'Принята сводка Кольца.' : `Приняты сводки Кольца: ${bul}.`) : (bul === 1 ? 'A Ring bulletin was received.' : `Ring bulletins received: ${bul}.`));
     // ведомость: потери с отлёта по категориям модели, все изменения запасов, сводки износа щита
-    const Lall = now.L, det = [ru ? `С отлёта, по расчёту модели: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][0]} — ${Lall[k]}`).join(', ')}; в происшествиях — ${now.dead + now.deadHere - now.out}. Отложенный риск — рак после пробуждения у цели: около ${ppl(Lall.later)}.`
+    const Lall = now.L, det = [ru ? `С отлёта, по расчёту модели: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][0]} — ${Lall[k]}`).join(', ')}; в происшествиях — ${now.dead + now.deadHere - now.out}. Отложенный риск — рак после пробуждения у цели: около ${pplG(Lall.later)}.`
       : `Since departure, by the model: ${LOSS_KEYS.map(k => `${LOSS_NAME[k][1]} — ${Lall[k]}`).join(', ')}; in incidents — ${now.dead + now.deadHere - now.out}. Deferred risk — cancers after waking at the target: about ${Lall.later}.`];
     if (res.length > 2) det.push((ru ? 'Резерв манёвров: ' : 'Manoeuvre reserve: ') + res.map(m => `${sgn(m.d, 1)} ${ru ? 'п.п.' : 'pp'} — ${m.why}`).join('; ') + '.');
     if (mat.length > 2) det.push((ru ? 'Материалы: ' : 'Materials: ') + mat.map(m => `${sgnM(m.d)}% — ${m.why}`).join('; ') + '.');
@@ -311,7 +312,7 @@
       : (ru ? 'Расчётных потерь за период нет.' : 'No estimated losses over the period.')];
     if (hline) people.push(hline);
     for (const g of groupLines(base, now, lang)) people.push(g);         // ядро Б: группа просит слова — ранний признак
-    if (dInc) people.push(ru ? `В происшествиях погибли ${ppl(dInc)} экипажа.` : `${dInc} of the crew died in incidents.`);
+    if (dInc) people.push(ru ? `В происшествиях ${vN(dInc, ['погиб', 'погибли'])} ${ppl(dInc)} экипажа.` : `${dInc} of the crew died in incidents.`);
     if (others.length) people.push(ru ? `Погибли ${others.map(([p, n]) => `${ppl(n)}${POP_WHO[p][0]}`).join(' и ')}.` : `${others.map(([p, n]) => `${n}${POP_WHO[p][1]}`).join(' and ')} died.`);
     if (reest) people.push(ru ? `Оценка потерь за прошлые годы пересчитана под новый штат вахты: ${reest > 0 ? '+' : '−'}${Math.abs(reest)}.`
       : `The estimate for past years is recalculated for the new watch roster: ${reest > 0 ? '+' : '−'}${Math.abs(reest)}.`);
@@ -380,7 +381,7 @@
     dvPct, spendPct, kms: kms0, nf, prod: s => eqOf(s).prod, sensors: s => eqOf(s).sensors, thin: s => s.watch < 40,
     caps: s => eqOf(s).caps, probes: s => eqOf(s).probes, highPower: s => !!s.highPower, taught: s => !!s.taught, repairQual: s => !!s.repairQual,
     cargo: s => s.kits.includes('request') ? 'request' : s.kits.includes('berths') ? 'berths' : 'none',
-    pickName: (s, u, not) => { const a = aliveIds(s).filter(i => i !== not), i = a.length ? a[Math.floor(u * a.length) % a.length] : 0; return { ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }; },   // not — номер, который исключить
+    pickName: (s, u, not) => { const first = i => crewName(s, i, 'ru').split(' ')[0], a = aliveIds(s).filter(i => i !== not && (not == null || first(i) !== first(not))), i = a.length ? a[Math.floor(u * a.length) % a.length] : 0; return { ru: crewName(s, i, 'ru'), en: crewName(s, i, 'en') }; },   // not — номер, который исключить
     beta: (s, y) => M.speedAt(y, s.beta, s.arrive, s.tMag),
     erosion: (s, a, b, k) => SH.erode(SH.create('dust20'), a, b, y => M.speedAt(y, s.beta, s.arrive, s.tMag), SH.RULES.rhoDust * k).dSigma,   // прогноз на свежей копии
     shieldMin: s => s.shield ? SH.observe(s.shield).min : 0, service: () => SH.RULES.service, eroded: s => s.shield ? s.shield.erodedKg / SH.AREA : 0,

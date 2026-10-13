@@ -106,8 +106,8 @@ Irina Kassel lays the documents side by side.
       id: 'd.passport', scene: 'fitting', kind: 'decision', year: 0, ui: 'passport',
       title: { ru: 'Паспорт экспедиции', en: 'Expedition passport' },
       context: {
-        ru: s => `Кольцо выделило 1,24 млн т D+³He. Больше не будет: гелий-3 добывают годами, а ${urgentOf(s, 'ru')}. Ядро корабля неизменно; решаем, сколько топлива уйдёт на скорость, сколько — на резерв и груз.`,
-        en: s => `The Ring has allotted 1.24 million tonnes of D+³He. There will be no more: helium-3 takes years to mine, and ${urgentOf(s, 'en')}. The ship's core is fixed; we decide how much fuel goes to speed and how much to reserve and cargo.`
+        ru: s => `Кольцо выделило 1,24 млн т D–³He. Больше не будет: гелий-3 добывают годами, а ${urgentOf(s, 'ru')}. Ядро корабля неизменно; решаем, сколько топлива уйдёт на скорость, сколько — на резерв и груз.`,
+        en: s => `The Ring has allotted 1.24 million tonnes of D–³He. There will be no more: helium-3 takes years to mine, and ${urgentOf(s, 'en')}. The ship's core is fixed; we decide how much fuel goes to speed and how much to reserve and cargo.`
       },
       options: s => passportOptions(s),
       option: (s, id) => passportParse(s, id)

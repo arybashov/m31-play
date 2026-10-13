@@ -5,8 +5,8 @@
   const outfit = __core => {
     let BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit,
     dd, f1, f2, groupsLoss, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5,
-    supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG;
-    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit, dd, f1, f2, groupsLoss, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
+    supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, vN, wearOn, xyl, yrs, yrsEn, yrsG;
+    const __link = () => { ({ BUILD, CAST_SEATS, DV, M, OP_NAME, R, SECTION_DEC, SH, SHELTER, THAW0, THAW_LOSS, W, Y, arrivalAt, arrivalYear, awakeOf, busSplit, cap, capsKit, dd, f1, f2, groupsLoss, hashU32, hidden, nf, nm, nmG, pct, pctM, pendingFor, people, plural, ppl, pumpProspect, relayKit, shieldGaugeV5, supplyBothCost, supplyBuild, supplyForecast, thawAlive, thawN, thawName, vN, wearOn, xyl, yrs, yrsEn, yrsG } = __core); };
     __link();
 
   // ---- оснащение: что даёт каждая позиция (mission.js: EQUIP). До паспорта — базовое.
@@ -117,14 +117,14 @@
   function deliverOptions(s) {
     const ok = s.busResolved && !s.capsLost, out = [];
     if (ok && (relayKit(s) || s.materials >= BUILD.relay)) out.push({ id: 'relay', label: { ru: 'Сначала постоянная связь', en: 'Permanent link first' },
-      known: { ru: s => ['Связь через полгода; капсулы — через три года, если на них хватит материалов.', 'До приёмки капсул охлаждение зависит от корабля.', supplyForecast(s, 'relay').capsOK ? 'По расчёту обе системы встанут.' : 'Капсульный блок собрать будет не из чего.'],
-        en: s => ['The link in half a year; capsules in three years if materials cover them.', 'Until the capsules are accepted, cooling depends on the ship.', supplyForecast(s, 'relay').capsOK ? 'By the estimate both systems will be in.' : 'There will be nothing to build the capsule unit from.'] },
+      known: { ru: s => ['Связь через полгода; капсулы — через три года, если на них хватит материалов.', 'До приёмки капсул охлаждение зависит от корабля.', supplyForecast(s, 'relay').capsOK ? 'По расчёту материалов хватит на обе системы.' : 'Капсульный блок собрать будет не из чего.'],
+        en: s => ['The link in half a year; capsules in three years if materials cover them.', 'Until the capsules are accepted, cooling depends on the ship.', supplyForecast(s, 'relay').capsOK ? 'By the estimate there are materials for both systems.' : 'There will be nothing to build the capsule unit from.'] },
       cost: st => { const t = supplyForecast(st, 'relay'); st.materials = t.materials; },
       effect: st => { st.deliver = 'relay'; supplyBuild(st, 'relay'); },
       record: { ru: s => `Сначала — связь. ${s.capsOK ? 'Капсульный блок ставят следом.' : 'Капсульного блока не будет: материалов не хватает.'}`, en: s => `The link first. ${s.capsOK ? 'The capsule unit follows.' : 'There will be no capsule unit: the materials are short.'}` } });
     if (ok && (capsKit(s) || s.materials >= BUILD.caps)) out.push({ id: 'capsules', label: { ru: 'Сначала независимые капсулы', en: 'Independent capsules first' },
-      known: { ru: s => ['Капсулы принимают после монтажа — двенадцать суток; связь через три года, если хватит материалов.', supplyForecast(s, 'caps').relayOK ? 'По расчёту обе системы встанут.' : 'Передатчик собрать будет не из чего.'],
-        en: s => ['The capsules are accepted after installation — twelve days; the link in three years if materials suffice.', supplyForecast(s, 'caps').relayOK ? 'By the estimate both systems will be in.' : 'There will be nothing to build the transmitter from.'] },
+      known: { ru: s => ['Капсулы принимают после монтажа — двенадцать суток; связь через три года, если хватит материалов.', supplyForecast(s, 'caps').relayOK ? 'По расчёту материалов хватит на обе системы.' : 'Передатчик собрать будет не из чего.'],
+        en: s => ['The capsules are accepted after installation — twelve days; the link in three years if materials suffice.', supplyForecast(s, 'caps').relayOK ? 'By the estimate there are materials for both systems.' : 'There will be nothing to build the transmitter from.'] },
       cost: st => { const t = supplyForecast(st, 'caps'); st.materials = t.materials; },
       effect: st => { st.deliver = 'capsules'; st.supplyDays += 12; supplyBuild(st, 'caps'); },
       record: { ru: s => `Сначала — капсулы. ${s.relayOK ? 'Передатчик ставят следом.' : 'Передатчика не будет: материалы кончились на капсулах.'}`, en: s => `The capsules first. ${s.relayOK ? 'The transmitter follows.' : 'There will be no transmitter: the materials ran out on the capsules.'}` } });
@@ -161,13 +161,13 @@
   }
   const busRecord = {
     ru: s => s.busFound ? 'Проверка находит повреждение общей платы. Двенадцать суток разделяют питание и управление капсул и связи.'
-      : s.capsLost ? (s.busMethod === 'replace' ? 'Контроллер меняют и включают снова.' : 'Проверка повреждения не находит; контроллер меняют и включают снова.') + ` Плата не выдерживает: капсульная секция обесточена.${s.supplyIndependent ? ' Насосы на отдельной сети держат людей.' : ` Погибли ${ppl(STORM.busDead)} форпоста.`}`
+      : s.capsLost ? (s.busMethod === 'replace' ? 'Контроллер меняют и включают снова.' : 'Проверка повреждения не находит; контроллер меняют и включают снова.') + ` Плата не выдерживает: капсульная секция обесточена.${s.supplyIndependent ? ' Насосы на отдельной сети держат людей.' : ` ${vN(STORM.busDead, ['Погиб', 'Погибли'])} ${ppl(STORM.busDead)} форпоста.`}`
       : s.busMethod === 'split' ? 'Двенадцать суток разделяют питание и управление. Новый холодильник больше не зависит от старого узла.'
-      : 'Контроллер меняют; повторное испытание проходит. Местная смена разносит каналы до окончательной приёмки.',
+      : (s.busMethod === 'replace' ? '' : 'Проверка повреждения не находит. ') + 'Контроллер меняют; повторное испытание проходит. Местная смена разносит каналы до окончательной приёмки.',
     en: s => s.busFound ? 'The check finds damage on the common board. Twelve days go into separating power and controls for the capsules and the relay.'
       : s.capsLost ? (s.busMethod === 'replace' ? 'The controller is replaced and restarted.' : 'The check finds no damage; the controller is replaced and restarted.') + ` The board does not hold: the capsule section loses power.${s.supplyIndependent ? ' The pumps on the separate grid keep people alive.' : ` ${STORM.busDead} of the outpost are dead.`}`
       : s.busMethod === 'split' ? 'Twelve days go into separating power and controls. The new cooler no longer depends on the old node.'
-      : 'The controller is replaced; the second trial passes. The local shift reroutes the channels before final acceptance.'
+      : (s.busMethod === 'replace' ? '' : 'The check finds no damage. ') + 'The controller is replaced; the second trial passes. The local shift reroutes the channels before final acceptance.'
   };
   // ---- протокол происшествий: наблюдение → проверка → допущение → решение → причина → имена → что можно было
   // Имена погибших — из реестра рядовых членов экипажа (персонажи с репликами не гибнут за кадром и не говорят после).
@@ -223,7 +223,7 @@
     return (s.incidents || []).map(inc => {
       // одна авария на площадке — две ведомости (жители и экипаж): вторая строка короткая
       if (inc.kind === 'rescueWater' && inc.pop !== 'thaw' && (s.incidents || []).some(z => z.kind === 'rescueWater' && z.pop === 'thaw' && z.year === inc.year))
-        return ru ? `Год ${incYear(inc)} · Вода старой площадки — та же авария. Погибли ${ppl(inc.dead)} экипажа: ${namesLine(inc, 'ru')}.`
+        return ru ? `Год ${incYear(inc)} · Вода старой площадки — та же авария. ${vN(inc.dead, ['Погиб', 'Погибли'])} ${ppl(inc.dead)} экипажа: ${namesLine(inc, 'ru')}.`
           : `Year ${incYear(inc)} · The old site's water — the same accident. Dead, ${inc.dead} of the crew: ${namesLine(inc, 'en')}.`;
       // торможение невыполнимо (шаг 4в): топлива на двигательный участок не хватило — корабль проходит систему, люди живы
       if (inc.kind === 'brakeLost' && inc.bound) return ru ? `Год ${incYear(inc)} · Сближение невыполнимо. Звезда цели уже захватила корабль, но топлива на сближение с планетой не хватило (недостаёт ${nf((inc.short || 0) * 299792.458, 0, 'ru')} км/с): баки теряли топливо. Корабль на орбите звезды. На борту ${ppl(inc.aboard || 0)}, все живы.`
@@ -231,12 +231,12 @@
       if (inc.kind === 'brakeLost') return ru ? `Год ${incYear(inc)} · Торможение невыполнимо. Топлива на последний участок — двигателем от 0,01c до нуля — не хватило (недостаёт ${nf((inc.short || 0) * 299792.458, 0, 'ru')} км/с): баки теряли топливо. Корабль прошёл систему цели. На борту ${ppl(inc.aboard || 0)}, все живы.`
         : `Year ${incYear(inc)} · Braking cannot be flown. There was not enough propellant for the last leg — the engine from 0.01c down to zero (${nf((inc.short || 0) * 299792.458, 0, 'en')} km/s short): the tanks had been losing propellant. The ship crossed the target system. There are ${inc.aboard || 0} people aboard, all alive.`;
       // рейс окончен: ядро без отвода тепла (шаг 3d)
-      if (inc.kind === 'wearLost') return ru ? `Год ${incYear(inc)} · Ядро без охлаждения. Все контуры стояли дольше теплового запаса обязательного оборудования; рейс окончен. На борту было ${ppl(inc.aboard || 0)}.`
+      if (inc.kind === 'wearLost') return ru ? `Год ${incYear(inc)} · Ядро без охлаждения. Все контуры стояли дольше теплового запаса обязательного оборудования; рейс окончен. На борту ${vN(inc.aboard || 0, ['был', 'было'])} ${ppl(inc.aboard || 0)}.`
         : `Year ${incYear(inc)} · The core without cooling. Every loop was down longer than the essential equipment's thermal reserve; the voyage is over. There were ${inc.aboard || 0} people aboard.`;
       // гибель группы без охлаждения (модель износа): что отказало, что решали, чем кончилось
       if (inc.kind === 'wearGroup') {
         const polRu = inc.kept ? ' Совет прежде решил беречь запасной насос и оставить перестановку.' : '', polEn = inc.kept ? ' Earlier the council chose to keep the spare pump and the rerouting.' : '';
-        return ru ? `Год ${incYear(inc)} · Группа ${inc.group} без охлаждения. Отказы контуров и холодильников не успели восстановить, а перестановкой и свободными капсулами группу не укрыть: тепловой резерв исчерпан.${polRu} Погибли ${ppl(inc.dead)}: ${namesLine(inc, 'ru')}.`
+        return ru ? `Год ${incYear(inc)} · Группа ${inc.group} без охлаждения. Отказы контуров и холодильников не успели восстановить, а перестановкой и свободными капсулами группу не укрыть: тепловой резерв исчерпан.${polRu} ${vN(inc.dead, ['Погиб', 'Погибли'])} ${ppl(inc.dead)}: ${namesLine(inc, 'ru')}.`
           : `Year ${incYear(inc)} · Group ${inc.group} without cooling. Loop and cooler failures were not restored in time, and neither rerouting nor free capsules could shelter the group: the thermal reserve ran out.${polEn} Dead, ${inc.dead}: ${namesLine(inc, 'en')}.`;
       }
       const recPart = inc.rec ? (inc.rec === inc.choice ? (ru ? 'по рекомендации Совета' : 'on the council\'s recommendation') : (ru ? 'вопреки рекомендации Совета' : 'against the council\'s recommendation')) : '';
@@ -283,7 +283,7 @@
           cause: 'a capsule ran out of life before assistance was completed', alt: 'arriving earlier (the passport), building the adapters in flight, or spending fewer days at the store' },
         rescueSection: ru ? {
           what: 'Протекающая секция склада', obs: 'склад вращается; струя теплоносителя уносит тепло двенадцати капсул',
-          check: inc.torn ? `крепление разрушилось при захвате: секции осталось ${dd(inc.tornLeft, 'ru')}` : inc.delay ? `торможение затянулось на ${inc.delay} суток: секции оставалось ${inc.left} суток` : `ближняя диагностика: секции оставалось ${inc.left} суток`,
+          check: inc.torn ? `крепление разрушилось при захвате: секции осталось ${dd(inc.tornLeft, 'ru')}` : inc.delay ? `торможение затянулось на ${inc.delay} ${plural(inc.delay, ['сутки', 'суток', 'суток'])}: секции оставалось ${inc.left} ${plural(inc.left, ['сутки', 'суток', 'суток'])}` : `ближняя диагностика: секции оставалось ${inc.left} ${plural(inc.left, ['сутки', 'суток', 'суток'])}`,
           dec: SECTION_DEC[inc.choice] ? SECTION_DEC[inc.choice].ru : 'операция без отдельной помощи секции', assume: 'секция дождётся помощи',
           cause: 'секция лишилась охлаждения до стабилизации', alt: 'изоляция, испытанная в полёте (восемь суток), ранняя коррекция торможения или осмотр крепления' }
           : { what: "The store's leaking section", obs: 'the store is rotating; a coolant jet carries away the heat of twelve capsules',
@@ -318,13 +318,13 @@
         stream: ru ? {
           what: 'Поток у Тёмной звезды', obs: 'счётчики ударов росли; модель давала 91% за безопасный проход',
           check: inc.check ? (inc.found ? 'измерение показало полосу на курсе' : 'измерение полосы не показало') : 'поток не измеряли',
-          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: inc.route === 'evade' ? 'манёвр сократит время в ядре потока' : 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: 'уйти сразу, не дожидаясь измерений' }
+          dec: inc.route === 'evade' ? 'уходить — слишком поздно' : 'пройти по краю', assume: inc.route === 'evade' ? 'манёвр сократит время в ядре потока' : 'опасная полоса не пересекает курс', cause: 'полоса крупных частиц на курсе', alt: inc.check ? 'уйти сразу, не дожидаясь измерений' : 'уйти из потока сразу' }
           : { what: 'The stream at the Dark Star', obs: 'the impact counters were rising; the model gave 91% for a safe passage',
           check: inc.check ? (inc.found ? 'the measurement showed the band on course' : 'the measurement showed no band') : 'the stream was not measured',
-          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: inc.route === 'evade' ? "the manoeuvre would shorten the time in the stream's core" : 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: 'leaving at once, without waiting for measurements' }
+          dec: inc.route === 'evade' ? 'leave — too late' : 'pass along the edge', assume: inc.route === 'evade' ? "the manoeuvre would shorten the time in the stream's core" : 'the dangerous band does not cross the course', cause: 'a band of coarse particles on the course', alt: inc.check ? 'leaving at once, without waiting for measurements' : 'leaving the stream at once' }
       }[inc.kind];
       return ru
-        ? `Год ${incYear(inc)} · ${P.what}. Наблюдение: ${P.obs}. Проверка: ${P.check}. Решение: ${P.dec}${recPart ? ` (${recPart}; допущение — ${P.assume})` : ''}. Причина: ${P.cause}${inc.lost ? '; ранее пробитый сектор щита и нехватка мощности для быстрого ухода' : ''}. ${inc.lost ? `Корабль погиб: на борту было ${ppl(inc.aboard)}, среди них ${castNames('ru').join(', ')}.` : inc.dead ? `Погибли ${ppl(inc.dead)}${inc.pop === 'thaw' ? ' Оттепели' : /^rescue/.test(inc.kind) ? ' экипажа' : ''}: ${namesLine(inc, 'ru')}.` : 'Погибших нет: насосы на отдельной сети удержали людей; капсульная секция потеряна.'} Можно было: ${P.alt}.`
+        ? `Год ${incYear(inc)} · ${P.what}. Наблюдение: ${P.obs}. Проверка: ${P.check}. Решение: ${P.dec}${recPart ? ` (${recPart}; допущение — ${P.assume})` : ''}. Причина: ${P.cause}${inc.lost ? '; ранее пробитый сектор щита и нехватка мощности для быстрого ухода' : ''}. ${inc.lost ? `Корабль погиб: на борту ${vN(inc.aboard, ['был', 'было'])} ${ppl(inc.aboard)}, среди них ${castNames('ru').join(', ')}.` : inc.dead ? `${vN(inc.dead, ['Погиб', 'Погибли'])} ${ppl(inc.dead)}${inc.pop === 'thaw' ? ' Оттепели' : /^rescue/.test(inc.kind) ? ' экипажа' : ''}: ${namesLine(inc, 'ru')}.` : 'Погибших нет: насосы на отдельной сети удержали людей; капсульная секция потеряна.'} Можно было: ${P.alt}.`
         : `Year ${incYear(inc)} · ${P.what}. Observed: ${P.obs}. Check: ${P.check}. Decision: ${P.dec}${recPart ? ` (${recPart}; assumption: ${P.assume})` : ''}. Cause: ${P.cause}${inc.lost ? '; a shield sector breached earlier and too little power for a quick escape' : ''}. ${inc.lost ? `The ship was lost: ${inc.aboard} were aboard, among them ${castNames('en').join(', ')}.` : inc.dead ? `Dead, ${inc.dead}${inc.pop === 'thaw' ? ' of Thaw' : /^rescue/.test(inc.kind) ? ' of the crew' : ''}: ${namesLine(inc, 'en')}.` : 'No one died: the pumps on the separate grid kept people alive; the capsule section was lost.'} Could have: ${P.alt}.`;
     });
   }
@@ -343,7 +343,7 @@
 
 — Сейчас живы ${s.rescued}. Вот сорок имён: шестеро умерли до нашего рейса${d ? `, ${d} — пока шла помощь` : '; пока шла помощь, не умер никто'}. Я останусь, пока вы читаете.
 
-${L > 0 ? `— Вы тоже потеряли людей?\n\n— Да. В пути умерли ${ppl(L)}.` : '— Долго вы летели?\n\nСелина придвигает экран с календарём рейса.'}
+${L > 0 ? `— Вы тоже потеряли людей?\n\n— Да. В пути ${vN(L, ['умер', 'умерли'])} ${ppl(L)}.` : '— Долго вы летели?\n\nСелина придвигает экран с календарём рейса.'}
 
 Между вопросом и ответом больше нет лет ожидания.`
       : `${s.rescueOp === 'wake' ? '' : "A month after stabilisation, two of Thaw's representatives are woken.\n\n"}${who} runs a hand along the blanket's seam.
@@ -365,7 +365,7 @@ There are no longer years of waiting between question and answer.`;
   // приветствия у людей: сколько умерли в пути (фон и аварии) и чем встреча кончается у каждой колонии
   const roadDead = s => lossesOf(s, arrivalAt(s)).total + s.dead;
   const GREET_LAST = {
-    shore: { ru: '— В вашем отчёте мы зависим от земных точных деталей. Давайте сверим, что теперь можете делать вы и что можем мы.', en: '"Your report says we depend on precision parts from Earth. Let\'s compare what you can make now with what we can."' },
+    shore: { ru: '— По вашему отчёту, мы зависим от точных деталей с Земли, — говорит дежурная. — Давайте сверим, что теперь можете делать вы и что можем мы.', en: '"Your report says we depend on precision parts from Earth," the duty officer says. "Let\'s compare what you can make now with what we can."' },
     garden: { ru: '— Вы привезли врачей? Сначала познакомим ваши медицинские смены с нашими.', en: '"Did you bring physicians? First we\'ll introduce your medical teams to ours."' },
     pass: { ru: '— В старом отчёте у нас один ремонтный аппарат. Покажем вам нынешнюю ведомость рейсов.', en: '"The old report lists one repair vessel. We\'ll show you the current voyage schedule."' },
     yard: { ru: '— Прежде чем обещать док, сверим очередь работ и ваш инженерный журнал.', en: '"Before promising a dock, let\'s compare the work queue with your engineering log."' },
@@ -450,6 +450,8 @@ There are no longer years of waiting between question and answer.`;
     const g = (id, label, value, n) => out.push({ id, label, value, n });
     g('materials', ru ? 'материалы' : 'materials', `${pctM(s.materials, lang)}%`, s.materials);
     g('reserve', ru ? 'резерв манёвров' : 'manoeuvre reserve', `${pct(s.reserve, lang)}% · ${kms0(s)} ${ru ? 'км/с' : 'km/s'}`, s.reserve);
+    Object.assign(out[out.length - 1], { head: `${pct(s.reserve, lang)}%`, tail: ` · ${kms0(s)} ${ru ? 'км/с' : 'km/s'}`, unit: '%', k: s.reserve / 100 * s.reserveDv * 299792.458 });
+    out[0].unit = '%';
     g('alive', ru ? 'живы' : 'alive', `${aliveOf(s)}`, aliveOf(s));
     const aw = ids ? awakeOf(s, ids) : s.watch;
     g('watch', ru ? 'на вахте' : 'on watch', `${aw}`, aw);

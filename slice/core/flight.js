@@ -115,19 +115,19 @@
     if (m === 'nav') { const d = navRoll(s), at = navAt(fl), refuse = groupTrust(s, 'engine') === 0;   // ядро Б: смены двигателя без доверия — без коррекции на пределе
       if (d && !refuse && navFix(s, at, d.km)) return { kind: 'wear', type: 'nav', at, km: d.km, ahead: d.ahead };
       if (d) { navHold(s, at); if (s.wear) { const W = flightWho(s), P = Math.round(fl.hold.dur * 365.25), tk = Math.round(d.km / 1000);
-        wearNote(s, `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${d.ahead ? 'впереди' : 'позади'} расчёта. ${refuse ? `${repName('engine', 'ru')}: смены двигателя на коррекцию на пределе не идут — Совету не доверяют;` : 'Сдвиг займёт дольше оборота цели —'} корабль ждёт следующего окна ${W.at[0]}: ${navDays(P, 'ru')}.`,
+        wearNote(s, `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${d.ahead ? 'впереди' : 'позади'} расчёта. ${refuse ? `${repName('engine', 'ru')}: смены двигателя на коррекцию на пределе не идут — Совету не доверяют;` : 'Сдвиг займёт больше одного оборота цели —'} корабль ждёт следующего окна ${W.at[0]}: ${navDays(P, 'ru')}.`,
           `Navigation has refined the orbit of ${W.gen[1]}: it is ${tk} thousand km ${d.ahead ? 'ahead of' : 'behind'} the computed place. ${refuse ? `${repName('engine', 'en')}: the engine shifts will not run a correction at the limit — they do not trust the Council;` : 'A shift would take longer than one revolution of the target —'} the ship waits for the next window ${W.at[1]}: ${navDays(P, 'en')}.`); }
         return null; } }
     if (!s.wear) return null;                                            // журнал вахты — у модели износа
     const kms = x => Math.round(x * FL.units.C_KMS), days = Math.round((fl.planetOrbitAt - fl.entryAt) * 365.25), W = flightWho(s), dd = (t0, t1, l) => navDays(Math.round((t1 - t0) * 365.25), l);
-    if (fl.stageAt != null && m === 'entry') wearNote(s, `50 а.е. от звезды: межзвёздное торможение кончено; до промежуточной орбиты 0,1 а.е. — ${dd(fl.entryAt, fl.stageAt, 'ru')} тяги, до цели — ${days} суток, Δv ${kms(fl.dv)} км/с.`,
+    if (fl.stageAt != null && m === 'entry') wearNote(s, `50 а.е. от звезды: межзвёздное торможение кончено; до промежуточной орбиты 0,1 а.е. — ${dd(fl.entryAt, fl.stageAt, 'ru')} тяги, до цели — ${days} ${plural(days, ['сутки', 'суток', 'суток'])}, Δv ${kms(fl.dv)} км/с.`,
       `50 AU from the star: interstellar braking is over; ${dd(fl.entryAt, fl.stageAt, 'en')} of thrust to the 0.1 AU staging orbit, ${days} days to the target, Δv ${kms(fl.dv)} km/s.`);
     else if (m === 'stage') wearNote(s, fl.spiralAt - fl.stageAt > 0.5 / 365.25 ? `Промежуточная орбита 0,1 а.е.: двигатель стоит. Окно спуска к цели — через ${dd(fl.stageAt, fl.spiralAt, 'ru')}.` : 'Промежуточная орбита 0,1 а.е.: окно спуска к цели — сразу.',
       fl.spiralAt - fl.stageAt > 0.5 / 365.25 ? `The 0.1 AU staging orbit: the engine is off. The window for the descent to the target is in ${dd(fl.stageAt, fl.spiralAt, 'en')}.` : 'The 0.1 AU staging orbit: the descent window is open at once.');
     else if (m === 'spiral') wearNote(s, `Окно: спуск по спирали к орбите цели — ${dd(fl.spiralAt, fl.rendezvousAt, 'ru')} тяги.`, `The window: a spiral descent to the target's orbit — ${dd(fl.spiralAt, fl.rendezvousAt, 'en')} of thrust.`);
-    else if (m === 'entry') wearNote(s, `50 а.е. от звезды: межзвёздное торможение кончено, корабль идёт к планете ${fl.body} — ${days} суток тяги, Δv ${kms(fl.dv)} км/с.`,
+    else if (m === 'entry') wearNote(s, `50 а.е. от звезды: межзвёздное торможение кончено, корабль идёт к планете ${fl.body} — ${days} ${plural(days, ['сутки', 'суток', 'суток'])} тяги, Δv ${kms(fl.dv)} км/с.`,
       `50 AU from the star: interstellar braking is over; the ship heads for planet ${fl.body} — ${days} days of thrust, Δv ${kms(fl.dv)} km/s.`);
-    else if (m === 'capture') wearNote(s, 'Звезда захватила корабль: орбита вокруг неё уже замкнута, тяга ведёт к планете.', 'The star has captured the ship: the orbit around it is already closed, and the thrust leads to the planet.');
+    else if (m === 'capture') wearNote(s, `Звезда захватила корабль: орбита вокруг неё уже замкнута, тяга ведёт ${W.to[0]}.`, `The star has captured the ship: the orbit around it is already closed, and the thrust leads ${W.to[1]}.`);
     else if (m === 'nav') wearNote(s, `Навигация уточнила орбиту ${W.gen[0]}: отклонение в пределах допуска, встреча — по плану.`, `Navigation has refined the orbit of ${W.gen[1]}: the offset is within tolerance, the rendezvous goes as planned.`);
     else if (fl.hold && fl.hold.kind === 'corr') wearNote(s, `Коррекция окна идёт: встреча — через ${navDays(Math.round(fl.hold.dur * 365.25), 'ru')}.`,
       `The window correction is under way: the rendezvous is in ${navDays(Math.round(fl.hold.dur * 365.25), 'en')}.`);
@@ -208,15 +208,15 @@
       known: { ru: y => [`Корабль держится ${W.at[0]} ${navDays(P, 'ru')} — до следующего окна; удержание — ${kms(NAV.hold)} км/с.`, `Ещё ${navDays(P, 'ru')} вахты: износ и регламент идут.`],
         en: y => [`The ship holds ${W.at[1]} for ${navDays(P, 'en')} — until the next window; station-keeping — ${kmsE(NAV.hold)} km/s.`, `${navDays(P, 'en')} more of watch: wear and maintenance go on.`] },
       effect: y => navHold(y, y.year),
-      record: { ru: `Совет выбирает орбиту ожидания: встреча — через ${P} суток.`, en: `The council chooses a waiting orbit: the rendezvous is ${P} days later.` } });
+      record: { ru: `Совет выбирает орбиту ожидания: встреча — на ${navDays(P, 'ru')} позже.`, en: `The council chooses a waiting orbit: the rendezvous is ${P} days later.` } });
     return {
       id: 'd.flight.nav', scene: 'arrival', kind: 'decision',
       title: { ru: 'Отклонение навигации', en: 'A navigation offset' },
       rec: y => fix && y.reserve - 100 * fix.dv / FL.units.C_KMS / y.reserveDv >= 10 ? { id: 'correct', why: { ru: `коррекция стоит ${kms(fix.dv)} км/с${late ? ` и ${navDays(late, 'ru')}` : ''}, ожидание — ${navDays(P, 'ru')} вахты`, en: `a correction costs ${kmsE(fix.dv)} km/s${late ? ` and ${navDays(late, 'en')}` : ''}, waiting — ${navDays(P, 'en')} of watch` } }
         : { id: 'wait', why: { ru: fix ? 'резерва на коррекцию почти нет' : 'тяги на коррекцию не хватит', en: fix ? 'there is almost no reserve for a correction' : 'there is not enough thrust for a correction' } },
       context: {
-        ru: y => `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${where.ru} расчёта. До сближения — ${NAV.lead} суток.${late ? ' За это время двигатель встречу не сдвинет — только с опозданием.' : ''}`,
-        en: y => `Navigation has refined the orbit of ${W.gen[1]}: it is ${tk} thousand km ${where.en} the computed place. ${NAV.lead} days to the rendezvous.${late ? ' The engine cannot shift the rendezvous in that time — only with a delay.' : ''}`
+        ru: y => `Навигация уточнила орбиту ${W.gen[0]}: ${W.she ? 'она' : 'он'} на ${tk} тыс. км ${where.ru} расчёта. До сближения — ${NAV.lead} ${plural(NAV.lead, ['сутки', 'суток', 'суток'])}.${late ? ' Успеть к расчётной встрече двигатель уже не может: коррекция сдвинет её позже.' : ''}`,
+        en: y => `Navigation has refined the orbit of ${W.gen[1]}: it is ${tk} thousand km ${where.en} the computed place. ${NAV.lead} days to the rendezvous.${late ? ' The engine can no longer make the computed rendezvous: a correction will move it later.' : ''}`
       },
       options: opts
     };

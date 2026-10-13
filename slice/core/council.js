@@ -62,7 +62,7 @@
   // что сообщает пакет о мире звезды: только опубликованные признаки (класс мира — истина, текст — наблюдение)
   const NEWS_WORLD = {
     open: ['планета подтверждена; признаки воды и атмосферы; пригодность для дыхания не подтверждена', 'the planet is confirmed; signs of water and an atmosphere; breathability unconfirmed'],
-    dome: ['сильные различия условий на поверхности; есть район для закрытого поселения', 'strong contrasts across the surface; there is a region worth checking for a closed settlement'],
+    dome: ['сильные различия условий на поверхности; есть район, который стоит проверить под закрытое поселение', 'strong contrasts across the surface; there is a region worth checking for a closed settlement'],
     hostile: ['экстремальные условия на поверхности; работы возможны только с орбиты', 'extreme surface conditions; work is possible only from orbit'],
     ruined: ['разрушенная поверхность и обломки', 'a shattered surface and debris'],
     none: ['пригодный мир не подтверждён', 'no habitable world is confirmed']
@@ -72,7 +72,7 @@
     const ru = lang === 'ru', N = s.earlyNews, f2 = y => nf(y, 2, lang), recv = f2(N.received);
     const dates = n => { const ep = Math.round(NEWS.earth - M.star(n).d), y = `${ep < 0 ? '−' : ''}${Math.abs(ep)}`;
       return ru ? `наблюдаемое состояние — год ${y}` : `the state observed is that of year ${y}`; };
-    const head = ru ? `Служба наблюдений Кольца обработала данные на году ${f2(NEWS.earth)} и отправила пакет на году ${f2(NEWS.sent)}; на борту он принят на году ${recv}.`
+    const head = ru ? `Служба наблюдений Кольца обработала данные в году ${f2(NEWS.earth)} и отправила пакет в году ${f2(NEWS.sent)}; на борту он принят в году ${recv}.`
       : `The Ring's observation service processed the data in year ${f2(NEWS.earth)} and sent the packet in year ${f2(NEWS.sent)}; it reached us in year ${recv}.`;
     let body;
     if (N.family === 'signal') body = ru ? `Источник в направлении ε Индейца: ${N.change === 'pattern' ? 'повторяющаяся последовательность изменилась' : 'прежняя последовательность прекратилась'} (${dates(M.SOURCE)}). Причина неизвестна; о людях пакет ничего не сообщает.`
@@ -112,7 +112,7 @@
         st.earlyCouncil = { at: st.year, family: st.earlyNews.family, choice: 'turn', from, to: q.star, dvKms: t2.dvKms };
       },
       record: {
-        ru: s => `Совет меняет курс: с ${nameAt(s.earlyCouncil ? s.earlyCouncil.from : q.star, 'ru')} на ${nameAt(q.star, 'ru')}. Ирсон заносит расход ${fk(qt.dvKms, 'ru')} км/с и новое прибытие — около года ${s.arrive}. Прежнее задание снято с программы; принято: ${taskLabel(q, 'ru')}. Уведомление уходит на Землю.`,
+        ru: s => `Совет меняет курс: с ${nameAt(s.earlyCouncil ? s.earlyCouncil.from : q.star, 'ru')} на ${nameAt(q.star, 'ru')}. Ирсон заносит расход ${fk(qt.dvKms, 'ru')} км/с и новое прибытие — около года ${s.arrive}. Прежнее задание снято с программы; принято новое — ${taskLabel(q, 'ru')}. Уведомление уходит на Землю.`,
         en: s => `The council changes course: from ${M.nameOf(s.earlyCouncil ? s.earlyCouncil.from : q.star, 'en')} to ${M.nameOf(q.star, 'en')}. Irson enters ${fk(qt.dvKms, 'en')} km/s spent and the new arrival — around year ${s.arrive}. The old task comes off the programme; accepted: ${taskLabel(q, 'en')}. A notice goes out to Earth.`
       } };
   }
@@ -139,33 +139,33 @@
             id: 'contact',
             label: { ru: 'Исследование и контакт', en: 'Research and contact' },
             known: {
-              ru: ['Звезду выбирает экспедиция — любую достижимую; задание уточнят по сведениям о системе: поиск тридцать второй и источника сигнала, обследование системы или прямая связь с поселением.', 'Форпосту Ксилона Ир обещают специалиста через четыре года — передатчик к тому времени может замолчать.'],
-              en: ['The expedition chooses the star — any it can reach; the task is set from what is known of the system: searching for the Thirty-Second and the signal source, surveying the system, or a direct link with a settlement.', 'Xylona Ir is promised a specialist in four years — its transmitter may be silent by then.']
+              ru: ['Звезду выбирает экспедиция — любую достижимую; задание уточнят по сведениям о системе: поиск тридцать второй и источника сигнала, обследование системы или прямая связь с поселением.', 'Форпосту Ксилона Ир обещают отправить специалиста через четыре года; пока он летит, передатчик может замолчать.'],
+              en: ['The expedition chooses the star — any it can reach; the task is set from what is known of the system: searching for the Thirty-Second and the signal source, surveying the system, or a direct link with a settlement.', 'Xylona Ir is promised a specialist to leave in four years; while they fly, the transmitter may fall silent.']
             },
             effect: st => { st.mission = 'contact'; },
             record: {
-              ru: `Совет утверждает исследовательскую экспедицию. Форпосту обещают специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилона Ир он пока не убирает.
-  
-  — Я поведу эту экспедицию.
-  
-  Кассель не спешит записывать его имя.
-  
-  — Вы голосовали за форпост.
-  
-  — Голосовал.
-  
-  — Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.`,
-              en: `The Council approves a research expedition. The outpost is promised a specialist next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
-  
-  "I'll lead this expedition."
-  
-  Kassel doesn't hurry to note his name.
-  
-  "You voted for the outpost."
-  
-  "I did."
-  
-  "Then I'm navigator," says Orin. "Now we choose where to go, and what for."`
+              ru: `Совет утверждает исследовательскую экспедицию. Форпосту обещают отправить специалиста в следующем цикле, через четыре года. Дассер знает, что это значит для передатчика, и записывает результат. Карту Ксилоны Ир он пока не убирает.
+
+— Я поведу эту экспедицию, — говорит Дассер.
+
+Кассель не спешит записывать его имя.
+
+— Вы голосовали за форпост.
+
+— Голосовал.
+
+— Тогда я — штурман, — говорит Орин. — Выберем, куда и за чем лететь.`,
+              en: `The Council approves a research expedition. The outpost is promised a specialist to leave next cycle, in four years. Dasser knows what that means for the transmitter, and records the result. He doesn't put the Xylona Ir chart away yet.
+
+"I'll lead this expedition," says Dasser.
+
+Kassel doesn't hurry to note his name.
+
+"You voted for the outpost."
+
+"I did."
+
+"Then I'm navigator," says Orin. "Now we choose where to go, and what for."`
             }
           },
           {
@@ -178,19 +178,19 @@
             effect: st => { st.mission = 'supply'; },
             record: {
               ru: `Совет голосует за форпост. Исследование Орина обещают следующей экспедиции.
-  
-  — Я поведу, — говорит Дассер.
-  
-  Орин молча переносит координаты сигнала в свой журнал.
-  
-  — Тогда я — штурман. Сигнал подождёт; передатчик — нет.`,
+
+— Я поведу, — говорит Дассер.
+
+Орин молча переносит координаты сигнала в свой журнал.
+
+— Тогда я — штурман. Сигнал подождёт; передатчик — нет.`,
               en: `The Council votes for the outpost. Orin's research is promised to the next expedition.
-  
-  "I'll lead," says Dasser.
-  
-  Orin silently copies the signal's coordinates into his log.
-  
-  "Then I'm navigator. The signal can wait; the transmitter can't."`
+
+"I'll lead," says Dasser.
+
+Orin silently copies the signal's coordinates into his log.
+
+"Then I'm navigator. The signal can wait; the transmitter can't."`
             }
           },
           {
@@ -266,8 +266,8 @@
         : `"${N} requests, one expedition," says Irina Kassel. "We decide which one the Forty-First takes on: a request sets both the star and the work. The passport comes after."`,
       ru ? `На общей карте ${N} ${plural(n, ['отметка', 'отметки', 'отметок'])}. Ни одна ещё не соединена с Землёй линией курса.` : `${N} markers stand on the shared chart. None is yet joined to Earth by a course line.`];
     if (has('req:supply:xylona')) out.push(ru ? 'Нил Дассер касается первой.' : 'Nil Dasser touches the first.',
-      ru ? '— Ксилона Ир, звезда Барнарда. Передатчик слабеет: ещё десять лет без специалиста дальней связи — и форпост перестанет слышать Кольцо. Им нужны специалист, детали передатчика и запас для капсул.'
-        : '"Xylona Ir, Barnard\'s Star. Its transmitter is failing: ten more years without a deep-relay specialist and the outpost stops hearing the Ring. They need a specialist, transmitter parts and capsule spares."');
+      ru ? '— Ксилона Ир, звезда Барнарда. Передатчик слабеет: ещё десять лет без специалиста дальней связи — и форпост перестанет отвечать Кольцу. Им нужны специалист, детали передатчика и запас для капсул.'
+        : '"Xylona Ir, Barnard\'s Star. Its transmitter is failing: ten more years without a deep-relay specialist and the outpost will no longer be able to answer the Ring. They need a specialist, transmitter parts and capsule spares."');
     if (has('req:rescue:thaw')) out.push(ru ? 'Ива Лорн касается второй.' : 'Iva Lorn touches the second.',
       ru ? '— Оттепель, Росс 128. База погибла, сорок человек ушли в капсулы на орбитальный склад. Капсулы держат сто пятьдесят лет; двадцать пять уже прошло. Сколько из сорока живы, мы не знаем.'
         : '"Thaw, Ross 128. The base is dead; forty people went into capsules at the orbital store. The capsules hold a hundred and fifty years; twenty-five have passed. How many of the forty are alive, we don\'t know."');

@@ -11,7 +11,8 @@
       isoDays, lag, lossesOf, months, nameAt, nm, nmG, opNormal, opStart, opYear, ownStory, pct, pctFrom, ppl, probeOK, probesLeft, rescueLegacy,
       rescueOptions, rescueS, riskLine, roadDead, sectionHolds, sectionLine, siteRecord, sosEnd, sosKnown, sosOption, spendPct, src, stagePass,
       storeLine, storeNow, storeR, stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc,
-      taskReportText, taskResult, thawAdvance, thawAlive, thawDeadline, thawN, thawNames, vAt, warnAt, win, windowLine, yrs, yrsEn
+      taskReportText, taskResult, thawAdvance, thawAlive, thawDeadline, thawN, thawNames, vAt, warnAt, win, windowLine, yrs, yrsEn,
+      vN, plural
     } = K;
     return [
     // ------------------------------------------------------------ АКТ III · ТОРМОЖЕНИЕ И ПРИБЫТИЕ
@@ -24,9 +25,9 @@
       title: { ru: s => `Сводка Кольца · отправлена с Земли ${yrs(lag(s, Y3(s)))} назад`, en: s => `Ring bulletin · sent from Earth ${yrsEn(lag(s, Y3(s)))} ago` },
       text: {
         ru: s => `По лучу лазерных станций ушла экспедиция эпохи III: парус, разогнанный светом с Земли до 0,2c, и плазменный магнит для торможения — как у нас, только легче. Второй раз её не разогнать: станции остаются дома.
-` + (src(s) ? `Она летит к ${nameAt(EPOCH3.far, 'ru')} — дальше нашей цели — и доберётся до неё быстрее, чем мы до своей.` : (contactRun(s) ? 'Она летит к ε Индейца — к источнику сигнала, куда мы не пошли. Там она будет лет через шестьдесят.' : 'Она летит к ε Индейца, к источнику сигнала: это и есть обещанная следующая экспедиция. Там она будет лет через шестьдесят.')),
+` + (src(s) ? `Она летит к ${nameAt(EPOCH3.far, 'ru')} — дальше нашей цели — и долетит до неё за меньший срок, чем длится наш путь.` : (contactRun(s) ? 'Она летит к ε Индейца — к источнику сигнала, куда мы не пошли. Там она будет лет через шестьдесят.' : 'Она летит к ε Индейца, к источнику сигнала: это и есть обещанная следующая экспедиция. Там она будет лет через шестьдесят.')),
         en: s => `An epoch III expedition has left along the beam of the laser stations: a sail driven by light from Earth to 0.2c, and a plasma magnet for braking — like ours, only lighter. It cannot be driven a second time: the stations stay at home.
-` + (src(s) ? `It is bound for ${nameAt(EPOCH3.far, 'en')}, farther than our target, and will reach it sooner than we reach ours.` : (contactRun(s) ? 'It is bound for ε Indi — the signal source we did not go to. It will be there in some sixty years.' : 'It is bound for ε Indi, the signal source: this is the promised next expedition. It will be there in some sixty years.'))
+` + (src(s) ? `It is bound for ${nameAt(EPOCH3.far, 'en')}, farther than our target, and its voyage will take less time than ours.` : (contactRun(s) ? 'It is bound for ε Indi — the signal source we did not go to. It will be there in some sixty years.' : 'It is bound for ε Indi, the signal source: this is the promised next expedition. It will be there in some sixty years.'))
       }
     },
     {
@@ -62,7 +63,7 @@ The watch engineer is Tamir Vent, from group B. ` + (!s.choices['d.heat'] ? 'His
 Отказы капсул: ${L.capsule}. Смерть при пробуждении: ${L.revival}. Несчастные случаи на вахте: ${L.accident}. Рак от облучения: ${L.cancer}.${s.dead ? ` В происшествиях: ${s.dead}.` : ''}
 Имена умерших читают вслух на каждой пересменке; список висит у входа в зал анабиоза.
 Облучение продолжает счёт: у спящих раки проявятся годы спустя, уже у цели. По модели — ещё около ${L.later}.`; },
-        en: s => { const L = lossesOf(s, Y3(s)); return `Died on the road: ${L.total + s.dead}.
+        en: s => { const L = lossesOf(s, Y3(s)); return `Died on the way: ${L.total + s.dead}.
 Capsule failures: ${L.capsule}. Deaths on waking: ${L.revival}. Accidents on watch: ${L.accident}. Radiation cancers: ${L.cancer}.${s.dead ? ` In incidents: ${s.dead}.` : ''}
 The names of the dead are read aloud at every handover; the list hangs at the entrance to the anabiosis hall.
 The radiation keeps counting: in the sleepers, cancers will show years later, at the target. The model expects about ${L.later} more.`; }
@@ -90,19 +91,19 @@ Unknown: the dust stream the pair gathers from a faint debris belt — too faint
       text: {
         ru: `На вахте — Дан Осгер и двое инженеров; до конца смены два дня. Счётчики ударов на фронтальном щите медленно растут. Дан давно не интерпретатор: он записывает рост как скачок плотности среды — по инструкции Орина, ниже её порога.
 
-Когда порог пересечён, будят Селину. Шесть часов до ясного сознания. Селина разворачивает инфракрасный телескоп вбок от щита и видит слабое свечение пылевого хвоста: корабль идёт по краю потока к карлику. Несколько дней уже потеряны.
+Когда порог пересечён, будят Селину. Шесть часов до ясного сознания. Селина разворачивает инфракрасный телескоп вбок от щита и видит слабое свечение пылевого хвоста: корабль идёт по краю потока, тянущегося от пары карликов. Несколько дней уже потеряны.
 
 Один из инженеров требует записать ошибку на Дана. Селина открывает инструкцию: порог задал Орин — для межзвёздной среды, а не для потока у тёмного тела.`,
         en: `On watch are Dan Osger and two engineers; two days left of the shift. The impact counters on the forward shield are slowly rising. Dan stopped being an interpreter long ago: he logs the rise as a jump in medium density — under Orin's instruction, below its threshold.
 
-When the threshold is crossed, they wake Selina. Six hours to clear consciousness. Selina turns the infrared telescope aside from the shield and sees the faint glow of a dust tail: the ship is running along the edge of a stream toward the dwarf. Several days are already lost.
+When the threshold is crossed, they wake Selina. Six hours to clear consciousness. Selina turns the infrared telescope aside from the shield and sees the faint glow of a dust tail: the ship is running along the edge of the stream trailing from the dwarf pair. Several days are already lost.
 
 One of the engineers demands the error be put down to Dan. Selina opens the instruction: the threshold was set by Orin — for the interstellar medium, not for a stream around a dark body.`
       }
     },
     {
       id: 'a3.check', scene: 'dark', kind: 'transcript', year: warnAt, when: src,
-      title: { ru: 'Совет смены · поток', en: 'Watch council · the stream' },
+      title: { ru: 'Совет смен · поток', en: 'Shift Council · the stream' },
       text: {
         ru: s => `Окно для манёвра — ${days(win(s), 'ru')}; прежняя задержка вахты уже учтена. Измерение может и не захватить опасную полосу.\n\nНаучная модель оценивает проход по краю потока как безопасный — 91%, при условии, что модель верна и набор гипотез полон. Селина поднимает архивный отчёт другой экспедиции Кольца: там верно определили природу похожего объекта и ошиблись в плотности потока вокруг. Спектр рассеянного света с такого расстояния не различает, мелкая там пыль или крупная.
 
@@ -198,22 +199,22 @@ The expedition is over. The next one — to another target — will receive the 
       text: {
         ru: s => !s.highPower ? `Безопасный манёвр — короткий и мощный, но резерв повышенной мощности отдан группе Б ${yrs(heatAgo(s))} назад. Остаётся серия слабых коррекций: двенадцать суток.${s.streamHit ? '' : ' Корабль уходит с края потока.'}
 Резерв манёвров: −${f1(dvPct(s, DV.streamWeak), 'ru')}%.
-Траектория изменена: корабль пройдёт у самого карлика.`
-          : `Безопасный манёвр один — короткий и мощный. Контур с резервом повышенной мощности держит его: корабль уходит с края потока за шесть часов.\nРезерв манёвров: −${f1(dvPct(s, DV.stream), 'ru')}%.\nТраектория изменена: корабль пройдёт у самого карлика.`,
+Траектория изменена: корабль уходит с края потока; к паре карликов ближе 1460 а.е. он не подойдёт.`
+          : `Безопасный манёвр один — короткий и мощный. Контур с резервом повышенной мощности держит его: корабль уходит с края потока за шесть часов.\nРезерв манёвров: −${f1(dvPct(s, DV.stream), 'ru')}%.\nТраектория изменена: корабль уходит с края потока; к паре карликов ближе 1460 а.е. он не подойдёт.`,
         en: s => !s.highPower ? `The safe manoeuvre is short and powerful, but the high-power reserve went to group B ${yrsEn(heatAgo(s))} ago. What remains is a series of weak corrections: twelve days.${s.streamHit ? '' : ' The ship leaves the edge of the stream.'}
 Manoeuvre reserve: −${f1(dvPct(s, DV.streamWeak), 'en')}%.
-Trajectory changed: the ship will pass close by the dwarf.`
-          : `There is one safe manoeuvre — short and powerful. The loop with the high-power reserve holds it: the ship leaves the stream edge in six hours.\nManoeuvre reserve: −${f1(dvPct(s, DV.stream), 'en')}%.\nTrajectory changed: the ship will pass close by the dwarf.`
+Trajectory changed: the ship leaves the stream's edge; it will come no closer than 1460 AU to the pair.`
+          : `There is one safe manoeuvre — short and powerful. The loop with the high-power reserve holds it: the ship leaves the stream edge in six hours.\nManoeuvre reserve: −${f1(dvPct(s, DV.stream), 'en')}%.\nTrajectory changed: the ship leaves the stream's edge; it will come no closer than 1460 AU to the pair.`
       }
     },
     {
       id: 'd.sos.stream', scene: 'dark', kind: 'decision', when: s => src(s) && s.streamHit === 2 && !s.lostShip,
       title: { ru: 'Звать помощь?', en: 'Call for help?' },
       context: {
-        ru: s => `Блок из двадцати пяти капсул потерян. Остальные блоки изолированы; охлаждение зала идёт по обходным магистралям. До орбиты у ${nmG(s)} — пять лет торможения.
+        ru: s => `Блок капсул потерян: ${vN(s.streamDead, ['погиб', 'погибли'])} ${ppl(s.streamDead)}. Остальные блоки изолированы; охлаждение зала идёт по обходным магистралям. До орбиты у ${nmG(s)} — пять лет торможения.
 
 Можно идти к цели как есть. Можно уснуть всем, кроме двенадцати, и звать помощь.`,
-        en: s => `A block of twenty-five capsules is lost. The other blocks are isolated; the hall is cooled through bypass mains. Five years of braking remain to orbit at ${nm(s, 'en')}.
+        en: s => `A capsule block is lost: ${s.streamDead} ${s.streamDead === 1 ? 'is' : 'are'} dead. The other blocks are isolated; the hall is cooled through bypass mains. Five years of braking remain to orbit at ${nm(s, 'en')}.
 
 They can go on to the target as they are. Or everyone but twelve can go to sleep and call for help.`
       },
@@ -264,12 +265,12 @@ They can go on to the target as they are. Or everyone but twelve can go to sleep
       text: {
         ru: s => `Акселерометры и независимая навигация показывают одно: магнит тормозит слабее расчётного. Ная проверяет плазменный анализатор — среда разрежена. Селина выводит предел поправки: ещё ${dd(RESCUE.delay, 'ru')}, если участок протяжённый.
 
-— Орин оставил нам расчёт. Решать, сколько ему ещё верить, приходится нам.
+— Орин оставил нам расчёт, — говорит Селина. — Сколько ещё верить этому расчёту, решать нам.
 
 ${s.scout ? 'Передовые измерения зонда лежат в архиве необработанными.' : 'Передовых измерений нет: зонд не выпускали.'}`,
         en: s => `The accelerometers and independent navigation agree: the magnet is braking less than calculated. Naya checks the plasma analyser — the medium is sparse. Selina displays the correction limit: another ${dd(RESCUE.delay, 'en')} if the stretch is extensive.
 
-"Orin left us the calculation. We have to decide how much longer to trust it."
+"Orin left us the calculation," Selina says. "How much longer to trust it is up to us."
 
 ${s.scout ? "The probe's forward measurements sit in the archive, unprocessed." : 'There are no forward measurements: no probe was launched.'}`
       }
@@ -278,7 +279,7 @@ ${s.scout ? "The probe's forward measurements sit in the archive, unprocessed." 
       id: 'd.rescueBrake', scene: 'sail', kind: 'decision', when: rescueS,
       title: { ru: 'Сберечь срок или резерв', en: 'Preserve time or reserve' },
       context: {
-        ru: `Если разрежение протяжённое, прибытие сдвинется на ${RESCUE.delay} суток. Состояние склада известно только по сводке «штатно»: какой запас времени у Оттепели, станет ясно у склада.`,
+        ru: `Если разрежение протяжённое, прибытие сдвинется на ${RESCUE.delay} ${plural(RESCUE.delay, ['сутки', 'суток', 'суток'])}. Состояние склада известно только по сводке «штатно»: какой запас времени у Оттепели, станет ясно у склада.`,
         en: `If the sparse stretch is extensive, arrival moves by ${RESCUE.delay} days. The store's state is known only from the summary "nominal": how much time Thaw has will be clear only at the store.`
       },
       rec: s => { const burn = s.reserve >= dvPct(s, RESCUE.burn);
@@ -301,7 +302,7 @@ ${s.scout ? "The probe's forward measurements sit in the archive, unprocessed." 
           cost: st => { spendPct(st, dvPct(st, RESCUE.burn)); },
           effect: st => brakeApply(st, 'burn'), record });
         out.push({ id: 'wait', label: { ru: 'Ждать магнит', en: 'Wait for the magnet' },
-          known: { ru: ['Без расхода.', `Если разрежение протяжённое, прибытие позже на ${RESCUE.delay} суток: каждые сутки опоздания вычитаются из запаса склада, каким бы он ни оказался.`],
+          known: { ru: ['Без расхода.', `Если разрежение протяжённое, прибытие позже на ${RESCUE.delay} ${plural(RESCUE.delay, ['сутки', 'суток', 'суток'])}: каждые сутки опоздания вычитаются из запаса склада, каким бы он ни оказался.`],
             en: ['No expenditure.', `If the sparse stretch is extensive, arrival is ${RESCUE.delay} days later: every day of delay comes out of the store's margin, whatever it turns out to be.`] },
           effect: st => brakeApply(st, 'wait'), record });
         return out; }
@@ -357,7 +358,7 @@ No station of the Ring has ever registered signals with that type of code.`
       text: {
         ru: s => `Скорость ${fb(vAt(s, s.arrive - 4), 'ru')}. Плазменный магнит выключен: на малой скорости пузырь разрастается до десятков тысяч километров и тормозит неточно, а для входа в систему нужна тяга.
 Корабль развёрнут кормой вперёд. Двигатель ядра гасит остаток скорости за четыре года.
-Щит теперь смотрит назад. На такой скорости удар пылинки в ${Math.round((s.beta / vAt(s, s.arrive - 4)) ** 2)} раз слабее, чем в дрейфе.
+Щит теперь смотрит назад. На такой скорости удар пылинки в ${Math.round((s.beta / vAt(s, s.arrive - 4)) ** 2)} ${plural(Math.round((s.beta / vAt(s, s.arrive - 4)) ** 2), ['раз', 'раза', 'раз'])} слабее, чем в дрейфе.
 Ступень разгона прошла систему ${yrs(s.arrive - 4 - stagePass(s))} назад, в тысяче а.е. в стороне. Её никто не видел.`,
         en: s => `Velocity ${fb(vAt(s, s.arrive - 4), 'en')}. The plasma magnet is off: at low speed the bubble swells to tens of thousands of kilometres and brakes imprecisely, and entering the system needs thrust.
 The ship is turned stern-first. The core engine takes off the remaining speed over four years.
@@ -370,16 +371,16 @@ The acceleration stage passed the system ${yrsEn(s.arrive - 4 - stagePass(s))} a
       id: 'd.approach', scene: 'flip', kind: 'decision', year: s => s.arrive - 4, when: s => !!(s.flight && flightOptions(s).early),
       title: { ru: 'План встречи', en: 'The rendezvous plan' },
       rec: s => { const o = flightOptions(s), dd = Math.round((o.late.planetOrbitAt - o.early.planetOrbitAt) * 365.25), dp = 100 * (o.early.dv - o.late.dv) / s.reserveDv;
-        if (rescueS(s) && dp <= 3) return { id: 'early', why: { ru: 'у склада каждые сутки — капсулы протекающей секции', en: 'at the store every day costs capsules in the leaking section' } };
-        return dd >= 20 && dp <= 3 ? { id: 'early', why: { ru: `${dd} суток вахты дороже ${nf(dp, 1, 'ru')}% резерва`, en: `${dd} days of watch cost more than ${nf(dp, 1, 'en')}% of the reserve` } }
-          : { id: 'late', why: { ru: 'топливо нужнее у цели, чем несколько дней', en: 'propellant is worth more at the target than a few days' } }; },
+        if (rescueS(s) && dp <= 3) return { id: 'early', why: { ru: 'каждые сутки опоздания стоят капсулам протекающей секции', en: 'every day of delay counts against the leaking section\'s capsules' } };
+        return dd >= 20 && dp <= 3 ? { id: 'early', why: { ru: `${dd} ${plural(dd, ['сутки', 'суток', 'суток'])} вахты дороже ${nf(dp, 1, 'ru')}% резерва`, en: `${dd} days of watch cost more than ${nf(dp, 1, 'en')}% of the reserve` } }
+          : { id: 'late', why: { ru: `топливо нужнее у цели, чем ${dd} ${plural(dd, ['сутки', 'суток', 'суток'])}`, en: `propellant is worth more at the target than ${dd} days` } }; },
       context: {
         ru: s => `Двигатель включён. До 50 а.е. от звезды — около ${yrsG(Math.max(1, s.flight.entryAt - s.year))}, дальше — тяга ${flightWho(s).to[0]}. Навигаторы рассчитали два плана встречи.`,
         en: s => `The engine is on. About ${yrsEn(Math.max(1, s.flight.entryAt - s.year))} to 50 AU from the star, then thrust ${flightWho(s).to[1]}. The navigators have worked out two rendezvous plans.`
       },
       options: s => { const o = flightOptions(s), base = o.late, kms = x => Math.round(x * 299792.458), res = x => Math.max(0, s.reserve - 100 * (x.dv - (s.flight.variant === 'early' ? o.early : o.late).dv) / s.reserveDv);
         const opt = (v, ru, en, k) => ({ id: v, label: { ru, en },
-          known: { ru: [`${flightWho(s).arr[0]} — год ${nf(o[v].planetOrbitAt, 2, 'ru')}${v === 'early' ? `, на ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} суток раньше` : ''}.`,
+          known: { ru: [`${flightWho(s).arr[0]} — год ${nf(o[v].planetOrbitAt, 2, 'ru')}${v === 'early' ? `, на ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} ${plural(Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25), ['сутки', 'суток', 'суток'])} раньше` : ''}.`,
               `Маршрут — ${kms(o[v].dv)} км/с${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; резерв манёвров после — ${f1(res(o[v]), 'ru')}%; тяга — до ${Math.round(100 * o[v].ratio)}% предела.`],
             en: [`${flightWho(s).arr[1]} — year ${nf(o[v].planetOrbitAt, 2, 'en')}${v === 'early' ? `, ${Math.round((base.planetOrbitAt - o.early.planetOrbitAt) * 365.25)} days earlier` : ''}.`,
               `Route — ${kms(o[v].dv)} km/s${v === 'early' ? ` (+${kms(o.early.dv) - kms(base.dv)})` : ''}; manoeuvre reserve after — ${f1(res(o[v]), 'en')}%; thrust up to ${Math.round(100 * o[v].ratio)}% of the limit.`] },
@@ -404,7 +405,7 @@ Selina sends the corrected sailing directions and keeps the original beside them
 
     // ---- прибытие
     { id: 's.e5', kind: 'skip', toYear: s => rescueS(s) ? arriveX(s) : arrivalAt(s),
-      label: { ru: s => rescueS(s) ? 'Промотать до прибытия к складу' : `Промотать до года ${arrivalYear(s)} · прибытие`, en: s => rescueS(s) ? 'Skip ahead to the arrival at the store' : `Skip ahead to year ${s.arrive} · arrival` } },
+      label: { ru: s => rescueS(s) ? 'Промотать до прибытия к складу' : `Промотать до года ${arrivalYear(s)} · прибытие`, en: s => rescueS(s) ? 'Skip ahead to the arrival at the store' : `Skip ahead to year ${arrivalYear(s)} · arrival` } },
     {
       id: 'a3.orbit', scene: 'arrival', kind: 'instrument', year: s => rescueS(s) ? arriveX(s) : arrivalAt(s),
       effect: s => { s.worldSeen = M.worldOf(s.target); },
@@ -440,11 +441,11 @@ Manoeuvre reserve: ${f1(s.reserve, 'en')}% of rated. Landing materials: ${Math.r
 
 Первые пакеты ещё разделены минутами светового хода; Селина Вей передаёт ответы целиком, не перебивая запись.
 
-— Идём по программе контакта. Нас ${ppl(aliveOf(s))}, включая спящих. Присылаем медицинский журнал и перечень запасов.
+— Идём по программе контакта, — отвечает Селина. — Нас ${ppl(aliveOf(s))}, включая спящих. Присылаем медицинский журнал и перечень запасов.
 
-${L > 0 ? `— В пути умерли ${ppl(L)}. В списке они отмечены отдельно; прошу сохранить их имена.` : '— Потерь в пути нет. Сверьте, пожалуйста, наш список.'}
+${L > 0 ? `— В пути ${vN(L, ['умер', 'умерли'])} ${ppl(L)}. В списке они отмечены отдельно; прошу сохранить их имена.` : '— Потерь в пути нет. Сверьте, пожалуйста, наш список.'}
 
-${c.status === 'declining' ? '— Мы сами держимся на пределе. Встречающую группу примем; размещение остальных придётся рассчитывать вместе.' : c.status === 'establishing' ? '— Поселение ещё строится. Встречающую группу примем; для остальных сначала посчитаем жильё, воду и рабочие руки.' : '— Встречающую группу примем. Приём всей экспедиции обсудим с вами после проверки жилья, питания и медицинских смен.'}
+${c.status === 'declining' ? '— Мы сами держимся на пределе, — говорит дежурная. — Передовую группу примем; размещение остальных придётся рассчитывать вместе.' : c.status === 'establishing' ? '— Поселение ещё строится, — говорит дежурная. — Передовую группу примем; для остальных сначала посчитаем жильё, воду и рабочие руки.' : '— Передовую группу примем, — говорит дежурная. — Приём всей экспедиции обсудим с вами после проверки жилья, питания и медицинских смен.'}
 
 Позднее в орбитальном узле их встречают дежурная и техник; на столе лежат две ведомости, корабельная и местная.
 
@@ -453,11 +454,11 @@ ${(GREET_LAST[c.id] || GREET_LAST.default).ru}`; },
 
 The first packets are still separated by minutes of light travel; Selina Vei sends complete replies without interrupting the recording.
 
-"We are here under the contact programme. There are ${aliveOf(s)} of us, including sleepers. We're sending our medical log and stores inventory."
+"We are here under the contact programme," Selina replies. "There are ${aliveOf(s)} of us, including sleepers. We're sending our medical log and stores inventory."
 
 ${L > 0 ? `"${L} died on the way. They are listed separately; please preserve their names."` : '"There were no losses on the way. Please check our roster."'}
 
-${c.status === 'declining' ? '"We are at our own limits. We can receive your visiting party; accommodating everyone else will take a joint assessment."' : c.status === 'establishing' ? '"The settlement is still being built. We can receive your visiting party; first we must work out housing, water and labour for the others."' : '"We can receive your visiting party. We\'ll discuss taking everyone in after checking housing, food and medical staffing."'}
+${c.status === 'declining' ? '"We are at our own limits," the duty officer says. "We can receive your advance party; accommodating everyone else will take a joint assessment."' : c.status === 'establishing' ? '"The settlement is still being built," the duty officer says. "We can receive your advance party; first we must work out housing, water and labour for the others."' : '"We can receive your advance party," the duty officer says. "We\'ll discuss taking everyone in after checking housing, food and medical staffing."'}
 
 Later, at the orbital facility, the duty officer and a technician meet them; two inventories lie on the table, the ship's and the settlement's.
 
@@ -507,7 +508,7 @@ ${L > 0 ? `She includes our losses in the transmitted log: ${L}. There is no one
 
 — Люди остались. Последнюю группу подняли недавно; теперь нас двести пятьдесят.
 
-Селина передаёт оглавление привезённого архива и просит журнал последних ремонтов.${roadDead(s) > 0 ? ` В журнал она вписывает и наших: в пути умерли ${ppl(roadDead(s))}.` : ''}
+Селина передаёт оглавление привезённого архива и просит журнал последних ремонтов.${roadDead(s) > 0 ? ` В журнал она вписывает и наших: в пути ${vN(roadDead(s), ['умер', 'умерли'])} ${ppl(roadDead(s))}.` : ''}
 
 Позднее у шлюза их встречает старший форпоста; на его рукаве — ключ ручного привода.
 
@@ -560,7 +561,7 @@ The local shift proposes a sheltered station and an independent line to the pump
     {
       id: 'd.supplyApproach2', scene: 'arrival', kind: 'decision', year: s => s.arrive, when: supplyS,
       title: { ru: 'Монтаж под вспышками', en: 'Installation under the flares' },
-      context: { ru: 'Поток частиц после вспышки не ограничен. У временного контура — сорок пять суток.', en: 'The particle flux after the flare is not bounded. The temporary loop has forty-five days.' },
+      context: { ru: 'Верхняя граница потока частиц после вспышки не оценена. У временного контура — сорок пять суток.', en: 'No upper bound yet on the particle flux after the flare. The temporary loop has forty-five days.' },
       rec: s => s.materials >= STORM.protect ? { id: 'protect', why: { ru: 'после вспышки поток частиц ещё не ограничен', en: 'the particle flux after the flare is not yet bounded' }, assume: { ru: 'отдельный пост защитит монтаж; старую схему проверим отдельно', en: 'separate controls protect the installation; the old system needs its own check' } }
         : s.gridBlocks >= 2 && s.materials >= STORM.block ? { id: 'block', why: { ru: 'на укрытый пост материалов нет', en: 'there are no materials for a sheltered station' } }
         : { id: 'fast', why: { ru: 'на защиту материалов нет', en: 'there are no materials for protection' }, assume: { ru: 'роботов достаточно', en: 'robots are enough' } },
@@ -568,7 +569,7 @@ The local shift proposes a sheltered station and an independent line to the pump
         id: 'fast', label: { ru: 'Короткая схема, только роботы', en: 'Short procedure, robots only' },
         known: { ru: ['Трое суток, без расхода материалов.', 'Управление общее; отказ монтажа способен остановить охлаждение занятой секции.'], en: ['Three days, no materials.', 'Controls are shared; an installation failure could stop cooling in an occupied section.'] },
         effect: st => { st.supplyDays += 3; if (stormU(st) < STORM.strong) { st.outpostDead += STORM.fastDead; st.deadHere += STORM.fastDead; incident(st, 'supplyExposure', STORM.fastDead, { year: opYear(st) }, 'outpost'); } },
-        record: { ru: s => s.incidents && s.incidents.some(i => i.kind === 'supplyExposure') ? `Роботы монтируют по короткой схеме. Через сутки поток частиц останавливает автоматику; занятая секция остывает раньше, чем её успевают перекрыть. Погибли ${ppl(STORM.fastDead)} форпоста.` : 'Роботы монтируют по короткой схеме. Поток частиц держится в умеренных пределах; монтаж закончен за трое суток.',
+        record: { ru: s => s.incidents && s.incidents.some(i => i.kind === 'supplyExposure') ? `Роботы монтируют по короткой схеме. Через сутки поток частиц останавливает автоматику; занятая секция остывает раньше, чем её успевают перекрыть. ${vN(STORM.fastDead, ['Погиб', 'Погибли'])} ${ppl(STORM.fastDead)} форпоста.` : 'Роботы монтируют по короткой схеме. Поток частиц держится в умеренных пределах; монтаж закончен за трое суток.',
           en: s => s.incidents && s.incidents.some(i => i.kind === 'supplyExposure') ? `The robots install by the short procedure. A day later the particle flux stops the automation; an occupied section cools before it can be sealed. ${STORM.fastDead} of the outpost are dead.` : 'The robots install by the short procedure. The particle flux stays moderate; the installation is done in three days.' }
       }, {
         id: 'protect', label: { ru: 'Укрытый пост и отдельное управление', en: 'Sheltered station and separate controls' },
@@ -669,7 +670,7 @@ They decide together; a delivery signature cannot replace local acceptance.`
       id: 'd.deliver2', scene: 'arrival', kind: 'decision', year: opYear, when: supplyS,
       title: { ru: 'План работ', en: 'The work plan' },
       context: {
-        ru: s => `${supplySrc(s, 'ru')} ${s.capsLost ? `Капсульная секция потеряна: до сорок пятого дня людям нужны места — прошло ${s.supplyDays} суток.` : 'Систему примут только после испытаний; до приёмки охлаждение держит корабль.'}`,
+        ru: s => `${supplySrc(s, 'ru')} ${s.capsLost ? `Капсульная секция потеряна: до сорок пятого дня людям нужны места — прошло ${s.supplyDays} ${plural(s.supplyDays, ['сутки', 'суток', 'суток'])}.` : 'Систему примут только после испытаний; до приёмки охлаждение держит корабль.'}`,
         en: s => `${supplySrc(s, 'en')} ${s.capsLost ? `The capsule section is lost: people need berths before day forty-five — ${s.supplyDays} days have passed.` : 'A system is accepted only after testing; until then the ship carries the cooling.'}`
       },
       rec: s => { const ids = deliverOptions(s).map(o => o.id), pick = (id, ru, en) => ({ id, why: { ru, en } });
@@ -788,7 +789,7 @@ They decide together; a delivery signature cannot replace local acceptance.`
       effect: s => { if (!s.rescueOp) { s.thawDead = s.thawDeadIds.length; s.rescued = 0; } },
       title: { ru: 'Журнал вахты · имена в двух ведомостях', en: 'Watch log · names in two manifests' },
       text: {
-        ru: s => `Ива сверяет каждую запись Оттепели с нашим журналом. Стабилизированы ${s.rescued}; дополнительно погибли ${s.thawDead}. ${({ move: 'Спящие — в нашем секторе.', restore: 'Спящие — на стабилизированном складе.', wake: 'Выжившие — в лазарете.' })[s.rescueOp] || 'Стабилизировать было некого.'}
+        ru: s => `Ива сверяет каждую запись Оттепели с нашим журналом. ${vN(s.rescued, ['Стабилизирован', 'Стабилизированы'])} ${s.rescued}; ${s.thawDead ? `${vN(s.thawDead, ['погиб', 'погибли'])} ещё ${s.thawDead}` : 'дополнительных потерь нет'}. ${({ move: 'Спящие — в нашем секторе.', restore: 'Спящие — на стабилизированном складе.', wake: 'Выжившие — в лазарете.' })[s.rescueOp] || 'Стабилизировать было некого.'}
 
 У каждого человека остаётся прежнее имя и прежний номер капсулы.${s.thawDead ? ` В ведомость погибших вписаны: ${thawNames(s.thawDeadIds, 'ru')}.` : ''} Протокол отделяет потери от опоздания, аварии и пробуждения.`,
         en: s => `Iva checks every Thaw entry against our log. Stabilised: ${s.rescued}; additional deaths: ${s.thawDead}. ${({ move: 'The sleepers are in our sector.', restore: 'The sleepers are in the stabilised store.', wake: 'The survivors are in the infirmary.' })[s.rescueOp] || 'There was no one left to stabilise.'}
@@ -813,7 +814,7 @@ Everyone keeps their name and original capsule number.${s.thawDead ? ` Entered i
 
 ${s.thawDead > 0 ? `— Живы ${s.rescued}. Из ${THAW0} мы потеряли ${s.thawDead}. Я останусь, пока вы будете читать список.` : `— Все ${THAW0} живы. Сейчас сверим, где каждый.`}
 
-${L > 0 ? `— Вы тоже потеряли людей?\n\n— Да. В пути умерли ${ppl(L)}.` : '— Долго вы летели?\n\nСелина придвигает экран с календарём рейса.'}
+${L > 0 ? `— Вы тоже потеряли людей?\n\n— Да. В пути ${vN(L, ['умер', 'умерли'])} ${ppl(L)}.` : '— Долго вы летели?\n\nСелина придвигает экран с календарём рейса.'}
 
 Здесь отвечают сразу: между ними больше нет передатчика и лет ожидания.`; },
         en: s => { const L = roadDead(s); if (rescueS(s)) return greetR(s, L, 'en'); return `The first woman well enough to speak studies the unfamiliar infirmary ceiling.
@@ -849,9 +850,9 @@ Here an answer comes at once: there is no transmitter between them, no years of 
       effect: s => { s.lost = lossesOf(s, arrivalAt(s)).total + s.dead; },
       title: { ru: 'Совет у цели', en: 'Council at the target' },
       text: {
-        ru: `Будят Дассера и Орина. На столе — первоначальная заявка и совместный журнал работ.
+        ru: s => `Будят Дассера и Орина. На столе — первоначальная заявка и совместный журнал работ.
 
-Дассер читает журнал до конца, включая имена погибших, если они есть.
+Дассер читает журнал до конца${(s.outpostDead || 0) + (s.supplyCrewDead || 0) > 0 ? ', включая имена погибших' : ': погибших в нём нет'}.
 
 — Я обещал вернуть две системы. Вы решали, как сохранить людей между ними.
 
@@ -860,9 +861,9 @@ Here an answer comes at once: there is no transmitter between them, no years of 
 — Теперь это и их инструкция. Они смогут исправить нас.
 
 Дассер подписывает отчёт после местного совета, не вместо него.`,
-        en: `Dasser and Orin are woken. The original request and the joint work log lie on the table.
+        en: s => `Dasser and Orin are woken. The original request and the joint work log lie on the table.
 
-Dasser reads the whole log, including the names of the dead, if there are any.
+Dasser reads the whole log${(s.outpostDead || 0) + (s.supplyCrewDead || 0) > 0 ? ', including the names of the dead' : ' to the end: it lists no dead'}.
 
 "I promised to restore two systems. You had to keep people alive between them."
 
@@ -908,7 +909,7 @@ Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}.`
 
 Teya closes the sampler.
 
-"We can repeat their analysis and get the same error."${s.rescued ? ' "Cooling is already secured; testing the water must not be paid for with their lives."' : ''}`
+"We can repeat their analysis and get the same error.${s.rescued ? ' The people are already secured with cooling; testing the water must not be paid for with their lives.' : ''}"`
       }
     },
     {
@@ -925,7 +926,7 @@ Teya closes the sampler.
 Корабль поддержки признают погибшим. Обряд имён — по семи именам. Вместе с ним пропадают ³He, теплообменники и материалы, на которые когда-то рассчитывал совет Ирсона.
 `) + `
 Медицинский журнал: погибли в пути — ${ppl(lossesOf(s, arrivalAt(s)).total + s.dead)}${s.dead ? `, из них ${deadCauses(s, 'ru')}` : ''}.` +
-          (src(s) ? '\n\nОрин читает разбор ошибки у Тёмной звезды и записывает вину на себя: он оставил простую инструкцию там, где нужен был разбор района.' : ''),
+          (src(s) && s.streamDead > 0 ? '\n\nОрин читает разбор ошибки у Тёмной звезды и записывает вину на себя: он оставил простую инструкцию там, где нужен был разбор района.' : ''),
         en: s => (s.support === 'found'
           ? `Dasser and Orin are woken. A year later the support ship comes out at the rendezvous: the seven wake themselves, as agreed over the link. Its holds carry ³He, heat exchangers and landing materials. The high-power loop is whole again; the manoeuvre reserve and the materials are replenished.
 `
@@ -934,7 +935,7 @@ Teya closes the sampler.
 The support ship is declared lost. The rite of names — seven names. With it go the ³He, the heat exchangers and the materials that Irson's council once relied on.
 `) + `
 Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}${s.dead ? `, of them ${deadCauses(s, 'en')}` : ''}.` +
-          (src(s) ? '\n\nOrin reads the review of the error at the Dark Star and takes the blame himself: he left a simple instruction where a survey of the region was needed.' : '')
+          (src(s) && s.streamDead > 0 ? '\n\nOrin reads the review of the error at the Dark Star and takes the blame himself: he left a simple instruction where a survey of the region was needed.' : '')
       }
     },
     {
@@ -973,8 +974,8 @@ Medical log: died on the road — ${lossesOf(s, arrivalAt(s)).total + s.dead}${s
           },
           effect: st => { st.home = 'land'; st.homeReadyAt = st.year + (L ? 2 : 5); },
           record: {
-            ru: 'Совет решает спускаться. Первая волна уходит к участку, который выбрала разведка с орбиты за первые недели. Остальные спят, пока внизу не построят жильё.',
-            en: 'The council decides to go down. The first wave leaves for the site the orbital survey chose in the first weeks. The rest sleep until housing is built below.'
+            ru: 'Совет решает спускаться. Разведка с орбиты наметила участки; первая волна готовится к спуску. Остальные спят, пока внизу не построят жильё.',
+            en: 'The council decides to go down. The orbital survey has marked candidate sites; the first wave prepares to go down. The rest sleep until housing is built below.'
           }
         }, orbit];
         if (w === 'dome') return [{

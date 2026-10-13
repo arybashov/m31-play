@@ -637,6 +637,7 @@
     TRACK, REBUILD, SCRAP_OF, STORE_AGE, SCRAP_BACK, YIELD, BATCH, BATCH_DAYS, DRIVE_FIX, setShop, shopMachine, shopOpen, agroDonor, CORE_BUF, coreAt, PWR, budget,
     TANKS, TANK_PAIR, CARGO_NEXT, COLL, limitOf, canInsert, insertColl, REG, regOf, regDemand, regAt, regSet, regNext, regNextYear, onRegGrid, regMatTo, DANGER, defectAt, detect, warnDefect, isolate, repairDefect, dangerRecipe, canRepairDefect, destroyed, RINGS, RING, ringRuns, zeroG, dangerIds,
     overAge: w => { const B = budget(w); return Math.max(0, ...LOOPS.filter(L => loopRuns(w, L)).map(L => overRate('pump', loopPower(w, L, B) / PWR.nom))); },
+    overList: w => { const B = budget(w); return LOOPS.filter(L => loopRuns(w, L)).map(L => ({ L, n: loopLoad(w, L), k: overRate('pump', loopPower(w, L, B) / PWR.nom) })); },
     partsOf, reservePart, removePart, removedOf, canRebuild, quoteRebuild, startRebuild, completeRebuild, dismantle, addScrap, takeScrap,
     create, setAwake, census, groupPeople, seatOf, freeSeats, holdSeats, heldSeats, moveSleepers, homeLoop, rehome, groupOfSeat, recompute, busPowered, loopRuns, loopLoad, deficit, ageAt, hazardAt, bufAt,
     nextBoundary, failureAt, touch, fail, capsuleFail, bufferFail, bgDeath, setRoad, losses, recordDeaths, loopRoom, reroutePlan, relink, install,

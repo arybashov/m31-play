@@ -4,8 +4,8 @@
   'use strict';
   const rescue = __core => {
     let M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, flightPlan, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart,
-    opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr;
-    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, flightPlan, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, spendPct, thawN, xyl, yr } = __core); };
+    opTime, plural, popName, ppl, rescueS, spendPct, thawN, vN, xyl, yr;
+    const __link = () => { ({ M, MOVE, RESTORE, THAW0, THAW_LOSS, W, arriveX, crewOf, dvPct, f2, flightPlan, hidden, housedOf, incident, lifeAt, months, nextLoss, opStart, opTime, plural, popName, ppl, rescueS, spendPct, thawN, vN, xyl, yr } = __core); };
     __link();
 
   // ---- спасатель v3 (rescueS): реестр Оттепели, тепловой срок секции, торможение, крепление, площадка
@@ -117,8 +117,8 @@
       effect: st => { st.connect = 'cut'; st.rescueDays += RESCUE.cut; thawAdvance(st, storeNow(st)); },
       record: { ru: 'Секцию отсекают. Ива вписывает в ведомость двенадцать номеров отдельной строкой.', en: 'The section is cut off. Iva enters twelve numbers in the record on a separate line.' } }
       : { id: 'proceed', label: { ru: 'Сразу к операции', en: 'Straight to the operation' },
-      known: { ru: ['Без расхода.', `Секция дождётся, только если операция закончится раньше её срока — через ${dd(left, 'ru')}.`],
-        en: ['No expenditure.', `The section will last only if the operation finishes before its deadline — in ${dd(left, 'en')}.`] },
+      known: { ru: ['Без расхода.', `Любая операция дольше срока секции — через ${dd(left, 'ru')}: секция не дождётся.`],
+        en: ['No expenditure.', `Any operation takes longer than the section's deadline — in ${dd(left, 'en')}: the section will not last.`] },
       effect: st => { st.connect = 'proceed'; },
       record: { ru: 'Совет начинает операцию без отдельной помощи секции.', en: 'The council starts the operation with no separate help for the section.' } });
     return out;
@@ -197,14 +197,14 @@
       : s.site === 'closed' ? (ru ? 'Замкнутый контур принят: местная вода в энергетику не идёт.' : 'The closed loop is accepted: local water does not enter the power system.')
       : s.site === 'orbit' ? (ru ? 'Кольца приняты: орбитальный дом работает.' : 'The rings are accepted: the orbital home is running.')
       : (ru ? 'Нового жилья пока нет; прежние места и обязательства сохраняются.' : 'There is no new housing yet; existing places and commitments remain.');
-    const placed = s.housed ? s.rescued : 0, where = SITE_NAME[s.site] ? SITE_NAME[s.site][lang] : (ru ? 'не выбрано' : 'undecided');
+    const placed = s.housed && s.site !== 'evacuated' ? s.rescued : 0, where = SITE_NAME[s.site] ? SITE_NAME[s.site][lang] : (ru ? 'не выбрано' : 'undecided');
     return `${res} ${ru ? `Постоянно устроены ${placed} из Оттепели; ждут жилья ${s.rescued - placed}. Место: ${where}.` : `Permanently housed from Thaw: ${placed}; awaiting housing: ${s.rescued - placed}. Location: ${where}.`}`;
   }
   // строка о секции — то, что видит вахта после ближней диагностики
   function sectionLine(s, lang) {
     const ru = lang === 'ru', n = sectionAlive(s, storeNow(s));
     if (s.sectionEnd == null) return '';
-    if (s.sectionSafe) return ru ? 'Протекающая секция — на независимом контуре.' : 'The leaking section is on an independent loop.';
+    if (s.sectionSafe) return ru ? 'Протекающая секция — на независимом контуре: её капсулы больше не стареют.' : 'The leaking section is on an independent loop: its capsules no longer age.';
     if (!n) return ru ? 'Протекающая секция потеряна.' : 'The leaking section is lost.';
     const d = daysTo(s, s.sectionEnd);
     return ru ? `Протекающая секция: живы ${n}; её срок — через ${dd(d, 'ru')}${s.pipeTorn ? ', линия сорвана' : ''}.` : `The leaking section: ${n} alive; its deadline is in ${dd(d, 'en')}${s.pipeTorn ? ', the line torn away' : ''}.`;
@@ -224,12 +224,12 @@
     const ru = lang === 'ru', n = s.thawConfirmed, hist = [0, 1, 2, 3, 4, 5], nx = thawAlive(s, arriveX(s)).map(thawAt).reduce((a, b) => Math.min(a, b), Infinity);
     return ru ? `Маяк пропадает и возвращается: склад вращается. Камеры видят струю теплоносителя; световая кривая подтверждает поворот корпуса.
 
-Ближняя диагностика: ${n === THAW0 ? `живы все ${THAW0}` : `живы ${n} из ${THAW0}`}. Ещё шестеро умерли до нашего рейса: ${thawNames(hist, 'ru')}. У протекающей секции — двенадцать капсул — осталось ${dd(s.sectionLeft, 'ru')}.${nx < Infinity ? ` Ближайший отказ по сроку капсулы — около года ${f2(nx, 'ru')}.` : ''}
+Ближняя диагностика: ${n === THAW0 ? `живы все ${THAW0}` : `живы ${n} из ${THAW0}`}. Шестеро умерли ещё до нашего рейса: ${thawNames(hist, 'ru')}. У протекающей секции — двенадцать капсул — осталось ${dd(s.sectionLeft, 'ru')}.${nx < Infinity ? ` Ближайший отказ по сроку капсулы — около года ${f2(nx, 'ru')}.` : ''}
 
 Сводка «штатно» всё это время описывала режим оборудования.`
       : `The beacon disappears and returns: the store is rotating. Cameras show a coolant jet; the light curve confirms the hull's turn.
 
-Close diagnostics: ${n === THAW0 ? `all ${THAW0} alive` : `${n} of ${THAW0} alive`}. Another six died before our voyage: ${thawNames(hist, 'en')}. The leaking section — twelve capsules — has ${dd(s.sectionLeft, 'en')} left.${nx < Infinity ? ` The next capsule failure by its life is around year ${f2(nx, 'en')}.` : ''}
+Close diagnostics: ${n === THAW0 ? `all ${THAW0} alive` : `${n} of ${THAW0} alive`}. Six had died before our voyage: ${thawNames(hist, 'en')}. The leaking section — twelve capsules — has ${dd(s.sectionLeft, 'en')} left.${nx < Infinity ? ` The next capsule failure by its life is around year ${f2(nx, 'en')}.` : ''}
 
 All this time, "nominal" described the equipment's operating mode.`;
   }
@@ -268,7 +268,7 @@ All this time, "nominal" described the equipment's operating mode.`;
   function opSection(s, op, lang) {
     if (!rescueS(s) || s.sectionSafe || s.sectionEnd == null || !sectionAlive(s, storeNow(s))) return [];
     const ru = lang === 'ru', d = daysTo(s, s.sectionEnd), need = Math.round(opTime(s, op) * YD), ok = sectionHolds(s, storeNow(s) + opTime(s, op));
-    return [ru ? `Срок протекающей секции — через ${dd(d, 'ru')}; операция — ${dd(need, 'ru')}: ${ok ? 'секция дождётся' : `секция не дождётся — ${ppl(sectionAlive(s, storeNow(s)))} погибнут`}.`
+    return [ru ? `Срок протекающей секции — через ${dd(d, 'ru')}; операция — ${dd(need, 'ru')}: ${ok ? 'секция дождётся' : `секция не дождётся — ${ppl(sectionAlive(s, storeNow(s)))} ${vN(sectionAlive(s, storeNow(s)), ['погибнет', 'погибнут'])}`}.`
       : `The leaking section's deadline is in ${dd(d, 'en')}; the operation takes ${dd(need, 'en')}: ${ok ? 'the section will last' : `the section will not last — ${sectionAlive(s, storeNow(s))} will die`}.`];
   }
   function rescueOptions(s) {
@@ -284,7 +284,7 @@ All this time, "nominal" described the equipment's operating mode.`;
       },
       effect: run('move', MOVE),
       record: {
-        ru: s => `Спящих переносят в спасательный сектор. На каждой капсуле — номер Оттепели и наш. Перенесены ${ppl(s.rescued)}.`,
+        ru: s => `Спящих переносят в спасательный сектор. На каждой капсуле — номер Оттепели и наш. ${vN(s.rescued, ['Перенесён', 'Перенесены'])} ${ppl(s.rescued)}.`,
         en: s => `The sleepers are moved into the rescue sector. Each capsule carries Thaw's number and ours. ${s.rescued} are moved.`
       }
     });
@@ -297,7 +297,7 @@ All this time, "nominal" described the equipment's operating mode.`;
       },
       effect: run('restore', RESTORE),
       record: {
-        ru: s => `Склад подключают к нашей сети. Капсулы Оттепели больше не стареют: спят ${ppl(s.rescued)}.`,
+        ru: s => `Склад подключают к нашей сети. Капсулы Оттепели больше не стареют: ${vN(s.rescued, ['спит', 'спят'])} ${ppl(s.rescued)}.`,
         en: s => `The store is connected to our grid. Thaw's capsules no longer age: ${s.rescued} sleep.`
       }
     });
@@ -310,7 +310,7 @@ All this time, "nominal" described the equipment's operating mode.`;
       },
       effect: run('wake', 0),
       record: {
-        ru: s => `Будят всех за месяц. Медики не спят сами. Живы ${ppl(s.rescued)}.${s.thawDead ? ` Оттепель потеряла ${s.thawDead}.` : ''}`,
+        ru: s => `Будят всех за месяц. Медики не спят сами. ${vN(s.rescued, ['Жив', 'Живы'])} ${ppl(s.rescued)}.${s.thawDead ? ` Оттепель потеряла ${s.thawDead}.` : ''}`,
         en: s => `Everyone is woken within a month. The medics do not sleep themselves. ${s.rescued} are alive.${s.thawDead ? ` Thaw lost ${s.thawDead}.` : ''}`
       }
     });

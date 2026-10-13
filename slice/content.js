@@ -30,7 +30,7 @@
     sim, siteRecord, skipTo, sleepersAt2, sosDrift, sosEnd, sosKnown, sosOption, spendPct, src, stageOff, stagePass, stageYears, stayOption, storeLine,
     storeNow, storeR, stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc, supportPlan,
     supportWorld, tankSync, taskLabel, taskReportText, taskResult, thawAdvance, thawAlive, thawAt, thawDeadline, thawLag, thawN, thawName, thawNames,
-    thinWatch, turnOption, ui, urgentOf, vAt, validIncident, warnAt, wearDecision, wearRespond, win, windowLine, worldLines, yrs, yrsEn, yrsG
+    thinWatch, turnOption, ui, urgentOf, vAt, vN, validIncident, warnAt, wearDecision, wearRespond, win, windowLine, worldLines, yrs, yrsEn, yrsG
   } = __core;
 
   // ---- сцены по актам (story/*.js): фабрика акта получает общие имена этого файла — собираются здесь, когда объявлено всё
@@ -50,7 +50,7 @@
     sleepersAt2, sosDrift, sosEnd, sosKnown, sosOption, spendPct, src, stageOff, stagePass, stageYears, stayOption, storeLine, storeNow, storeR,
     stormU, streamAt, streamDv, streamLate, streamLogV5, streamOptions, streamPlan, streamTimes, supplyS, supplySrc, taskLabel, taskReportText,
     taskResult, thawAdvance, thawAlive, thawDeadline, thawLag, thawN, thawNames, thinWatch, turnOption, urgentOf, vAt, warnAt, win, windowLine, yrs,
-    yrsEn, yrsG
+    yrsEn, yrsG, vN
   };
   for (const k of STORY) beats.push(...Story[k](K));
   const content = { fuel: { TANKS, init: fuelInit, dvLeft, brakeLeft, mustReq, sync: tankSync, spendPct, addPct, spendDv: fuelSpendDv, addDv: fuelAddDv, mass: fuelMass, burn: fuelBurn, span: fuelSpan, legAdd, legCut, legNext, legMark, legSchedOf: legSched, resync: fuelSync, flush: fuelFlush }, beats, initialState, ui, scenes, supportPlan, supportWorld, awakeOf, aliveOf, wearObserve: s => s.wear ? W.observe(s.wear) : null, shipHealth, calPick, wearHooks: { respond: (s, rec) => wearRespond(s, rec), decision: (s, ev) => wearDecision(s, ev), jobsLine: (s, l) => jobsLine(s, l) }, events: EV, navDeparture, epoch3, lossFuture, lossesOf, requests: R, reqOf, missionComplete, earlyTurnQuote, newsPlan, people, mission: M, missionCheck, sim, shield: SH, shieldInspect, endHeadline, incidentHeadline, edgeOut, streamTimes, streamPlan, thawN, arriveView, profileEnd, arrivalAt, arrivalYear, flight: { route: flightRoute, samples: flightSamples, plan: flightPlan, state: flightState, bound: flightBound, options: flightOptions, choose: flightChoose }, human: { LOAD, level: loadLevel, span: humanSpan, piece: loadPiece, groups: groupsStart, costLine }, eq: eqApi, rescueV3: { thawAlive, thawAt, thawName, RESCUE }, missionMarks, RISK, hidden, hashU32, publicOf, incidentLines, crewName, CAST, relief, reliefButton, setWorld, getWorld, OUTCOME_R,

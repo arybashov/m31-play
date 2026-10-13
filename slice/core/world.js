@@ -4,8 +4,8 @@
   'use strict';
   const world = __core => {
     let BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, arrivalYear, energyOK, incYear, lag, livable, namesShort, nmD, nmG,
-    outcomeOf, people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn;
-    const __link = () => { ({ BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, arrivalYear, energyOK, incYear, lag, livable, namesShort, nmD, nmG, outcomeOf, people, ppl, rescueS, startBooks, storeNow, thawAlive, yr, yrs, yrsEn } = __core); };
+    outcomeOf, people, plural, ppl, rescueS, startBooks, storeNow, thawAlive, vN, yr, yrs, yrsEn;
+    const __link = () => { ({ BUILD, CAST, EV, INCIDENT_NAME, M, OUTCOME, R, THAW0, W, Y4, Yepi, aliveOf, arrivalYear, energyOK, incYear, lag, livable, namesShort, nmD, nmG, outcomeOf, people, plural, ppl, rescueS, startBooks, storeNow, thawAlive, vN, yr, yrs, yrsEn } = __core); };
     __link();
 
   // ---- протокол совета на следующие три года (a4.plan): решённая задача, средства, ограничения — по фактам.
@@ -18,7 +18,7 @@
     colony: { ru: 'Протокол совета колонии', en: 'Minutes of the colony council' },
     orbital: { ru: 'Протокол совета орбитального дома', en: 'Minutes of the orbital home council' },
     moons: { ru: 'Протокол совета базы', en: 'Minutes of the base council' },
-    beacon: { ru: 'Протокол совета вахты', en: 'Minutes of the watch council' },
+    beacon: { ru: 'Протокол Совета смен', en: 'Minutes of the Shift Council' },
     return: { ru: 'Протокол совета экспедиции', en: 'Minutes of the expedition council' },
     ship: { ru: 'Протокол совета корабля', en: "Minutes of the ship's council" }
   };
@@ -156,11 +156,11 @@
       }[x.outcome] || (OUTCOME[x.outcome] || { ru: x.outcome, en: x.outcome })[lang];
       const mis = MISSION_NAME[x.mission] ? MISSION_NAME[x.mission][lang] : '';
       out.push((ru ? `Экспедиция №${x.number} — ${mis} · ${where}: ${res}.` : `Expedition No. ${x.number} — ${mis} · ${where}: ${res}.`)
-        + (reportAt == null ? '' : reportAt <= x.endedAt ? (ru ? ` Отчёт получен на Земле около года ${reportAt}.` : ` The report was received on Earth around year ${reportAt}.`)
+        + (reportAt == null ? '' : reportAt <= x.endedAt ? (ru ? ` Итоговый отчёт получен на Земле около года ${reportAt}.` : ` The final report was received on Earth around year ${reportAt}.`)
           : x.outcome === 'lost' ? (ru ? ` Последняя передача дойдёт до Земли около года ${reportAt}.` : ` The last transmission will reach Earth around year ${reportAt}.`)
-          : (ru ? ` Отчёт дойдёт до Земли около года ${reportAt}.` : ` The report will reach Earth around year ${reportAt}.`)));
+          : (ru ? ` Итоговый отчёт дойдёт до Земли около года ${reportAt}.` : ` The final report will reach Earth around year ${reportAt}.`)));
       if (x.task && TASK_NAME[x.task.work]) { const n = taskName(x.task, lang), at = x.task.reportEarthAt == null ? null : Math.round(x.task.reportEarthAt);
-        out.push(x.task.done ? (ru ? `Задание — ${n}: выполнено${at != null ? `; отчёт дойдёт до Земли около года ${at}` : ''}.` : `The task — ${n}: done${at != null ? `; the report will reach Earth around year ${at}` : ''}.`)
+        out.push(x.task.done ? (ru ? `Задание — ${n}: выполнено${at != null ? `; отчёт по заданию ${at <= x.endedAt ? 'получен на Земле' : 'дойдёт до Земли'} около года ${at}` : ''}.` : `The task — ${n}: done${at != null ? `; the task report ${at <= x.endedAt ? 'was received on Earth' : 'will reach Earth'} around year ${at}` : ''}.`)
           : (ru ? `Задание — ${n}: не выполнено.` : `The task — ${n}: not done.`)); }
       if (f && x.mission === 'supply' && (f.capsLost || f.failed)) out.push(ru ? `Ксилона Ир: ${f.failed ? 'снабжение сорвано — постоянного обеспечения нет' : 'капсульная секция потеряна при повторном включении'}.` : `Xylona Ir: ${f.failed ? 'the supply mission failed — no permanent support' : 'the capsule section was lost on restart'}.`);
       if (f && x.mission === 'rescue' && f.v !== 3) out.push(!f.rescued ? (ru ? 'Оттепель: помощь опоздала — живых на складе не осталось.' : 'Thaw: help came too late — no one was left alive in the store.')
@@ -169,11 +169,15 @@
       else if (f && x.mission === 'rescue') out.push(thawWorld(f, lang));    // спасатель v3: имена остаются там, где люди живут
       else if (f && x.mission === 'supply') out.push(ru ? `Ксилона Ир: связь ${f.relayOK ? 'восстановлена' : 'не восстановлена'}, капсулы ${f.capsOK ? 'работают' : 'не восстановлены'}${f.shelter ? `, в кольцах корабля живут ${f.shelterPeople ? ppl(f.shelterPeople) : 'девяносто'}` : ''}${f.outpostDead ? `; потери форпоста — ${ppl(f.outpostDead)}` : ''}.`
         : `Xylona Ir: link ${f.relayOK ? 'restored' : 'not restored'}, capsules ${f.capsOK ? 'running' : 'not restored'}${f.shelter ? `, ${f.shelterPeople || 'ninety'} live in the ship's rings` : ''}${f.outpostDead ? `; ${f.outpostDead} of the outpost died` : ''}.`);
-      if (x.incidents && x.incidents.length) out.push(ru ? `Протокол: ${x.incidents.map(i => `год ${incYear(i)} — ${INCIDENT_NAME[i.kind].ru}, ${i.lost ? 'гибель корабля' : i.dead ? `погибли ${i.dead}` : 'без жертв'}`).join('; ')}.`
-        : `Minutes: ${x.incidents.map(i => `year ${incYear(i)} — ${INCIDENT_NAME[i.kind].en}, ${i.lost ? 'the ship lost' : i.dead ? `${i.dead} dead` : 'no one died'}`).join('; ')}.`);
+      if (x.incidents && x.incidents.length) { const G = [];                 // одинаковые происшествия одного года — одним пунктом
+        for (const i of x.incidents) { const y = incYear(i), g = G.find(z => z.y === y && z.kind === i.kind);
+          if (g) { g.n++; g.dead += i.dead || 0; g.lost = g.lost || i.lost; } else G.push({ y, kind: i.kind, n: 1, dead: i.dead || 0, lost: i.lost }); }
+        const nameN = (g, l) => g.n === 1 ? INCIDENT_NAME[g.kind][l] : g.kind === 'wearGroup' ? (l === 'ru' ? `${g.n} ${plural(g.n, ['группа', 'группы', 'групп'])} без охлаждения` : `${g.n} groups without cooling`) : `${INCIDENT_NAME[g.kind][l]} ×${g.n}`;
+        out.push(ru ? `Протокол: ${G.map(g => `год ${g.y} — ${nameN(g, 'ru')}, ${g.lost ? 'гибель корабля' : g.dead ? `${vN(g.dead, ['погиб', 'погибли'])} ${g.dead}` : 'без жертв'}`).join('; ')}.`
+          : `Minutes: ${G.map(g => `year ${g.y} — ${nameN(g, 'en')}, ${g.lost ? 'the ship lost' : g.dead ? `${g.dead} dead` : 'no one died'}`).join('; ')}.`); }
       if (x.cast && x.cast.length) { const n = x.cast.map(c => c[lang]).join(', ');
         out.push(x.hull === 'wreck' ? (ru ? `На борту остова — ${n}.` : `Aboard the wreck: ${n}.`)
-          : x.hull === 'adrift' ? (ru ? `На борту, живы, — ${n}.` : `Aboard, alive: ${n}.`)
+          : x.hull === 'adrift' ? (ru ? `Живы на борту: ${n}.` : `Alive aboard: ${n}.`)
           : x.hull === 'orbitDead' ? (ru ? `На борту «голландца» — ${n}.` : `Aboard the Flying Dutchman: ${n}.`)
           : x.hull === 'sleeping' ? (ru ? `Уснули на корабле, когда ушёл сигнал бедствия, — ${n}.` : `Went to sleep aboard the ship when the distress signal went out: ${n}.`)
           : x.home === 'colony' ? (ru ? `Основатели колонии у ${at} — ${n}.` : `Founders of the colony at ${where}: ${n}.`)
@@ -194,7 +198,7 @@
       out.push(x.joined ? (ru ? `У ${at}: колония «${M.colony(x.joined).ru}» приняла спасённых — ${ppl(x.people)}${when}.` : `At ${at}: ${M.colony(x.joined).en} took in the rescued — ${x.people} people${when}.`)
         : (ru ? `У ${at}: поселение спасённых — ${ppl(x.people)}${when}.` : `At ${at}: a settlement of the rescued — ${x.people} people${when}.`));
     }
-    out.push(ru ? 'Продолжение этого мира — экспедиция №42 — пока не представлено в срезе.' : 'The continuation of this world — expedition No. 42 — is not in the slice yet.');
+    out.push(ru ? 'Продолжение этого мира — экспедиция №42 — пока не написано.' : 'The continuation of this world — expedition No. 42 — is not written yet.');
     return out;
   }
 
@@ -399,8 +403,8 @@
     if (T.work === 'trace') return (T.found
       ? (ru ? 'Протокол поиска уходит на Землю. В районе последней орбиты — корпус двадцать четвёртой: питания нет, автоматика молчит, людей на борту нет — как она и сообщала. Журнал снят через внешний порт. Задание архивной комиссии выполнено.'
         : "The search report goes out to Earth. In the region of the last orbit lies No. 24's hull: no power, the automation silent, nobody aboard — just as it reported. The log was read through the outer port. The archive commission's task is done.")
-      : (ru ? 'Протокол поиска уходит на Землю. В расчётном районе корпуса нет: за полвека орбиту могло увести. В протоколе — карта просмотренных орбит и пределы обнаружения. Задание архивной комиссии выполнено: след проверен.'
-        : "The search report goes out to Earth. There is no hull in the predicted region: in half a century the orbit may have drifted. The report holds a map of the orbits searched and the detection limits. The archive commission's task is done: the trace has been checked.")) + way;
+      : (ru ? 'Протокол поиска уходит на Землю. В расчётном районе корпуса нет: за без малого два века орбиту могло увести. В протоколе — карта просмотренных орбит и пределы обнаружения. Задание архивной комиссии выполнено: след проверен.'
+        : "The search report goes out to Earth. There is no hull in the predicted region: in nearly two centuries the orbit may have drifted. The report holds a map of the orbits searched and the detection limits. The archive commission's task is done: the trace has been checked.")) + way;
     const w = s.worldSeen || M.worldOf(s.target);
     return (ru ? `Первичная съёмка закончена, измерения уходят на Землю: среда системы, массы и орбиты известных тел, условия для базы. ${SURVEY_WORLD[w][0]} Задание научной программы выполнено.`
       : `The first survey is finished and the measurements go out to Earth: the system's environment, the masses and orbits of the known bodies, the conditions for a base. ${SURVEY_WORLD[w][1]} The science programme's task is done.`) + way;

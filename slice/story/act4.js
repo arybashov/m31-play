@@ -4,12 +4,13 @@
   'use strict';
   const act4 = K => {
     const { arrivalYear,
-      M, Y4, energyOK, eqOf, livable, planText, planWho, powerOK, ppl, rescueS, src, supplyS, yrs
+      M, Y4, energyOK, eqOf, livable, planText, planWho, powerOK, ppl, rescueS, src, supplyS, yrs,
+      vN
     } = K;
     return [
     // ------------------------------------------------------------ АКТ IV · ВЫСАДКА И РАЗВЯЗКА
     { id: 's.f1', kind: 'skip', toYear: s => arrivalYear(s) + 2, when: s => !rescueS(s),
-      label: { ru: s => `Промотать до года ${arrivalYear(s) + 2} · первый год у цели`, en: s => `Skip ahead to year ${arrivalYear(s) + 2} · the first year at the target` } },
+      label: { ru: s => `Промотать до года ${arrivalYear(s) + 2} · первый год на планете`, en: s => `Skip ahead to year ${arrivalYear(s) + 2} · the first year on the planet` } },
     {
       id: 'a4.energy', scene: 'home', kind: 'instrument', year: s => arrivalYear(s) + 2, when: s => livable(s) && !rescueS(s),
       act: { ru: 'Акт IV · Высадка и развязка', en: 'Act IV · Landing and resolution' },
@@ -77,6 +78,7 @@ The survey's conclusion: the rich site needs a defence the settlement cannot aff
             ru: ['Больше воды, металла и своей энергии.', 'Периметр, свет и дозоры: людей на это нет — их снимут с агроблоков. Материалы −10%.'],
             en: ['More water, metal and energy of its own.', 'A perimeter, lights and patrols: there are no people for it — they will come off the agro blocks. Materials −10%.']
           },
+          cost: st => { st.materials -= 10; },
           effect: st => { st.site = 'rich'; st.materials -= 10; st.deadHere += 2; },
           record: {
             ru: 'Совет выбирает богатый участок. Прожекторы по периметру горят всю ночь. В первую зиму хищник проходит периметр дважды; двое дозорных не возвращаются.',
@@ -106,7 +108,7 @@ The message holds neither coordinates after the disappearance nor a way to save 
       text: {
         ru: s => `Здесь впервые прямо звучит то, что раньше было фоном. Цель выбрал Совет, ${Y4(s) >= 100 ? 'чьи члены умерли больше века назад' : `из которого за ${yrs(Y4(s))} почти никого не осталось в живых`}, по данным, которые на Земле давно устарели: ${Y4(s) >= 100 ? 'дома прошли две эпохи' : 'дома прошла целая эпоха'}.
 
-Дассер ещё руководитель экспедиции, но и его спрашивают как старшего, и он отказывается решать за экипаж правом основателя. Дан Осгер, ставший архивариусом, говорит ему прямо:
+Дассер ещё руководитель экспедиции. Его спрашивают как старшего, но он отказывается решать за экипаж правом основателя. Дан Осгер, ставший архивариусом, говорит ему прямо:
 
 — Вы выбрали путь. Дом выбираем мы.
 
@@ -158,6 +160,7 @@ Dasser is still the expedition leader, but he too is asked as the eldest, and he
           ru: ['Модуль сможет подняться: путь на орбиту открыт.', 'Укрытие слабее — местный камень и то, что есть на складе.'],
           en: ['The lander can lift again: the way to orbit stays open.', 'The shelter is weaker — local stone and what is in the store.']
         },
+        cost: () => {},
         effect: st => { st.settle = 'keep'; st.deadHere += 1; },
         record: {
           ru: 'Совет оставляет модуль целым. Укрытие складывают из камня. Путь наверх открыт, и поэтому о нём спорят каждую зиму. В первую зиму одна из стен не выдерживает.',
@@ -170,7 +173,7 @@ Dasser is still the expedition leader, but he too is asked as the eldest, and he
       effect: s => { s.winterDead = s.settle === 'keep' ? 5 : s.site === 'rich' ? 8 : 15; s.deadHere += s.winterDead; },
       title: { ru: 'Медицинский журнал · первая зима', en: 'Medical log · the first winter' },
       text: {
-        ru: s => `Первая зима на трети нужной энергии: других источников, кроме реакторов корабля, нет. Агроблоки стоят, укрытие не прогревается. Погибли ${ppl(s.winterDead)}.` + (s.settle === 'keep' ? ' Модуль цел: часть людей отводят на орбиту до весны.' : ''),
+        ru: s => `Первая зима на трети нужной энергии: других источников, кроме реакторов корабля, нет. Агроблоки стоят, укрытие не прогревается. ${vN(s.winterDead, ['Погиб', 'Погибли'])} ${ppl(s.winterDead)}.` + (s.settle === 'keep' ? ' Модуль цел: часть людей отводят на орбиту до весны.' : ''),
         en: s => `The first winter on a third of the energy needed: there is no source but the ship's reactors. The agro blocks stand idle; the shelter does not warm. ${s.winterDead} people died.` + (s.settle === 'keep' ? ' The lander is intact: some are taken back to orbit until spring.' : '')
       }
     },
@@ -181,12 +184,12 @@ Dasser is still the expedition leader, but he too is asked as the eldest, and he
         ru: s => (s.settle === 'orbit'
           ? 'Первое утро без курса. Вахта расписывает обязанности не на смены полёта, а на годы. Тея Марр закладывает в агрозалах первую почву, поднятую снизу. '
           : 'Первое утро на поверхности. Распределение обязанностей; проба местной почвы для агроблоков; '
-            + (s.site === 'rich' ? 'прожекторы по периметру гаснут только к рассвету. ' : 'разметка периметра у богатого опасного участка — не сейчас, но не забыто. '))
+            + (s.site === 'rich' ? 'прожекторы по периметру гаснут только к рассвету. ' : s.site === 'poor' ? 'богатый опасный участок — не сейчас, но не забыт. ' : ''))
           + 'Архив продолжает вестись.',
         en: s => (s.settle === 'orbit'
           ? 'The first morning with no course. The watch draws up duties not for flight shifts but for years. Teya Marr lays the first soil brought up from below in the agro halls. '
           : 'The first morning on the surface. Duties assigned; the local soil sampled for the agro blocks; '
-            + (s.site === 'rich' ? 'the perimeter lights go out only at dawn. ' : 'the perimeter marked out near the rich, dangerous site — not now, but not forgotten. '))
+            + (s.site === 'rich' ? 'the perimeter lights go out only at dawn. ' : s.site === 'poor' ? 'the rich, dangerous site — not now, but not forgotten. ' : ''))
           + 'The archive goes on.'
       }
     },

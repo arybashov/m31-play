@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
   const relief = __core => {
-    let M, cap, f1, nm, nmD, nmG, place, plural, ppl, yr, yrs, yrsEn;
-    const __link = () => { ({ M, cap, f1, nm, nmD, nmG, place, plural, ppl, yr, yrs, yrsEn } = __core); };
+    let M, cap, f1, nm, nmD, nmG, place, plural, ppl, vN, yr, yrs, yrsEn;
+    const __link = () => { ({ M, cap, f1, nm, nmD, nmG, place, plural, ppl, vN, yr, yrs, yrsEn } = __core); };
     __link();
 
   // ================================================================ ПАРТИЯ СПАСАТЕЛЕЙ
@@ -118,7 +118,7 @@
     return ru
       ? `${head} Сигнал бедствия шёл сюда ${dt < 0.1 ? 'считаные недели' : `${f1(dt, 'ru')} ${Math.round(dt * 10) % 10 ? 'года' : plural(Math.round(dt), ['год', 'года', 'лет'])}`}.
 
-Сорок первая, экспедиция к ${nmD(s)}: ${CAUSE[inc.cause].ru}. Живы ${ppl(inc.alive)}: двенадцать на вахте, остальные спят в законсервированном зале. Капсулы рассчитаны до года ${Math.round(inc.deadline)}. ${shipWhere(s, c.hear, 'ru')}
+Сорок первая, экспедиция к ${nmD(s)}: ${CAUSE[inc.cause].ru}. ${vN(inc.alive, ['Жив', 'Живы'])} ${ppl(inc.alive)}: двенадцать на вахте, остальные спят в законсервированном зале. Капсулы рассчитаны до года ${Math.round(inc.deadline)}. ${shipWhere(s, c.hear, 'ru')}
 
 ${tail}`
       : `${head} The distress signal took ${dt < 0.1 ? 'a few weeks' : `${f1(dt, 'en')} years`} to get here.
@@ -172,7 +172,7 @@ ${tail}`; };
       id: 'd.r.launch', scene: 'distress', kind: 'decision',
       title: { ru: 'Кого посылать', en: 'Whom to send' },
       context: {
-        ru: s => `Живы ${ppl(s.inc.alive)}; капсулы держат до года ${Math.round(s.inc.deadline)}. Каждый вариант — чей-то аппарат, чьё-то топливо и чьи-то люди.`,
+        ru: s => `${vN(s.inc.alive, ['Жив', 'Живы'])} ${ppl(s.inc.alive)}; капсулы держат до года ${Math.round(s.inc.deadline)}. Каждый вариант — чей-то аппарат, чьё-то топливо и чьи-то люди.`,
         en: s => `${s.inc.alive} are alive; the capsules hold until year ${Math.round(s.inc.deadline)}. Every option is someone's vessel, someone's fuel and someone's people.`
       },
       options: s => {
@@ -309,7 +309,7 @@ The rescuer secures a bag to the handrail.
       title: { ru: s => OUTCOME_R[s.res.outcome].ru, en: s => OUTCOME_R[s.res.outcome].en },
       text: {
         ru: s => { const r = s.res, sv = r.saved, c = plan(s).council, o = r.outcome;
-          const work = o !== 'tooLate' ? `Контур и зал починены за год. Спящих будят по графику: сначала врачей и инженеров, потом остальных. Спасены ${ppl(sv.total)}.`
+          const work = o !== 'tooLate' ? `Контур и зал починены за год. Спящих будят по графику: сначала врачей и инженеров, потом остальных. ${vN(sv.total, ['Спасён', 'Спасены'])} ${ppl(sv.total)}.`
             : sv.total ? 'Зал мёртв. Двенадцать последней смены — всё, что осталось от сорок первой.' : 'Зал мёртв, последней смены тоже нет. Спасатели находят журнал и имена.';
           const by = {
             tug: r.by === 'pass' ? (sv.total ? 'Шестеро с Перевала остаются с ними' : 'Шестеро с Перевала остаются у пустого корабля') + ': аппарату не на чем вернуться. У Перевала больше нет межзвёздного аппарата — если беда случится у него самого, помощь придёт только с Земли.' : 'Парус Земли пришёл раньше аппарата Перевала: подтверждение его вылета не успело до её старта. Шестеро с Перевала приходят к уже спасённым — и остаются с ними.',

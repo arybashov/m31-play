@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
   const base = __core => {
-    let flightPlan, ownStory, profileEnd, stageYears;
-    const __link = () => { ({ flightPlan, ownStory, profileEnd, stageYears } = __core); };
+    let flightPlan, ownStory, profileEnd, stageYears, thawDeadline;
+    const __link = () => { ({ flightPlan, ownStory, profileEnd, stageYears, thawDeadline } = __core); };
     __link();
 
   'use strict';
@@ -37,6 +37,11 @@
   const yrsG = n => `${Math.round(n)} ${plural(n, ['года', 'лет', 'лет'])}`;   // после «около»
   const yrsEn = n => `${Math.round(n)} year${Math.round(n) === 1 ? '' : 's'}`;
   const ppl = n => `${n} ${plural(n, ['человек', 'человека', 'человек'])}`;
+  const pplG = n => `${n} ${plural(n, ['человека', 'человек', 'человек'])}`;   // после «около», «для»
+  // глагол перед числом — по последней цифре: «погиб 21 человек», «погибли 22 человека» (forms — [при 1, иначе])
+  const vN = (n, forms) => { const a = Math.abs(Math.round(n)); return forms[a % 10 === 1 && a % 100 !== 11 ? 0 : 1]; };
+  const pyrs = (n, lang) => lang === 'ru' ? `${n} человеко-${plural(n, ['год', 'года', 'лет'])}` : `${n} person-year${n === 1 ? '' : 's'}`;
+  const nTimes = (n, lang) => lang === 'ru' ? (n === 1 ? 'один раз' : `${n} ${plural(n, ['раз', 'раза', 'раз'])}`) : n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`;
   // трата резерва манёвров в км/с → % паспортного резерва (reserveDv — доля c)
   const dvPct = (s, kms) => kms / (s.reserveDv * 299792.458) * 100;
   const DV = { probe: 120, stream: 250, streamWeak: 900 };   // км/с
@@ -277,7 +282,7 @@
     }
     const st = STATUS[o.status][lang];
     if (o.status === 'dead') {
-      out.push(ru ? `«${o.ru}» — ${st}: около ${yrs(year - o.observedAt)} назад; сообщение получено за ${yrsAgo(o.receivedAt, 'ru')} до старта.` : `${o.en} — ${st}: about ${yrsEn(year - o.observedAt)} ago; the message arrived ${yrsAgo(o.receivedAt, 'en')} before departure.`);
+      out.push(ru ? `«${o.ru}» — ${st}: около ${yrsG(year - o.observedAt)} назад; сообщение получено за ${yrsAgo(o.receivedAt, 'ru')} до старта.` : `${o.en} — ${st}: about ${yrsEn(year - o.observedAt)} ago; the message arrived ${yrsAgo(o.receivedAt, 'en')} before departure.`);
       out.push(ru ? `Тогда в капсулы склада ушли ${o.asleep} человек; расчётный ресурс — до года 125. Живы ли все сейчас, неизвестно.` : `Then ${o.asleep} people went into the store's capsules; rated life to year 125. Whether all are alive now is unknown.`);
     } else {
       out.push(ru ? `«${o.ru}» — ${st}. Сведения около ${yrsAgo(year - o.observedAt, 'ru')} назад: ${o.awake} бодрствовали, ${o.asleep} спали.` : `${o.en} — ${st}. Data about ${yrsAgo(year - o.observedAt, 'en')} old: ${o.awake} awake, ${o.asleep} asleep.`);
@@ -335,7 +340,9 @@
     }
     return out;
   }
-  const kitList = (kits, lang) => kits.length ? kits.map(k => M.KITS[k][lang].toLowerCase()).join(', ') : (lang === 'ru' ? 'без груза сверх ядра' : 'nothing beyond the core');
+  // груз словами после «Груз:»: без повторов «груз заявки: …» и двоеточий
+  const KIT_PHRASE = { request: ['передатчик и капсульный блок (по заявке)', 'a transmitter and a capsule unit (requested)'], berths: ['спасательный сектор на 40 мест', 'a rescue sector with 40 berths'] };
+  const kitList = (kits, lang) => kits.length ? kits.map(k => KIT_PHRASE[k] ? KIT_PHRASE[k][lang === 'ru' ? 0 : 1] : M.KITS[k][lang].toLowerCase()).join(', ') : (lang === 'ru' ? 'только ядро' : 'core only');
   // оснащение словами: отличия от рекомендации Совета
   const eqList = (s, eq, lang) => { const d = M.eqDefault(s.mission), diff = M.EQUIP.filter(p => eq[p.id] !== d[p.id]);
     return diff.length ? diff.map(p => `${p[lang].toLowerCase()} — ${M.eqOpt(p.id, eq[p.id])[lang].toLowerCase()}`).join('; ')
@@ -346,8 +353,8 @@
       id,
       label: { ru: `${fb(b, 'ru')} · резерв ${pctDv(r, 'ru')} · ${kitList(kits, 'ru')}`, en: `${fb(b, 'en')} · reserve ${pctDv(r, 'en')} · ${kitList(kits, 'en')}` },
       known: {
-        ru: [`Путь около ${yrsG(T)}; каждый проживёт в пути около ${yrsG(a)} при вахте 48.` + (mag ? mag.ru : ''), `Резерв манёвров — ${pctDv(r, 'ru')}.`, `Груз: ${kitList(kits, 'ru')}. Оснащение: ${eqList(s0, eq, 'ru')}.`],
-        en: [`About ${yrsEn(T)} on the road; each person lives about ${yrsEn(a)} of it awake with a watch of 48.` + (mag ? mag.en : ''), `Manoeuvre reserve: ${pctDv(r, 'en')}.`, `Cargo: ${kitList(kits, 'en')}. Equipment: ${eqList(s0, eq, 'en')}.`]
+        ru: [`Путь около ${yrsG(T)}; каждый проведёт без сна около ${yrsG(a)} при вахте из 48 человек.` + (mag ? mag.ru : ''), `Резерв манёвров — ${pctDv(r, 'ru')}.`, `Груз: ${kitList(kits, 'ru')}. Оснащение: ${eqList(s0, eq, 'ru')}.`].concat(s0.mission === 'rescue' && T > thawDeadline() ? [`Капсулы Оттепели держат до года ${thawDeadline()}: прибытие на ${yrs(T - thawDeadline())} позже срока.`] : []),
+        en: [`About ${yrsEn(T)} on the road; each person spends about ${yrsEn(a)} of it awake with a watch of 48 people.` + (mag ? mag.en : ''), `Manoeuvre reserve: ${pctDv(r, 'en')}.`, `Cargo: ${kitList(kits, 'en')}. Equipment: ${eqList(s0, eq, 'en')}.`].concat(s0.mission === 'rescue' && T > thawDeadline() ? [`Thaw's capsules hold until year ${thawDeadline()}: arrival ${yrsEn(T - thawDeadline())} past the deadline.`] : [])
       },
       effect: s => {
         s.beta = b; s.reserveDv = r; s.kits = kits.slice(); s.eq = Object.assign({}, eq); s.arrive = T;
@@ -400,11 +407,12 @@ Kassel signs for the Council last.`
 
     return {
       names: {
-        pct, pctM, M, SH, EVM, W, JB, R, RQ, nm, nmG, nmD, f1, fb, plural, yrs, yrsG, yrsEn, ppl, dvPct, DV, TANKS, fuelInit, fuelOn, dvLeft, fuelMass,
-        brakeLeft, legLive, mustReq, fuelLog, fuelDraw, fuelSpendDv, fuelSpend, fuelAddDv, spendPct, addPct, fuelBurn, legSched, legBurn, legAdd,
-        legCut, legNext, legMark, fuelSync, brakeBurning, legsBurning, fuelBusy, fuelSpan, fuelFlush, fuelPoints, tankLeaking, tankSync, tankMove,
-        pctDv, eachAwake, STATUS, yrsAgo, yr1, archiveShort, archiveLines, legacyLines, colonyTie, subsets, cargoOf, passportParse, passportOptions,
-        kitList, eqList, passportOption, probeTimes, brake, stageOff, kms, Y, lag, supportPlan, supportWorld, src, vAt, heatAgo
+        pct, pctM, M, SH, EVM, W, JB, R, RQ, nm, nmG, nmD, f1, fb, plural, yrs, yrsG, yrsEn, ppl, pplG, vN, pyrs, nTimes, dvPct, DV, TANKS, fuelInit,
+        fuelOn, dvLeft, fuelMass, brakeLeft, legLive, mustReq, fuelLog, fuelDraw, fuelSpendDv, fuelSpend, fuelAddDv, spendPct, addPct, fuelBurn,
+        legSched, legBurn, legAdd, legCut, legNext, legMark, fuelSync, brakeBurning, legsBurning, fuelBusy, fuelSpan, fuelFlush, fuelPoints,
+        tankLeaking, tankSync, tankMove, pctDv, eachAwake, STATUS, yrsAgo, yr1, archiveShort, archiveLines, legacyLines, colonyTie, subsets, cargoOf,
+        passportParse, passportOptions, KIT_PHRASE, kitList, eqList, passportOption, probeTimes, brake, stageOff, kms, Y, lag, supportPlan,
+        supportWorld, src, vAt, heatAgo
       },
       link: __link
     };

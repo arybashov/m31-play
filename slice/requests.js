@@ -14,6 +14,7 @@
   const sp = (b, lang) => `${lang === 'ru' ? String(b).replace('.', ',') : String(b)}c`;
   const f2 = (x, lang) => { const v = String(Math.round(x * 100) / 100); return lang === 'ru' ? v.replace('.', ',') : v; };
   const years = (n, lang) => lang === 'ru' ? `${n} ${plural(n, ['год', 'года', 'лет'])}` : `${n} year${n === 1 ? '' : 's'}`;
+  const yearsG = (n, lang) => lang === 'ru' ? `${n} ${plural(n, ['года', 'лет', 'лет'])}` : years(n, lang);   // после «около»
 
   // branch — сюжетная ветка (contact | supply | rescue); work — вид работы; family — семейство заявок мира;
   // beta — скорость рекомендованного паспорта для оценки пути в карточке (точный расчёт — в паспорте)
@@ -73,7 +74,7 @@
   // оценка пути для карточки заявки: рекомендованная скорость, штатный магнит
   const tripOf = q => Math.round(M.trip(M.star(q.star).d, q.beta, M.stdMag(q.beta)));
   const roadLine = (q, lang) => { const d = M.star(q.star).d, T = tripOf(q);
-    return lang === 'ru' ? `${M.nameOf(q.star, 'ru')}, ${f1(d, 'ru')} св. года; на ${sp(q.beta, 'ru')} — около ${years(T, 'ru')} пути.`
+    return lang === 'ru' ? `${M.nameOf(q.star, 'ru')}, ${f1(d, 'ru')} св. года; на ${sp(q.beta, 'ru')} — около ${yearsG(T, 'ru')} пути.`
       : `${M.nameOf(q.star, 'en')}, ${f1(d, 'en')} ly; at ${sp(q.beta, 'en')} about ${years(T, 'en')} on the road.`; };
 
   // тексты заявок мира (постоянные заявки — в content.js, рядом со своими сюжетными ветками)

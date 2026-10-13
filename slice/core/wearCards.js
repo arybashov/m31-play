@@ -6,11 +6,11 @@
     let CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan,
     cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, flightMark, flightMarkNext,
     flightNavDecision, fuelBusy, fuelFlush, fuelSpan, groupDecay, groupsNext, hidden, humanGroupDecision, humanMark, humanNext, humanSpan,
-    humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays,
-    radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups,
-    wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop,
-    wearSyncDead, wearTerminal;
-    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, flightMark, flightMarkNext, flightNavDecision, fuelBusy, fuelFlush, fuelSpan, groupDecay, groupsNext, hidden, humanGroupDecision, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, plural, pools, ppl, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
+    humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, overText, plural, pools, ppl, pplG, prodOf, profileEnd, pumpFail,
+    pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext,
+    termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd,
+    wearShop, wearStart, wearStop, wearSyncDead, wearTerminal;
+    const __link = () => { ({ CARGO_NAME, DONOR, EV, JB, M, SH, W, WEAR_OPS, arriveView, auralDays, awakeAt, awakeNowAt, book, cargoSync, cloudBand, cloudHit, cloudSpan, cloudThrough, dangerAfter, dangerAsk, dangerCan, dangerReask, dangerSig, donorDays, envMarks, erodeSpan, flightArrive, flightMark, flightMarkNext, flightNavDecision, fuelBusy, fuelFlush, fuelSpan, groupDecay, groupsNext, hidden, humanGroupDecision, humanMark, humanNext, humanSpan, humanTermDecision, jobDone, layout, legMark, legNext, nf, offShipAt, overText, plural, pools, ppl, pplG, prodOf, profileEnd, pumpFail, pumpProspect, queueDays, radLoop, rhoAt, streamGrain, streamOn, streamOutcome, streamPlan, tankLeaking, tankLine, tankSync, techs, termNext, termRotate, wearCheckGroups, wearCoreWarn, wearDonor, wearFire, wearNote, wearOn, wearOp, wearRegAsk, wearRegDecision, wearRegTick, wearRnd, wearShop, wearStart, wearStop, wearSyncDead, wearTerminal } = __core); };
     __link();
 
   // ---- опора кольца (шаг 3в–3г): износ дорожки → заклинивание; остановка кольца — места колец, люди в невесомости, вахта слабее
@@ -21,13 +21,15 @@
     // кольцо остановлено (на копии): сколько в невесомости и сколько специалистов; срок ремонта — по копии очереди
     const stopped = x => { const c = JSON.parse(JSON.stringify(x)); if (c.wear.nodes[id].ok) W.isolate(c.wear, id, c.year); return { c, zg: W.zeroG(c.wear).n, tech: techs(c), was: techs(x) }; };
     const days = x => { const r = R(x), st = stopped(x); return queueDays(st.c, { prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 4, work: r.work, hold: r.hold }, st.c.year); };
-    const zgLine = (x, ru, forever) => { const st = stopped(x);
-      return ru ? `${st.zg ? `${ppl(st.zg)} ${forever ? 'до конца рейса' : 'на время ремонта'} работают в невесомости: специалистов вахты ${st.tech} вместо ${st.was}` : 'Мест во втором кольце хватает всем на ногах'}.`
-        : `${st.zg ? `${st.zg} people work in zero-g ${forever ? 'for the rest of the voyage' : 'during the repair'}: ${st.tech} specialists on watch instead of ${st.was}` : 'The other ring has room for everyone awake'}.`; };
+    // сколько работают в невесомости: на время ремонта, пока кольцо стоит, до конца рейса
+    const ZG_WHEN = { repair: ['на время ремонта', 'during the repair'], stopped: ['пока кольцо стоит', 'while the ring is stopped'], forever: ['до конца рейса', 'for the rest of the voyage'] };
+    const zgLine = (x, ru, when) => { const st = stopped(x), w = ZG_WHEN[when][ru ? 0 : 1], more = st.tech !== st.was;
+      return ru ? `${st.zg ? `${ppl(st.zg)} ${w} работают в невесомости; специалистов на вахте — ${st.tech}${more ? ` вместо ${st.was}` : ''}` : 'Мест в другом кольце хватает всем на ногах'}.`
+        : `${st.zg ? `${st.zg} people work in zero-g ${w}; ${st.tech} specialists on watch${more ? ` instead of ${st.was}` : ''}` : 'The other ring has room for everyone awake'}.`; };
     const cost = (x, ru) => { const r = R(x), d = days(x), heavy = r === Dg.alt, q = d == null ? (ru ? 'по очереди работ не начнётся: людей нет' : 'the work queue will not start it: no people')
         : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
       const last = heavy && x.wear.inv.trackKit === 1;
-      return ru ? `Ремонт — ${heavy ? `дорожка с роликами (${last ? 'последняя' : `комплектов дорожки: ${x.wear.inv.trackKit}`})` : `ролики (комплектов: ${x.wear.inv.rollerKit})`}, материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} суток обкатки; ${q}.`
+      return ru ? `Ремонт — ${heavy ? `дорожка с роликами (${last ? 'последняя' : `комплектов дорожки: ${x.wear.inv.trackKit}`})` : `ролики (комплектов: ${x.wear.inv.rollerKit})`}, материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} ${plural(r.hold, ['сутки', 'суток', 'суток'])} обкатки; ${q}.`
         : `The repair takes ${heavy ? `a track with rollers (${last ? 'the last one' : `track kits: ${x.wear.inv.trackKit}`})` : `rollers (kits: ${x.wear.inv.rollerKit})`}, materials −${r.materials}%, ${r.work} person-days and ${r.hold} days of running-in; ${q}.`; };
     const head = (x, ru) => {
       if (stage === 'open') return ru ? `Опора кольца ${H}: растут вибрация и момент привода, в смазке — частицы износа дорожки. Кольцо ещё вращается, но повреждение развивается — около ${nf(left(x), 0, 'ru')} суток вращения до заклинивания.`
@@ -37,13 +39,13 @@
       return (stage === 'heavy' ? (ru ? `Опора кольца ${H} заклинила: кольцо остановлено.` : `Ring ${H}'s bearing has seized: the ring is stopped.`) : (ru ? `Кольцо ${H} остановлено.` : `Ring ${H} is stopped.`))
         + (ru ? ` В невесомости работают ${ppl(z)}; специалистов вахты — ${techs(x)}.` : ` ${z} people work in zero-g; ${techs(x)} specialists on watch.`); };
     const repair = { id: 'repair', label: { ru: open ? 'Остановить кольцо и ремонтировать' : 'Ремонтировать опору', en: open ? 'Stop the ring and repair it' : 'Repair the bearing' },
-      known: { ru: y => [cost(y, true), zgLine(y, true, false)], en: y => [cost(y, false), zgLine(y, false, false)] },
+      known: { ru: y => [cost(y, true), zgLine(y, true, 'repair')], en: y => [cost(y, false), zgLine(y, false, 'repair')] },
       effect: y => { const w = y.wear; if (w.nodes[id].ok) W.isolate(w, id, y.year);
         const op = wearOp(y, 'ring', id, y.year, false); (y.danger = y.danger || {})[id] = op ? 'repair' : 'isolate'; JB.dispatch(y.jobs, y.year, pools(y));
         if (!op) wearNote(y, `Ремонт опоры кольца ${H} не начат: материалов или комплектов не хватило. Кольцо остановлено.`, `The repair of ring ${H}'s bearing did not start: not enough materials or kits. The ring is stopped.`); },
       record: { ru: `Кольцо ${H} тормозят и ремонтируют опору.`, en: `Ring ${H} is braked and its bearing repaired.` } };
     const stop = { id: 'isolate', label: { ru: 'Остановить кольцо', en: 'Stop the ring' },
-      known: { ru: y => [zgLine(y, true, true), 'Комплекты и материалы целы; износ дальше не развивается.'], en: y => [zgLine(y, false, true), 'The kits and materials are kept; the wear stops growing.'] },
+      known: { ru: y => [zgLine(y, true, 'stopped'), 'Комплекты и материалы целы; износ дальше не развивается.'], en: y => [zgLine(y, false, 'stopped'), 'The kits and materials are kept; the wear stops growing.'] },
       effect: y => { W.isolate(y.wear, id, y.year); (y.danger = y.danger || {})[id] = 'isolate'; JB.dispatch(y.jobs, y.year, pools(y)); },
       record: { ru: `Кольцо ${H} останавливают; лишние переходят в невесомость.`, en: `Ring ${H} is stopped; the extra people move to zero-g.` } };
     const cont = { id: 'continue', label: { ru: 'Вращать до отказа', en: 'Rotate it to failure' },
@@ -52,7 +54,7 @@
       effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
       record: { ru: `Кольцо ${H} вращается; за опорой следят.`, en: `Ring ${H} keeps rotating, its bearing under watch.` } };
     const leave = { id: 'leave', label: { ru: 'Оставить кольцо остановленным', en: 'Leave the ring stopped' },
-      known: { ru: y => [`Комплекты и материалы — на другое.`, zgLine(y, true, true)], en: y => ['The kits and materials are kept for other work.', zgLine(y, false, true)] },
+      known: { ru: y => [`Комплекты и материалы — на другое.`, zgLine(y, true, 'forever')], en: y => ['The kits and materials are kept for other work.', zgLine(y, false, 'forever')] },
       effect: y => { (y.danger = y.danger || {})[id] = 'leave'; },
       record: { ru: `Опору кольца ${H} не ремонтируют; кольцо стоит.`, en: `Ring ${H}'s bearing is not repaired; the ring stays stopped.` } };
     return {
@@ -80,7 +82,7 @@
       : (ru ? `Резерв манёвров станет ${nf(c.reserve, 1, 'ru')}% (сейчас ${nf(x.reserve, 1, 'ru')}%); торможение обеспечено.` : `The manoeuvre reserve becomes ${nf(c.reserve, 1, 'en')}% (now ${nf(x.reserve, 1, 'en')}%); braking is covered.`);
     const days = x => queueDays(x, { prio: JB.PRIO.path, pool: 'tech', minW: 1, maxW: 2, work: R(x).work, hold: R(x).hold }, x.year);
     const cost = (x, ru) => { const d = days(x), q = d == null ? (ru ? 'людей на ремонт сейчас нет' : 'no people for the repair now') : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
-      return ru ? `Гермокомплект (в запасе ${x.wear.inv.tankKit}), ${R(x).work} чел.-сут и ${R(x).hold} суток проверки; ${q}.` : `A sealing kit (${x.wear.inv.tankKit} in stock), ${R(x).work} person-days and ${R(x).hold} days of leak testing; ${q}.`; };
+      return ru ? `Гермокомплект (в запасе ${x.wear.inv.tankKit}), ${R(x).work} чел.-сут и ${R(x).hold} ${plural(R(x).hold, ['сутки', 'суток', 'суток'])} проверки; ${q}.` : `A sealing kit (${x.wear.inv.tankKit} in stock), ${R(x).work} person-days and ${R(x).hold} days of leak testing; ${q}.`; };
     const head = (x, ru) => {
       if (stage === 'open') return ru ? `Течь арматуры бака ${id}: давление падает. В баке ${nf(fuelOf(x), 2, 'ru')} тыс. т топлива. С открытой подачей содержимое уйдёт примерно за ${nf(left(x), 0, 'ru')} суток. ${tankLine(x, 'ru')}`
         : `A leak in tank ${id}'s fittings: the pressure is dropping. The tank holds ${nf(fuelOf(x), 2, 'en')} thousand t of propellant. With the feed open it will all leak away in about ${nf(left(x), 0, 'en')} days. ${tankLine(x, 'en')}`;
@@ -123,7 +125,7 @@
     const id = ev.id, open = ev.stage === 'open' || ev.stage === 'warn', Dg = W.DANGER.hazCargo, nb = W.CARGO_NEXT[id];
     const left = x => Math.max(0, (Dg.tol - W.defectAt(x.wear.nodes[id], x.year)) / Math.max(0.2, x.wear.nodes[id].r));
     const loss = ru => id === 'C1' ? (ru ? 'Запасного аккумуляторного блока не будет: при отказе энергоблока заменить нечем.' : 'There will be no spare battery block: if a power block fails there is nothing to replace it with.')
-      : (ru ? 'Готового капсульного блока заявки не будет: форпосту его соберут из своих материалов (−40%).' : 'There will be no ready capsule unit for the request: it will be built for the outpost from our own materials (−40%).');
+      : (ru ? 'Готового капсульного блока заявки не будет: форпосту его соберут из наших материалов (−40%).' : 'There will be no ready capsule unit for the request: it will be built for the outpost from our own materials (−40%).');
     const nbName = ru => /^T\d$/.test(nb) ? (ru ? `бак ${nb}` : `tank ${nb}`) : (ru ? `коллектор контура ${nb.split('.')[0]}` : `loop ${nb.split('.')[0]}'s collector`);
     const recipe = (x, ru) => { const kit = (x.wear.inv.isoKit || 0) >= 1, w = Dg.repair.work * (kit ? 1 : 2);
       return ru ? `${kit ? `Комплект изоляции (в запасе ${x.wear.inv.isoKit}), ` : 'Комплектов изоляции нет — подручными средствами, '}${w} чел.-сут и ${Dg.repair.hold} сут контроля.` : `${kit ? `An isolation kit (${x.wear.inv.isoKit} in stock), ` : 'No isolation kits — with what is at hand, '}${w} person-days and ${Dg.repair.hold} day of monitoring.`; };
@@ -167,12 +169,12 @@
       return ru ? `Секция ${id} выключена, контур ${l} стоит — а теперь часть зала без охлаждения: схема ${layout(x.wear)}.` : `Section ${id} is off and loop ${l} is down — and now part of the hall is uncooled: layout ${layout(x.wear)}.`; };
     const cost = (x, ru) => { const r = R(x), d = days(x), q = d == null ? (ru ? 'по очереди работ не начнётся: людей нет' : 'the work queue will not start it: no people')
         : (ru ? `по очереди работ — около ${nf(d, 0, 'ru')} суток` : `about ${nf(d, 0, 'en')} days by the work queue`);
-      return ru ? `Ремонт — ${r.kits === 1 ? 'секционный комплект' : `${r.kits} секционных комплекта`} (в запасе ${x.wear.inv.radKit}), материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} суток опрессовки; ${q}.`
+      return ru ? `Ремонт — ${r.kits === 1 ? 'секционный комплект' : `${r.kits} секционных комплекта`} (в запасе ${x.wear.inv.radKit}), материалы −${r.materials}%, ${r.work} чел.-сут и ${r.hold} ${plural(r.hold, ['сутки', 'суток', 'суток'])} опрессовки; ${q}.`
         : `The repair takes ${r.kits === 1 ? 'a section kit' : `${r.kits} section kits`} (${x.wear.inv.radKit} in stock), materials −${r.materials}%, ${r.work} person-days and ${r.hold} days of pressure testing; ${q}.`; };
     // без секции: схема, старение и группы, которым не хватит места (их тепловой резерв короче ремонта — переложат, если есть капсулы)
     const after = (x, ru) => { const a = dangerAfter(x.wear, id, x.year), hrs = W.BUF[x.wear.safe ? 'safe' : 'std'];
-      return ru ? `Без секции схема станет ${a.layout}; перегруженные насосы стареют в ${nf(a.over, 1, 'ru')} раза быстрее.${a.left ? ` ${a.left} ${plural(a.left, ['группа', 'группы', 'групп'])} не помещается на другие контуры: тепловой резерв — ${hrs} ч, дольше ремонта не продержится; спасти — только перекладкой в свободные капсулы.` : ''}`
-        : `Without the section the layout becomes ${a.layout}; the overloaded pumps age ${nf(a.over, 1, 'en')} times faster.${a.left ? ` ${a.left} group${a.left === 1 ? '' : 's'} will not fit on other loops: the thermal reserve is ${hrs} h, shorter than the repair; only moving them into free capsules can save them.` : ''}`; };
+      return ru ? `Без секции: ${overText(a.c, 'ru').replace(/^./, c => c.toLowerCase())}${a.left ? ` ${a.left} ${plural(a.left, ['группа', 'группы', 'групп'])} не ${plural(a.left, ['помещается', 'помещаются', 'помещаются'])} на другие контуры: тепловой резерв — ${hrs} ч, дольше ремонта не продержится; спасти — только перекладкой в свободные капсулы.` : ''}`
+        : `Without the section: ${overText(a.c, 'en').replace(/^./, c => c.toLowerCase())}${a.left ? ` ${a.left} group${a.left === 1 ? '' : 's'} will not fit on other loops: the thermal reserve is ${hrs} h, shorter than the repair; only moving them into free capsules can save them.` : ''}`; };
     const urgentOf = x => { const o = W.observe(x.wear, x.year); return !o.core.cooled || o.groups.some(g => g.sleep && g.heat); };
     const repair = { id: 'repair', label: { ru: open ? 'Выключить секцию и ремонтировать' : 'Ремонтировать секцию', en: open ? 'Shut the section and repair it' : 'Repair the section' },
       known: { ru: y => [cost(y, true), open ? after(y, true) : 'Контур вернётся, когда опрессовка пройдёт.'], en: y => [cost(y, false), open ? after(y, false) : 'The loop returns once the pressure test passes.'] },
@@ -191,15 +193,16 @@
       effect: y => { (y.danger = y.danger || {})[id] = 'continue'; },
       record: { ru: `Секция ${id} работает с течью; за ней следят.`, en: `Section ${id} runs with a leak, under watch.` } };
     const leave = { id: 'leave', label: { ru: 'Оставить контур выключенным', en: 'Leave the loop off' },
-      known: { ru: y => [`Комплекты (${y.wear.inv.radKit}) и материалы — на другое.`, `Схема ${layout(y.wear)}: перегруженные насосы стареют в ${nf(W.overAge(y.wear), 1, 'ru')} раза быстрее.`],
-        en: y => [`The kits (${y.wear.inv.radKit}) and materials are kept for other work.`, `Layout ${layout(y.wear)}: the overloaded pumps age ${nf(W.overAge(y.wear), 1, 'en')} times faster.`] },
+      known: { ru: y => [`Комплекты (${y.wear.inv.radKit}) и материалы — на другое.`, overText(y.wear, 'ru')],
+        en: y => [`The kits (${y.wear.inv.radKit}) and materials are kept for other work.`, overText(y.wear, 'en')] },
       effect: y => { (y.danger = y.danger || {})[id] = 'leave'; },
       record: { ru: `Секцию ${id} не ремонтируют; контур остаётся выключенным.`, en: `Section ${id} is not repaired; the loop stays off.` } };
     return {
       id: 'd.wear.danger', key: id, stage, scene: 'vault', kind: 'decision',
       title: { ru: open ? `Опасный узел: секция радиатора ${id}` : `Секция радиатора ${id} выключена`, en: open ? `A dangerous node: radiator section ${id}` : `Radiator section ${id} is off` },
       rec: x => can(x) ? { id: 'repair', why: open ? { ru: 'течь не остановится сама; после разрушения контур не вернуть', en: 'a leak does not stop by itself; after a rupture the loop cannot be restored' }
-          : { ru: `без контура остальные насосы перегружены и стареют в ${nf(W.overAge(x.wear), 1, 'ru')} раза быстрее`, en: `without the loop the other pumps are overloaded and age ${nf(W.overAge(x.wear), 1, 'en')} times faster` } }
+          : W.overAge(x.wear) > 1.05 ? { ru: `без контура остальные насосы перегружены и стареют в ${nf(W.overAge(x.wear), 1, 'ru')} раза быстрее`, en: `without the loop the other pumps are overloaded and age ${nf(W.overAge(x.wear), 1, 'en')} times faster` }
+          : { ru: 'ремонт есть чем сделать: контур вернётся в работу и в запас мощности', en: 'there is a kit for the repair: the loop returns to service and to the power margin' } }
         : { id: open ? 'isolate' : 'leave', why: { ru: 'ремонтировать нечем — секцию выключают, пока она цела', en: 'there is nothing to repair it with — the section is shut while it is intact' } },
       context: { ru: x => `${head(x, true)}${can(x) ? '' : ' Ремонтировать нечем: ' + (x.wear.inv.radKit < R(x).kits ? 'секционных комплектов не хватает.' : 'материалов не хватает.')}`,
         en: x => `${head(x, false)}${can(x) ? '' : ' There is nothing to repair it with: ' + (x.wear.inv.radKit < R(x).kits ? 'not enough section kits.' : 'not enough materials.')}` },
@@ -234,10 +237,10 @@
       rec: x => ({ id: 'replace', why: { ru: 'независимая схема переживёт следующий отказ контура', en: 'an independent layout survives the next loop failure' } }),
       context: {
         ru: x => { const w = x.wear, o = W.observe(w);
-          return `${pumpFail(w, L, 'ru')} ` + (full ? `Автоматика перевела ${moved.length} ${plural(moved.length, ['группу', 'группы', 'групп'])} на другие контуры: схема ${layout(w)}, предел контура — ${W.budget(w).gcap} групп рядом с долей ядра. ${(n => n ? `Свободной мощности — на ${n === 1 ? 'одну группу' : `${n} ${plural(n, ['группу', 'группы', 'групп'])}`}.` : 'Свободной мощности больше нет.')(o.loops.reduce((a, l) => a + (l.runs ? l.max - l.load : 0), 0))}`
-            : `Перевести все группы на другие контуры нельзя: часть зала на тепловом резерве — ${W.BUF[w.safe ? 'safe' : 'std']} часов.`) + ` Насосов в запасе: ${w.inv.pump}.`; },
+          return `${pumpFail(w, L, 'ru')} ` + (full ? `Автоматика перевела ${moved.length} ${plural(moved.length, ['группу', 'группы', 'групп'])} на другие контуры: схема ${layout(w)}, предел контура — ${W.budget(w).gcap} ${plural(W.budget(w).gcap, ['группа', 'группы', 'групп'])} рядом с долей ядра. ${(n => n ? `Свободной мощности — на ${n === 1 ? 'одну группу' : `${n} ${plural(n, ['группу', 'группы', 'групп'])}`}.` : 'Свободной мощности больше нет.')(o.loops.reduce((a, l) => a + (l.runs ? l.max - l.load : 0), 0))}`
+            : `Перевести все группы на другие контуры нельзя: часть зала на тепловом резерве — ${W.BUF[w.safe ? 'safe' : 'std']} ${plural(W.BUF[w.safe ? 'safe' : 'std'], ['час', 'часа', 'часов'])}.`) + ` Насосов в запасе: ${w.inv.pump}.`; },
         en: x => { const w = x.wear, o = W.observe(w);
-          return `${pumpFail(w, L, 'en')} ` + (full ? `The automation moved ${moved.length} group${moved.length === 1 ? '' : 's'} to other loops: layout ${layout(w)}, loop limit ${W.budget(w).gcap} groups beside the core's share.`
+          return `${pumpFail(w, L, 'en')} ` + (full ? `The automation moved ${moved.length} group${moved.length === 1 ? '' : 's'} to other loops: layout ${layout(w)}, loop limit ${W.budget(w).gcap} groups beside the core's share. ${(n => n ? `Spare capacity for ${n === 1 ? 'one more group' : `${n} more groups`}.` : 'No spare capacity left.')(o.loops.reduce((a, l) => a + (l.runs ? l.max - l.load : 0), 0))}`
             : `Not every group can move to other loops: part of the hall is on its thermal reserve — ${W.BUF[w.safe ? 'safe' : 'std']} hours.`) + ` Spare pumps: ${w.inv.pump}.`; }
       },
       options: x => [{
@@ -254,13 +257,13 @@
         id: 'reroute',
         label: { ru: 'Оставить перестановку', en: 'Keep the rerouting' },
         known: {
-          ru: y => ['Насос остаётся в запасе.', `Схема ${layout(y.wear)}: перегруженные насосы стареют в ${nf(W.overAge(y.wear), 1, 'ru')} раза быстрее.`,
-            `Следующий отказ контура перестановкой не покрыть: насос будут менять авралом, всеми техниками вахты (${auralDays(y) < Infinity ? `${nf(auralDays(y), 1, 'ru')} сут. при нынешней вахте` : 'техников сверх регламента нет'}), а теплового резерва у групп — ${W.BUF[y.wear.safe ? 'safe' : 'std']} часов.`],
-          en: y => ['The pump stays in stock.', `Layout ${layout(y.wear)}: the overloaded pumps age ${nf(W.overAge(y.wear), 1, 'en')} times faster.`,
+          ru: y => ['Насос остаётся в запасе.', overText(y.wear, 'ru'),
+            `Следующий отказ контура перестановкой не покрыть: насос будут менять авралом, всеми техниками вахты (${auralDays(y) < Infinity ? `${nf(auralDays(y), 1, 'ru')} сут. при нынешней вахте` : 'техников сверх регламента нет'}), а теплового резерва у групп — ${W.BUF[y.wear.safe ? 'safe' : 'std']} ${plural(W.BUF[y.wear.safe ? 'safe' : 'std'], ['час', 'часа', 'часов'])}.`],
+          en: y => ['The pump stays in stock.', overText(y.wear, 'en'),
             `The next loop failure cannot be covered by rerouting: the pump will be replaced all-hands, by every technician of the watch (${auralDays(y) < Infinity ? `${nf(auralDays(y), 1, 'en')} days with today's watch` : 'no technician is free of routine'}), and the groups' thermal reserve is ${W.BUF[y.wear.safe ? 'safe' : 'std']} hours.`]
         },
         effect: y => { y.wearPolicy = 'reroute'; wearShop(y, y.year); },
-        record: { ru: `Контур ${L} остаётся выключенным; группы работают на трёх контурах.`, en: `Loop ${L} stays off; the groups run on three loops.` }
+        record: { ru: y => `Контур ${L} остаётся выключенным; группы работают на ${['одном', 'двух', 'трёх', 'четырёх'][W.LOOPS.filter(K => W.loopRuns(y.wear, K)).length - 1] || 'оставшихся'} ${W.LOOPS.filter(K => W.loopRuns(y.wear, K)).length === 1 ? 'контуре' : 'контурах'}.`, en: y => `Loop ${L} stays off; the groups run on ${['one loop', 'two loops', 'three loops', 'four loops'][W.LOOPS.filter(K => W.loopRuns(y.wear, K)).length - 1] || 'the remaining loops'}.` }
       }] : [])
     };
   }
@@ -274,8 +277,8 @@
       title: { ru: `Контур ${L} остановлен: перестановкой не покрыть`, en: `Loop ${L} stopped: rerouting cannot cover it` },
       rec: x => ({ id: 'replace', why: { ru: 'группы на тепловом резерве — люди; насос в запасе для этого и лежит', en: 'the groups on thermal reserve are people; the spare pump is there for exactly this' } }),
       context: {
-        ru: x => `${pumpFail(x.wear, L, 'ru')} ` + (ev.core ? `Это был последний работающий контур: ядро без отвода тепла, тепловой запас — ${W.CORE_BUF} часов.`
-          : `Перестановкой всех групп не покрыть: на тепловом резерве ${left.length} ${plural(left.length, ['группа', 'группы', 'групп'])} — ${W.BUF[x.wear.safe ? 'safe' : 'std']} часов.`) + ` Совет прежде решил беречь запасной насос и оставить перестановку; насосов в запасе: ${x.wear.inv.pump}.`,
+        ru: x => `${pumpFail(x.wear, L, 'ru')} ` + (ev.core ? `Это был последний работающий контур: ядро без отвода тепла, тепловой запас — ${W.CORE_BUF} ${plural(W.CORE_BUF, ['час', 'часа', 'часов'])}.`
+          : `Перестановкой всех групп не покрыть: на тепловом резерве ${left.length} ${plural(left.length, ['группа', 'группы', 'групп'])} — ${W.BUF[x.wear.safe ? 'safe' : 'std']} ${plural(W.BUF[x.wear.safe ? 'safe' : 'std'], ['час', 'часа', 'часов'])}.`) + ` Совет прежде решил беречь запасной насос и оставить перестановку; насосов в запасе: ${x.wear.inv.pump}.`,
         en: x => `${pumpFail(x.wear, L, 'en')} ` + (ev.core ? `It was the last running loop: the core has no heat rejection, its thermal reserve is ${W.CORE_BUF} hours.`
           : `Rerouting cannot cover every group: ${left.length} group${left.length === 1 ? '' : 's'} on thermal reserve — ${W.BUF[x.wear.safe ? 'safe' : 'std']} hours.`) + ` Earlier the council chose to keep the spare pump and the rerouting; spare pumps: ${x.wear.inv.pump}.`
       },
@@ -297,7 +300,7 @@
         id: 'keep',
         label: { ru: 'Беречь запас дальше', en: 'Keep saving the stock' },
         known: {
-          ru: y => ['Насос остаётся в запасе.', ev.core ? `Ядро без отвода тепла: через ${W.CORE_BUF} часов рейс окончен.` : `Группы на тепловом резерве погибнут: около ${ppl(people(y))}.`, 'Следующий отказ контура — то же решение; без контуров ядро держится 96 часов.'],
+          ru: y => ['Насос остаётся в запасе.', ev.core ? `Ядро без отвода тепла: через ${W.CORE_BUF} ${plural(W.CORE_BUF, ['час', 'часа', 'часов'])} рейс окончен.` : `Группы на тепловом резерве погибнут: около ${pplG(people(y))}.`, 'Следующий отказ контура — то же решение; без контуров ядро держится 96 часов.'],
           en: y => ['The pump stays in stock.', ev.core ? `The core has no heat rejection: in ${W.CORE_BUF} hours the voyage is over.` : `The groups on thermal reserve will die: about ${people(y)} people.`, 'The next loop failure brings the same decision; with no loops the core holds for 96 hours.']
         },
         effect: y => { wearShop(y, y.year); },
@@ -308,14 +311,14 @@
   // политика мастерской — при первом снятом насосе: держать готовый резерв, перебирать по нужде или беречь комплекты
   function wearShopDecision(s, ev) {
     const rb = x => { const sn = W.removedOf(x.wear, 'pump').find(y => W.canRebuild(x.wear, y)); return sn != null ? W.quoteRebuild(x.wear, sn, prodOf(x)) : null; };
-    const cost = (x, lang) => { const q = rb(x); return q ? (lang === 'ru' ? `переборка насоса — ${q.days} суток двух специалистов, материалы −${nf(q.materials, 1, 'ru')}%, клапанный комплект (их ${x.wear.inv.valve})`
+    const cost = (x, lang) => { const q = rb(x); return q ? (lang === 'ru' ? `переборка насоса — ${q.days} ${plural(q.days, ['сутки', 'суток', 'суток'])} двух специалистов, материалы −${nf(q.materials, 1, 'ru')}%, клапанный комплект (их ${x.wear.inv.valve})`
       : `a pump rebuild takes ${q.days} days of two specialists, materials −${nf(q.materials, 1, 'en')}%, a valve kit (${x.wear.inv.valve} left)`) : ''; };
     return {
       id: 'd.wear.shop', scene: 'vault', kind: 'decision',
       title: { ru: 'Мастерская: что делать со снятыми насосами', en: 'The workshop: what to do with removed pumps' },
       rec: x => ({ id: 'reserve', why: { ru: 'переборка идёт месяцами — готовый насос нужен до отказа, а не после', en: 'a rebuild takes months — a ready pump is needed before the failure, not after it' } }),
       context: {
-        ru: x => `Насос заменён из запаса; снятый годен к переборке. Насосов в запасе: ${x.wear.inv.pump}; ${cost(x, 'ru')}. Переборка — это и ресурс: перебранный насос служит меньше заводского.`,
+        ru: x => `Насос заменён из запаса; снятый годен к переборке. Насосов в запасе: ${x.wear.inv.pump}; ${cost(x, 'ru')}. Переборка стоит и ресурса: перебранный насос служит меньше заводского.`,
         en: x => `A pump was replaced from stock; the removed one can be rebuilt. Spare pumps: ${x.wear.inv.pump}; ${cost(x, 'en')}. A rebuild also costs life: a rebuilt pump lasts less than a factory one.`
       },
       options: x => [{
@@ -356,7 +359,7 @@
         : { id: 'donor', why: { ru: full ? 'запасного насоса не будет — без него следующий отказ контура не закрыть' : 'иначе группы на тепловом резерве погибнут', en: full ? 'there will be no spare pump — without one the next loop failure cannot be covered' : 'otherwise the groups on thermal reserve die' } },
       context: {
         ru: x => `${pumpFail(x.wear, L, 'ru')} ` + (full ? `Автоматика перевела ${moved.length} ${plural(moved.length, ['группу', 'группы', 'групп'])} на другие контуры: схема ${layout(x.wear)}.`
-          : `Перевести все группы на другие контуры нельзя: часть зала на тепловом резерве — ${W.BUF[x.wear.safe ? 'safe' : 'std']} часов.`) + ` Запасных насосов нет. ${wait(x, 'ru')} Такой же насос стоит во втором агромодуле.`,
+          : `Перевести все группы на другие контуры нельзя: часть зала на тепловом резерве — ${W.BUF[x.wear.safe ? 'safe' : 'std']} ${plural(W.BUF[x.wear.safe ? 'safe' : 'std'], ['час', 'часа', 'часов'])}.`) + ` Запасных насосов нет. ${wait(x, 'ru')} Такой же насос стоит во втором агромодуле.`,
         en: x => `${pumpFail(x.wear, L, 'en')} ` + (full ? `The automation moved ${moved.length} group${moved.length === 1 ? '' : 's'} to other loops: layout ${layout(x.wear)}.`
           : `Not every group can move to other loops: part of the hall is on its thermal reserve — ${W.BUF[x.wear.safe ? 'safe' : 'std']} hours.`) + ` No spare pumps. ${wait(x, 'en')} The second agro module carries the same pump.`
       },

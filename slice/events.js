@@ -31,7 +31,7 @@
         decision: (s, e, T) => ({
           scene: 'vault',
           title: L('Картриджи воздуха после регенерации', 'Air-filter cartridges after regeneration'),
-          context: L(`${e.who.ru}, вахта жизнеобеспечения: после одинакового цикла очистки остаточный CO₂ в канале ${e.ch} растёт уже третий месяц — на ${e.ppm} ppm выше нормы цикла. Соседний канал исправен; если рост продолжится, автоматика изолирует канал. Сорбент теряет эффективность раньше паспортного срока.`,
+          context: L(`${e.who.ru}, вахта жизнеобеспечения: после регенерации картриджей остаточный CO₂ в канале ${e.ch} растёт уже третий месяц — на ${e.ppm} ppm выше нормы цикла. Соседний канал исправен; если рост продолжится, автоматика изолирует канал. Сорбент теряет эффективность раньше паспортного срока.`,
             `${e.who.en}, life-support watch: after the same cleaning cycle the residual CO₂ in channel ${e.ch} has been rising for three months — ${e.ppm} ppm above the cycle norm. The neighbouring channel is fine; if the rise goes on, the control system will isolate the channel. The sorbent is losing effectiveness before the end of its rated service life.`),
           rec: x => rich(x) ? { id: 'replace', why: L('материалов хватает, а занятость вахты дороже', 'there are materials enough, and the watch\'s time costs more') }
             : { id: 'regen', why: L('материалов мало — платим временем', 'materials are short — we pay in time') },
@@ -68,7 +68,7 @@
           context: L(`${e.who.ru}, навигационная смена: два независимых решения по разным наборам опорных звёзд расходятся на ${H.nf(e.mas, 1, 'ru')} угловой миллисекунды, и расхождение медленно растёт. Это не потеря курса: остаток пока меньше допуска точки встречи, но до торможения траекторию нужно уточнить либо скорректировать с запасом на расхождение.`,
             `${e.who.en}, navigation watch: two independent solutions from different sets of reference stars disagree by ${H.nf(e.mas, 1, 'en')} milliarcseconds, and the gap is slowly growing. This is not a lost course: the residual is still within the rendezvous tolerance, but before braking the trajectory must be refined or corrected with allowance for the difference.`),
           rec: x => x.reserve >= 90 && !H.thin(x) ? { id: 'correct', why: L('резерв почти полон, а прибор нужен для других наблюдений', 'the reserve is nearly full, and the instrument is needed for other observations') }
-            : { id: 'baseline', why: L('лучше потратить время на наблюдения и сохранить резерв манёвров', 'observing time is better spent than manoeuvre reserve') },
+            : { id: 'baseline', why: L('лучше потратить время на наблюдения и сохранить резерв манёвров', 'better to spend time observing and keep the manoeuvre reserve') },
           options: [{
             id: 'correct',
             label: L('Принять консервативную коррекцию', 'Accept a conservative correction'),
@@ -117,7 +117,7 @@
         decision: (s, e, T) => ({
           scene: 'flip',
           title: L('Тёплый шов радиатора', 'A warm radiator seam'),
-          context: L(`${e.who.ru}, тепловая смена: перепад температуры на шве радиатора приборного блока ${e.block} при той же нагрузке вырос на ${e.dT} К за два измерения. Течи нет, шов локализован.`,
+          context: L(`${e.who.ru}, тепловая смена: перепад температуры на шве радиатора приборного блока ${e.block} при той же нагрузке вырос на ${e.dT} К за два измерения. Течи нет, место дефекта на шве найдено.`,
             `${e.who.en}, thermal watch: the temperature drop across a radiator seam of instrument block ${e.block} has grown by ${e.dT} K over two measurements at the same load. No leak; the seam is located.`),
           rec: x => rich(x) ? { id: 'insert', why: L('материалов хватает, а приборы нужны', 'there are materials enough, and the instruments are needed') }
             : { id: 'load', why: L('материалов мало — подождут наблюдения', 'materials are short — the observations can wait') },
@@ -202,7 +202,7 @@
           title: L('Тонкое пылевое волокно', 'A thin dust filament'),
           context: L(`${e.who.ru}, обзорная смена: прямо по курсу — тонкое пылевое волокно. Мелких ударов больше, рассеянный свет растёт. До кромки — ${e.lead} сут., проход — ${e.days} сут. Плотность пыли в нём в 600–1200 раз выше фоновой; крупных зёрен модель не ждёт.`,
             `${e.who.en}, survey watch: dead ahead is a thin dust filament. Small impacts are up, scattered light is rising. ${e.lead} days to its edge, ${e.days} days to cross it. Its dust is 600 to 1200 times denser than the background; the model expects no large grains.`),
-          rec: x => H.shieldMin(x) - e.hi > 2 * H.service() ? { id: 'pass', why: L('щит выдержит с запасом, и это сохраняет резерв манёвров', 'the shield will hold with margin, and this preserves manoeuvre reserve') }
+          rec: x => H.shieldMin(x) - e.hi > 2 * H.service() ? { id: 'pass', why: L('щит выдержит с запасом, и это сохраняет резерв манёвров', 'the shield will hold with margin, and this preserves the manoeuvre reserve') }
             : { id: 'shift', why: L('щит и так близок к допуску', 'the shield is already close to its limit') },
           options: [{
             id: 'pass',
@@ -293,10 +293,10 @@
           }, {
             id: 'double',
             label: L('Поставить двойную проверку операций', 'Set up a double check of operations'),
-            known: lang => lang === 'ru' ? [`Материалы −1% на контрольный стенд; ${H.repairQual(s) ? 'двадцать суток (с допуском — быстрее)' : 'месяц работы'}.`, 'Прежний график сохраняется.']
+            known: lang => lang === 'ru' ? [`Материалы −1% на контрольный пост (журнал двойной подписи); ${H.repairQual(s) ? 'двадцать суток (с допуском — быстрее)' : 'месяц работы'}.`, 'Прежний график сохраняется.']
               : [`Materials −1% for a test bench; ${H.repairQual(s) ? 'twenty days (faster with the qualification)' : 'a month of work'}.`, 'The old schedule stays.'],
             effect: x => { x.materials -= 1; job(x, e, 'double', (H.repairQual(x) ? 20 : 30) * DAY); },
-            record: L('Ставят контрольный стенд: каждая передача задания — с двумя подписями.', 'A test bench goes in: every task handover gets two signatures.')
+            record: L('Ставят контрольный пост: каждая передача задания — с двумя подписями.', 'A sign-off station goes in: every task handover gets two signatures.')
           }]
         }),
         done: (s, e, j) => note(s, e, L('Журнал смен', 'Watch log'), j.how === 'rotate'
@@ -389,13 +389,13 @@
           title: L('Класс пыли верен, вывод — нет', 'The dust class is right, the conclusion is not'),
           context: L(`${e.who.ru}, научная смена: спектр пыли по курсу совпал с известным классом, но счётчики ударов не сходятся с выведенной из него крупностью частиц. Данные исправны — модель применили за пределами её области.`,
             `${e.who.en}, science watch: the spectrum of the dust ahead matches a known class, but the impact counters disagree with the grain size the model derives from it. The data are sound — the model was used outside its range.`),
-          rec: x => !(x.ev && x.ev.jobs.some(j => j.type === 'navResidual')) ? { id: 'compare', why: L('прибор свободен, и это сохраняет резерв манёвров', 'the instrument is free, and this preserves manoeuvre reserve') }
+          rec: x => !(x.ev && x.ev.jobs.some(j => j.type === 'navResidual')) ? { id: 'compare', why: L('прибор сейчас свободен; сверка сбережёт резерв манёвров', 'the instrument is free now; the comparison saves the manoeuvre reserve') }
             : { id: 'assume', why: L('прибор занят навигационной серией', 'the instrument is busy with a navigation series') },
           options: [{
             id: 'compare',
             label: L('Сопоставить с показаниями счётчиков ударов', 'Compare with impact-counter readings'),
-            known: lang => lang === 'ru' ? [`${H.sensors(s) === 'spectraPlus' ? 'Сорок пять' : 'Девяносто'} суток; прибор занят — навигационные серии ждут.`, 'Класс остаётся, оценка крупности пересчитывается.']
-              : [`${H.sensors(s) === 'spectraPlus' ? 'Forty-five' : 'Ninety'} days; the instrument is busy — navigation series wait.`, 'The class stays; the grain-size estimate is recomputed.'],
+            known: lang => lang === 'ru' ? [`${H.sensors(s) === 'spectraPlus' ? 'Сорок пять' : 'Девяносто'} суток прибор будет занят: навигационные серии подождут.`, 'Класс остаётся, оценка крупности пересчитывается.']
+              : [`${H.sensors(s) === 'spectraPlus' ? 'Forty-five' : 'Ninety'} days the instrument will be busy: navigation series will wait.`, 'The class stays; the grain-size estimate is recomputed.'],
             effect: x => { job(x, e, 'compare', (H.sensors(x) === 'spectraPlus' ? 45 : 90) * DAY, ['navigation']); },
             record: L(`${e.who.ru} сопоставляет спектральные данные и показания счётчиков ударов за одни и те же интервалы.`, `${e.who.en} compares spectral data with impact-counter readings from the same time intervals.`)
           }, {
@@ -421,7 +421,7 @@
         decision: (s, e, T) => ({
           scene: 'ring',
           title: L('Бюллетень об отзыве детали', 'A part recall bulletin'),
-          context: L(`Бюллетень Кольца, отправлен ${H.yrs(e.lag, 'ru')} назад: в серии ${e.series} клапанов теплообменника найден дефект уплотнения — на Земле испытания показали течь после ${yGen(e.after)} работы. На борту стоят клапаны этой серии. ${e.who.ru} сверяет номера с паспортом.`,
+          context: L(`Бюллетень Кольца, отправлен ${H.yrs(e.lag, 'ru')} назад: в клапанах теплообменника серии ${e.series} найден дефект уплотнения — на Земле испытания показали течь после ${yGen(e.after)} работы. На борту стоят клапаны этой серии. ${e.who.ru} сверяет номера с паспортом.`,
             `A Ring bulletin, sent ${H.yrs(e.lag, 'en')} ago: series ${e.series} heat-exchanger valves have a seal defect — tests on Earth showed a leak after ${e.after} years of service. Valves of this series are aboard. ${e.who.en} checks the numbers against the equipment records.`),
           rec: x => rich(x, 5) ? { id: 'fix', why: L('исправление гарантированное, материалы есть', 'the fix is certain, and there are materials') }
             : { id: 'check', why: L('материалов мало — сначала проверить нашу серию', 'materials are short — check our series first') },
@@ -553,7 +553,7 @@
     const dur = (s, fam, days) => qual(s, fam) === 'skilled' ? Math.round(days / 2) : qual(s, fam) === 'checked' ? days + 30 : days;
     const qualNote = (s, fam, lang) => qual(s, fam) === 'skilled' ? (lang === 'ru' ? ' (навык подтверждён — вдвое быстрее)' : ' (a confirmed skill — twice as fast)')
       : qual(s, fam) === 'checked' ? (lang === 'ru' ? ' (с отдельной проверкой)' : ' (with a separate check)') : '';
-    const dd = (n, lang) => lang === 'ru' ? `${n} сут.` : `${n} day${n === 1 ? '' : 's'}`;
+    const dd = (n, lang) => lang === 'ru' ? `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'сутки' : 'суток'}` : `${n} day${n === 1 ? '' : 's'}`;
     // «после 41 года / 45 лет» — родительный падеж
     const yGen = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'года' : 'лет'}`;
     // участок среды на пути (пылевое волокно): плотность пыли ×k на [a, b]; модель щита режет по его границам

@@ -6,7 +6,8 @@
     const {
       BLUEPRINT, LOOP, M, PREP, RESCUE, SOS_AT_cargo, SUPPLY, THAW0, WATCH_SOS, Y, YD, brake, bulletinTitle, cargoConnect, collectorCracked,
       contactRun, coolerName, dutchmanEnd, eqOf, f1, fb, hidden, incident, lastCall, loopAt, loopCommon, matReserve, nm, nmG, ownStory, ppl,
-      probeTimes, reader, rescueS, skipTo, sosDrift, sosEnd, stagePass, stageYears, supplyS, thawLag, yrs, yrsEn
+      probeTimes, reader, rescueS, skipTo, sosDrift, sosEnd, stagePass, stageYears, supplyS, thawLag, yrs, yrsEn,
+      plural, vN
     } = K;
     return [
     // ------------------------------------------------------------ АКТ II · ДРЕЙФ
@@ -31,10 +32,10 @@ Every few years it will send a short message.`
       text: {
         ru: s => `Кольцо пересылает последний отчёт Ксилоны Ир, полученный до нашего отлёта: форпост разобрал мастерскую под насосы капсульной смены и перевёл антенну на ручной привод.
 
-Отчёт короткий; в конце — просьба передать сорок первой журнал ремонтов. Он идёт к нам следом, в общей сводке.`,
+Отчёт короткий; в конце — просьба передать сорок первой журнал ремонтов форпоста. Журнал идёт к нам следом, в общей сводке.`,
         en: s => `The Ring forwards Xylona Ir's last report, received before our departure: the outpost has taken its workshop apart for the capsule shift's pumps and switched the antenna to manual drive.
 
-The report is short; at the end, a request to send the Forty-First the repair log. It follows us in the general bulletin.`
+The report is short; at the end, a request to send the Forty-First the outpost's repair log. The log follows us in the general bulletin.`
       }
     },
 
@@ -45,10 +46,10 @@ The report is short; at the end, a request to send the Forty-First the repair lo
       text: {
         ru: s => `Уходящая вахта впервые разбирает свои решения не перед советом, а перед теми, кто просыпается: все, включая ошибочные. Разбор идёт шесть часов. Последним пунктом — ${lastCall(s, 'ru')}.` + (s.mission === 'contact' ? `
 
-В эти годы на корабле появляется присказка. «Красивее всего, что мы видели», — говорят о том, ради чего летят.` : '') + (supplyS(s) ? '\n\nОчередной отчёт Ксилоны не получен; последнее подтверждённое состояние остаётся прежним.' : rescueS(s) ? '\n\nНового полного медицинского отчёта Оттепели нет.' : ''),
+В эти годы на корабле всё чаще звучит присказка, привезённая с Земли. «Красивее всего, что мы видели», — говорят о том, ради чего летят.` : '') + (supplyS(s) ? '\n\nОчередной отчёт Ксилоны не получен; последнее подтверждённое состояние остаётся прежним.' : rescueS(s) ? '\n\nНового полного медицинского отчёта Оттепели нет.' : ''),
         en: s => `For the first time the outgoing watch reviews its decisions not before the council but before those who are waking: all of them, including the mistakes. The review takes six hours. The last item — ${lastCall(s, 'en')}.${supplyS(s) ? "\n\nXylona's next report has not arrived; its last confirmed state remains unchanged." : rescueS(s) ? "\n\nThere is no new complete medical report from Thaw." : ''}${s.mission === 'contact' ? `
 
-A saying appears aboard in these years. "More beautiful than anything we've seen," people say of what they are flying for.` : ''}`
+In these years a saying brought from Earth is heard more and more aboard. "More beautiful than anything we've seen," people say of what they are flying for.` : ''}`
       }
     },
 
@@ -69,12 +70,12 @@ For the ship this is news, not an opportunity: our engine has already been cast 
       id: 'a2.teach', illus: 'kora-asleep', scene: 'vault', overlay: 'sleepers', kind: 'transcript', year: s => Y(s, 0.35),
       title: { ru: 'Единственный интерпретатор', en: 'The only interpreter' },
       text: {
-        ru: s => `Кора Ландис спит с восьмого года. ${s.koraYear ? 'Ная Сорн читает спектры одна — пока на вахте нет ничего неоднозначного.' : 'Кроме неё, неоднозначный спектр на борту прочесть некому.'}
+        ru: s => `Кора Ландис спит с третьего года. ${s.koraYear ? 'Ная Сорн читает спектры одна — пока на вахте нет ничего неоднозначного.' : 'Кроме неё, неоднозначный спектр на борту прочесть некому.'}
 
 Лорн выносит на совет вопрос, который ещё не раз зададут другие смены: разбудить Кору на два года, чтобы она выучила интерпретаторов, или беречь её годы до цели.
 
 — Умение сохранится, — говорит врач. — Но в ней одной, во сне.`,
-        en: s => `Kora Landis has been asleep since year eight. ${s.koraYear ? 'Naya Sorn reads the spectra alone — so far nothing on watch has been ambiguous.' : 'Apart from her, no one aboard can read an ambiguous spectrum.'}
+        en: s => `Kora Landis has been asleep since year three. ${s.koraYear ? 'Naya Sorn reads the spectra alone — so far nothing on watch has been ambiguous.' : 'Apart from her, no one aboard can read an ambiguous spectrum.'}
 
 Lorn brings to the council a question other watches will ask again: wake Kora for two years to train interpreters, or save her years for the target.
 
@@ -122,7 +123,7 @@ Lorn brings to the council a question other watches will ask again: wake Kora fo
       id: 'a2.queue', scene: 'ring', kind: 'transcript', year: s => Y(s, 0.5),
       title: { ru: 'Очередь пробуждений', en: 'The wake queue' },
       text: {
-        ru: `Очередь пробуждений разбирают на каждой пересменке. Двое, чьи вахты совпадают одна из трёх, просят их свести. Кто-то предлагает отдать свои годы другому.
+        ru: `Очередь пробуждений разбирают на каждой пересменке. Двое, чьи вахты совпадают лишь раз из трёх, просят их свести. Кто-то предлагает отдать свои годы другому.
 
 Совет запрещает обмен годами: годы жизни не должны становиться платой. Просьбы о совпадении вахт разбирают открыто, одну за другой.
 
@@ -161,7 +162,7 @@ ${s.repairQual ? 'Dan Osger shuts the loop in six minutes: his watches are almos
 
 Irson shows the old cooling diagram.
 
-"Moving them requires adapters. An emergency connection also needs tested isolation: their fault must not enter our hall."`
+"Moving the capsules requires adapters. An emergency connection also needs tested isolation: their fault must not enter our hall."`
           : `The beacon of Thaw's store — the signal took ${yrsEn(thawLag(s))}. The store is intact, ${THAW0} alive. But its coolant is of the old pattern: it cannot be connected directly to our hall or our grid — adapters and pumps are needed for forty capsules.`
       }
     },
@@ -179,7 +180,7 @@ Irson shows the old cooling diagram.
         id: 'tested',
         label: { ru: 'Переходники и аварийная изоляция', en: 'Adapters and emergency isolation' },
         known: {
-          ru: [`Материалы для высадки −${RESCUE.tested}%: переходники, насосы и независимый контур.`, `Штатная операция у склада — за месяц, аварийный независимый контур — за ${RESCUE.isoFast} суток. Работы и испытание — в полёте.`],
+          ru: [`Материалы для высадки −${RESCUE.tested}%: переходники, насосы и независимый контур.`, `Штатная операция у склада — за месяц, аварийный независимый контур — за ${RESCUE.isoFast} ${plural(RESCUE.isoFast, ['сутки', 'суток', 'суток'])}. Работы и испытание — в полёте.`],
           en: [`Landing materials −${RESCUE.tested}%: adapters, pumps and an independent loop.`, `Normal operation at the store in a month; emergency independent cooling in ${RESCUE.isoFast} days. Work and testing proceed in flight.`]
         },
         effect: st => { st.materials -= RESCUE.tested; st.rescuePrep = true; st.rescueIsolation = true; },
@@ -191,7 +192,7 @@ Irson shows the old cooling diagram.
         id: 'adapters',
         label: { ru: 'Собрать сейчас', en: 'Build them now' },
         known: {
-          ru: [`Материалы для высадки −${PREP}%: переходники и насосы.`, 'У склада перенос или подключение к нашей сети — за месяц.'].concat(rescueS(s) ? [`Аварийная изоляция не испытана: собрать её у склада — ${RESCUE.isoSlow} суток.`] : []),
+          ru: [`Материалы для высадки −${PREP}%: переходники и насосы.`, 'У склада перенос или подключение к нашей сети — за месяц.'].concat(rescueS(s) ? [`Аварийная изоляция не испытана: собрать её у склада — ${RESCUE.isoSlow} ${plural(RESCUE.isoSlow, ['сутки', 'суток', 'суток'])}.`] : []),
           en: [`Landing materials −${PREP}%: adapters and pumps.`, 'At the store, moving or connecting to our grid takes a month.'].concat(rescueS(s) ? [`Emergency isolation is untested: building it at the store takes ${RESCUE.isoSlow} days.`] : [])
         },
         effect: st => { st.materials -= PREP; st.rescuePrep = true; },
@@ -271,8 +272,8 @@ A common failure could kill people and leave the ship on emergency cooling alone
         effect: st => { st.materials -= SUPPLY.check; st.cargoMethod = 'check';
           st.cargoFound = collectorCracked(st) && (hidden(st, 'supply.cargo.check') ?? 1) < SUPPLY.cargoSense;
           if (st.cargoFound) { st.materials -= SUPPLY.isolate; st.cargoDays = 22; } else { st.cargoDays = 4; cargoConnect(st); } },
-        record: { ru: s => s.cargoFound ? 'Опрессовка находит трещину в коллекторе. Ремонтники двадцать суток собирают независимую секцию; Ксилоне уходит исправленная ведомость.' : s.cargoFailed ? 'Опрессовка трещины не находит. Холодильник подключают.' : 'Опрессовка трещины не находит; коллектор цел. Холодильник испытан в работе; Ксилоне уходит исправленная ведомость.',
-          en: s => s.cargoFound ? 'The pressure test finds a crack in the manifold. The repair hands spend twenty days building an independent section; Xylona is sent an amended manifest.' : s.cargoFailed ? 'The pressure test finds no crack. The cooler is connected.' : 'The pressure test finds no crack; the manifold is intact. The cooler is tested in service; Xylona is sent an amended manifest.' }
+        record: { ru: s => s.cargoFound ? 'Опрессовка находит трещину в коллекторе. Ремонтники двадцать суток собирают независимую секцию; Ксилоне уходит исправленная ведомость.' : s.cargoFailed ? 'Опрессовка трещины не находит. Холодильник подключают.' : 'Опрессовка трещины не находит. Холодильник подключают и испытывают в работе; Ксилоне уходит исправленная ведомость.',
+          en: s => s.cargoFound ? 'The pressure test finds a crack in the manifold. The repair hands spend twenty days building an independent section; Xylona is sent an amended manifest.' : s.cargoFailed ? 'The pressure test finds no crack. The cooler is connected.' : 'The pressure test finds no crack. The cooler is connected and tested in operation; Xylona is sent an amended manifest.' }
       }, {
         id: 'isolate', label: { ru: 'Собрать независимую секцию', en: 'Build an independent section' },
         known: { ru: [`Материалы −${SUPPLY.isolate}%, двадцать суток, четыре ремонтника.`, 'Изолирует повреждённый узел при любом его состоянии; запас для будущего монтажа уменьшится.'],
@@ -288,7 +289,7 @@ A common failure could kill people and leave the ship on emergency cooling alone
       text: {
         ru: s => `Через двое суток после подключения коллектор расходится по трещине. Отказ уходит в общий контур: жилые отсеки остывают раньше, чем их успевают перекрыть.
 
-Погибли ${ppl(s.supplyCrewDead)}. Держит только изолированное аварийное охлаждение зала анабиоза; обычную вахту оно не прокормит.
+${vN(s.supplyCrewDead, ['Погиб', 'Погибли'])} ${ppl(s.supplyCrewDead)}. Держит только изолированное аварийное охлаждение зала анабиоза; обычную вахту оно не прокормит.
 
 Совет решает спать и звать помощь: двенадцать остаются на вахте, сигнал бедствия уходит к колониям и на Землю.`,
         en: s => `Two days after the connection the manifold splits along the crack. The failure spreads into the common loop: the living compartments cool before they can be sealed.
@@ -400,25 +401,25 @@ An ordinary check sees the accessible sections; a defect under variable load may
     {
       id: 'd.overloadCheck', scene: 'ring', kind: 'decision', year: s => Y(s, 0.68), when: s => contactRun(s) && s.groupB === 'woken',
       title: { ru: 'Проверить общую магистраль?', en: 'Check the common main?' },
-      context: { ru: s => `Запас — до года ${Math.round(loopAt(s))}. Проверка тратит его дни.`, en: s => `Reserves last to year ${Math.round(loopAt(s))}. A check spends their days.` },
+      context: { ru: s => `Запас воды — до года ${Math.round(loopAt(s))}; каждый день проверки идёт из него.`, en: s => `Water lasts to year ${Math.round(loopAt(s))}; every day of checking comes out of it.` },
       rec: s => ({ id: 'ordinary', why: { ru: 'обычная проверка по регламенту', en: 'the ordinary check, by the rules' } }),
       options: s => [
         { id: 'ordinary', label: { ru: 'Обычная проверка', en: 'An ordinary check' },
-          known: { ru: [`Материалы −${LOOP.ordinary.cost}%, ${LOOP.ordinary.days} суток.`, 'Видит доступные участки: дефект под нагрузкой находит примерно в половине случаев.'],
+          known: { ru: [`Материалы −${LOOP.ordinary.cost}%, ${LOOP.ordinary.days} ${plural(LOOP.ordinary.days, ['сутки', 'суток', 'суток'])}.`, 'Видит доступные участки: дефект под нагрузкой находит примерно в половине случаев.'],
             en: [`Materials −${LOOP.ordinary.cost}%, ${LOOP.ordinary.days} days.`, 'Sees the accessible sections: finds a defect under load about half the time.'] },
           cost: st => { st.materials -= LOOP.ordinary.cost; },
           effect: st => { st.materials -= LOOP.ordinary.cost; st.loopCheck = 'ordinary'; st.loopFound = loopCommon(st) && (hidden(st, 'contact.loop.access') ?? 1) < LOOP.ordinary.sense; },
           record: { ru: s => s.loopFound ? 'Неделя проверок. На стыке колец — трещина в общей магистрали: под нагрузкой она раскрывается.' : 'Неделя проверок. На доступных участках дефектов нет.',
             en: s => s.loopFound ? 'A week of checks. At the junction of the rings, a crack in the common main: it opens under load.' : 'A week of checks. No defects in the accessible sections.' } },
         { id: 'deep', label: { ru: 'Вскрыть магистраль', en: 'Open up the main' },
-          known: { ru: [`Материалы −${LOOP.deep.cost}%, ${LOOP.deep.days} суток: шесть недель из двух лет запаса.`, 'Находит дефект в девяти случаях из десяти.'],
+          known: { ru: [`Материалы −${LOOP.deep.cost}%, ${LOOP.deep.days} ${plural(LOOP.deep.days, ['сутки', 'суток', 'суток'])}: шесть недель из двух лет запаса.`, 'Находит дефект в девяти случаях из десяти.'],
             en: [`Materials −${LOOP.deep.cost}%, ${LOOP.deep.days} days: six weeks out of the two years of reserves.`, 'Finds a defect nine times in ten.'] },
           cost: st => { st.materials -= LOOP.deep.cost; },
           effect: st => { st.materials -= LOOP.deep.cost; st.loopCheck = 'deep'; st.loopFound = loopCommon(st) && (hidden(st, 'contact.loop.access') ?? 1) < LOOP.deep.sense; },
           record: { ru: s => s.loopFound ? 'Шесть недель. Магистраль вскрыта на стыке колец: трещина, которая раскрывается под нагрузкой.' : 'Шесть недель. Магистраль вскрыта по всей длине; дефектов не найдено.',
             en: s => s.loopFound ? 'Six weeks. The main is opened at the junction of the rings: a crack that opens under load.' : 'Six weeks. The main is opened along its length; no defects found.' } },
         { id: 'skip', label: { ru: 'Не проверять', en: 'No check' },
-          known: { ru: ['Ни материалов, ни дней.', 'Исправна ли магистраль — не известно.'], en: ['No materials, no days.', 'Whether the main is sound is unknown.'] },
+          known: { ru: ['Ни материалов, ни дней.', 'Исправна ли магистраль — неизвестно.'], en: ['No materials, no days.', 'Whether the main is sound is unknown.'] },
           effect: st => { st.loopCheck = 'skipped'; },
           record: { ru: 'Совет решает не тратить запас на проверку.', en: 'The council decides not to spend the reserves on a check.' } }
       ].filter(o => !LOOP[o.id] || s.materials >= LOOP[o.id].cost)
@@ -447,8 +448,8 @@ An ordinary check sees the accessible sections; a defect under variable load may
           effect: st => { st.overload = 'materials'; st.materials -= LOOP.materials; },
           record: { ru: 'Второй контур воды собирают полгода — из того, что везли строить дом.', en: 'The second water loop takes half a year to build — from what they were carrying to build a home.' } }] : [])
       .concat([{ id: 'hold', label: { ru: 'Тянуть на запасе', en: 'Run on the reserve' },
-          known: { ru: s => ['Ни циклов, ни материалов.', s.loopFound ? 'Магистраль повреждена: под нагрузкой она откажет до конца запаса.' : 'Если магистраль исправна, за два года её успеют довести до нормы. Если нет — отказ в обоих кольцах.'],
-            en: s => ['No cycles, no materials.', s.loopFound ? 'The main is damaged: under load it will fail before the reserves run out.' : 'If the main is sound, it can be brought up to standard within two years. If not, it fails in both rings.'] },
+          known: { ru: s => ['Ни циклов, ни материалов.', s.loopFound ? 'Магистраль повреждена: под нагрузкой она откажет до конца запаса.' : 'Если магистраль исправна, за два года жизнеобеспечение успеют довести до нормы. Если нет — отказ в обоих кольцах.'],
+            en: s => ['No cycles, no materials.', s.loopFound ? 'The main is damaged: under load it will fail before the reserves run out.' : 'If the main is sound, life support can be brought up to standard within two years. If not, it fails in both rings.'] },
           effect: st => { st.overload = 'hold'; },
           record: { ru: 'Совет решает тянуть на запасе.', en: 'The council decides to run on the reserve.' } }])
     },
@@ -459,7 +460,7 @@ An ordinary check sees the accessible sections; a defect under variable load may
       title: { ru: s => s.loopDead ? 'Медицинский журнал · отказ контура' : 'Инженерный журнал · контур', en: s => s.loopDead ? 'Medical log · the loop fails' : 'Engineering log · the loop' },
       text: {
         ru: s => !s.loopDead ? 'Два года на запасе. Общую магистраль довели до нормы; давление держится. Группа Б остаётся на вахте.'
-          : `Общая магистраль отказала в обоих кольцах сразу. Группа Б и одиннадцать человек вахты погибли, пока остальные перекрывали кольца. На вахте осталось ${ppl(s.watch)}.` + (s.loopFound ? '\nДефект был найден до решения.' : s.loopCheck === 'skipped' ? '\nМагистраль не проверяли.' : '\nПроверка дефекта не нашла.'),
+          : `Общая магистраль отказала в обоих кольцах сразу. Группа Б и одиннадцать человек вахты погибли, пока остальные перекрывали кольца. На вахте ${vN(s.watch, ['остался', 'осталось'])} ${ppl(s.watch)}.` + (s.loopFound ? '\nДефект был найден до решения.' : s.loopCheck === 'skipped' ? '\nМагистраль не проверяли.' : '\nПроверка дефекта не нашла.'),
         en: s => !s.loopDead ? 'Two years on the reserve. The common main has been brought up to standard; the pressure holds. Group B stays on watch.'
           : `The common main failed in both rings at once. Group B and eleven of the watch died while the others sealed the rings. ${s.watch} people remain on watch.` + (s.loopFound ? '\nThe defect had been found before the decision.' : s.loopCheck === 'skipped' ? '\nThe main had not been checked.' : '\nThe check had found no defect.')
       }
@@ -474,10 +475,10 @@ An ordinary check sees the accessible sections; a defect under variable load may
       text: {
         ru: s => `Кольцо присылает чертёж капельного радиатора: струя капель вместо панелей, в сотни раз легче. ${ownStory(s) ? 'Наш контур пока справляется; Ирсон кладёт чертёж к схемам охлаждения.' : 'Он решил бы задачу Ирсона сразу.'}
 
-` + (BLUEPRINT[eqOf(s).prod] ? `Станки на борту есть: ${M.eqOpt('prod', eqOf(s).prod).ru.toLowerCase()}. Вопрос — материалы и руки с допуском.` : 'Построить его на борту нечем: нет воспроизводящего производства. Ирсон кладёт чертёж в архив с пометкой «для тех, у кого будут станки».'),
+` + (BLUEPRINT[eqOf(s).prod] ? `Станки на борту есть. Вопрос — материалы и руки с допуском.` : 'Построить его на борту нечем: нет воспроизводящего производства. Ирсон кладёт чертёж в архив с пометкой «для тех, у кого будут станки».'),
         en: s => `The Ring sends a design for a droplet radiator: a stream of droplets instead of panels, hundreds of times lighter. ${ownStory(s) ? 'Our loop copes for now; Irson files the design with the cooling diagrams.' : "It would have solved Irson's problem at once."}
 
-` + (BLUEPRINT[eqOf(s).prod] ? `There are machine tools aboard: ${M.eqOpt('prod', eqOf(s).prod).en.toLowerCase()}. The question is materials and qualified hands.` : 'There is nothing to build it with aboard: no reproducing industry. Irson files the design with a note: "for those who will have machine tools".')
+` + (BLUEPRINT[eqOf(s).prod] ? `There are machine tools aboard. The question is materials and qualified hands.` : 'There is nothing to build it with aboard: no reproducing industry. Irson files the design with a note: "for those who will have machine tools".')
       }
     },
     {
@@ -563,16 +564,16 @@ No one knows why. The watch logs the silence and keeps listening.` + (s.highPowe
           id: 'search',
           label: { ru: 'Искать: обсерватория, люди, энергия', en: 'Search: observatory, people, power' },
           known: {
-            ru: s => [reader(s, 'ru') ? `Слабый тепловой след прочтёт ${reader(s, 'ru')}.` : 'Слабые спектры читать некому: искать будут вслепую.', 'Материалы для высадки −5%: детали приёмника. Исследования цели — на год позже.'],
+            ru: s => [reader(s, 'ru') ? `Слабый тепловой след ${s.taught ? 'прочтут' : 'прочтёт'} ${reader(s, 'ru')}.` : 'Слабые спектры читать некому: искать будут вслепую.', 'Материалы для высадки −5%: детали приёмника. Исследования цели — на год позже.'],
             en: s => [reader(s, 'en') ? `A faint heat trace can be read by ${reader(s, 'en')}.` : 'No one can read faint spectra: the search will be blind.', 'Landing materials −5%: receiver parts. Target research slips a year.']
           },
           effect: st => { st.materials -= 5; if (!st.preview) st.support = reader(st, 'ru') ? 'found' : 'lost'; },
           record: {
             ru: s => s.support === 'found'
-              ? `Через одиннадцать месяцев ${reader(s, 'ru')} находит поддержку по тепловому следу. Корабль цел: отказал привод антенны. По нашему вызову экипаж будят; антенну чинят за неделю. Встреча — как назначено.`
+              ? `Через одиннадцать месяцев ${reader(s, 'ru')} ${s.taught ? 'находят' : 'находит'} поддержку по тепловому следу. Корабль цел: отказал привод антенны. По нашему вызову экипаж будят; антенну чинят за неделю. Встреча — как назначено.`
               : 'Год поиска ничего не дал: слабый след теряется в шуме, прочесть его некому. Поддержку продолжают слушать.',
             en: s => s.support === 'found'
-              ? `Eleven months later ${reader(s, 'en')} finds the support ship by its heat trace. The ship is intact: the antenna drive failed. At our call its crew is woken; the antenna is fixed in a week. The rendezvous stands.`
+              ? `Eleven months later ${reader(s, 'en')} ${s.taught ? 'find' : 'finds'} the support ship by its heat trace. The ship is intact: the antenna drive failed. At our call its crew is woken; the antenna is fixed in a week. The rendezvous stands.`
               : 'A year of searching gives nothing: the faint trace is lost in the noise, and no one can read it. They keep listening.'
           }
         },

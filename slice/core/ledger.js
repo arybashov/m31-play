@@ -5,8 +5,8 @@
   const ledger = __core => {
     let CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, groupsDecided, hasIR,
     hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance,
-    simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn;
-    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, groupsDecided, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, wearDecision, wearSync, yrs, yrsEn } = __core); };
+    simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, vN, wearDecision, wearSync, yrs, yrsEn;
+    const __link = () => { ({ CAL, DV, EV, INCIDENT_NAME, M, SH, Y, arrivalAt, arrivalYear, arriveView, brake, breached, crewOf, dvPct, eqOf, f1, gauges, groupsDecided, hasIR, hidden, incYear, kms0, lag, lossesOf, nameAt, nf, observeShip, pct, plural, powerOK, ppl, probesLeft, rescueS, serviceDecision, simAdvance, simNotes, simReport, spendPct, src, storeNow, supplyS, taskName, terminalBeat, vAt, vN, wearDecision, wearSync, yrs, yrsEn } = __core); };
     __link();
 
   // ---- журнал запасов и людей, ревизии маршрута (DOC «Долгий рейс — износ и смена курса», шаг 1).
@@ -62,12 +62,12 @@
   const endHeadline = (s, id, lang) => {
     const ru = lang === 'ru', kicker = ru ? 'Итог экспедиции' : 'Expedition outcome', yr = y => ru ? `год ${Math.floor(y)}` : `year ${Math.floor(y)}`;
     const lost = [...(s.incidents || [])].reverse().find(x => x.lost);
-    if (id === 'x.lost' && lost) return { kicker, lines: [ru ? `На борту было ${ppl(lost.aboard)}` : `${lost.aboard} were aboard`, yr(lost.year)] };
+    if (id === 'x.lost' && lost) return { kicker, lines: [ru ? `На борту ${vN(lost.aboard, ['был', 'было'])} ${ppl(lost.aboard)}` : `${lost.aboard} were aboard`, yr(lost.year)] };
     if (/^x\.sos\./.test(id) && s.incident) return { kicker, lines: [ru ? `В капсулах — ${ppl(s.incident.sleepers)}, на вахте — ${s.incident.watch}` : `${s.incident.sleepers} in the capsules, ${s.incident.watch} on watch`,
       ru ? `сигнал бедствия — ${yr(s.incident.sent)}` : `distress signal — ${yr(s.incident.sent)}`] };
     if (id === 'e.end' && s.arrive) {
       const road = lossesOf(s, arrivalAt(s)).total + s.dead, lines = [ru ? `Позади ${yrs(Yepi(s))}` : `${yrsEn(Yepi(s))} behind`];
-      if (s.mission === 'rescue' && s.rescued) lines.push(ru ? `спасены ${ppl(s.rescued)} из Оттепели` : `${s.rescued} saved from Thaw`);
+      if (s.mission === 'rescue' && s.rescued) lines.push(ru ? `${vN(s.rescued, ['спасён', 'спасены'])} ${ppl(s.rescued)} из Оттепели` : `${s.rescued} saved from Thaw`);
       if (s.mission === 'contact' && s.task) { const n = taskName(s.task, lang);
         lines.push(s.task.done ? (ru ? `задание выполнено: ${n}` : `task done: ${n}`) : (ru ? `задание не выполнено: ${n}` : `task not done: ${n}`)); }
       lines.push(ru ? `погибли в пути — ${road}, у цели — ${s.deadHere}` : `died on the road — ${road}, at the target — ${s.deadHere}`);
@@ -122,8 +122,10 @@
   function gaugeDiff(a, b, lang) {
     const A = gauges(a, lang), B = gauges(b, lang), sign = x => (x > 0 ? '+' : '−') + (Math.abs(x) % 1 ? pct(Math.abs(x), lang) : Math.abs(x));
     return B.filter(g => { const o = A.find(x => x.id === g.id); return !o || o.value !== g.value; })
-      .map(g => { const o = A.find(x => x.id === g.id); const d = o && g.n !== undefined && o.n !== undefined ? g.n - o.n : 0;
-        return `${g.label} ${g.value}` + (d ? ` (${sign(d)})` : ''); });
+      .map(g => { const o = A.find(x => x.id === g.id); const d = o && g.n !== undefined && o.n !== undefined ? g.n - o.n : 0, colon = lang === 'ru' ? '' : ':';
+        // малое изменение резерва (меньше 0,05%) — в км/с; иначе — в единицах шкалы, рядом с ней
+        if (d && g.k != null && o.k != null && Math.abs(d) < 0.05) return `${g.label}${colon} ${g.head} (${sign(Math.round((g.k - o.k) * 10) / 10)} ${lang === 'ru' ? 'км/с' : 'km/s'})${g.tail}`;
+        return `${g.label}${colon} ${g.head || g.value}` + (d ? ` (${sign(d)}${g.unit || ''})` : '') + (g.tail || ''); });
   }
   const stageYears = s => brake(s) + M.brakeDist(s.beta, s.tMag) / s.beta - M.ACC;   // от отделения ступени до прохода цели
   const stagePass = s => M.ACC + stageYears(s);
@@ -185,7 +187,7 @@
 Последняя запись журнала — голос женщины: тем, кто придёт, — не вскрывать корпус.`
       : `${lead} the ship past the pair of dwarfs — the source of the signal. The road to ε Indi A comes no closer to them than ${DARK.side} AU: the pair lies off to the side. ${stop}
 
-In the infrared telescopes the dwarfs are two faint points. The disc cannot be seen from here by any instrument: four hundred metres at this distance is millionths of an arcsecond. But both beacons are heard — the disc's and the Thirty-Second's ship's. Radio from the pair takes more than eight days.
+In the infrared telescopes the dwarfs are two faint points. The disc cannot be seen from here by any instrument: four hundred metres at this distance is millionths of an arcsecond. But both beacons are heard — the disc's and the Thirty-Second's. Radio from the pair takes more than eight days.
 
 The Thirty-Second's beacon, on isotope power, sends their log round and round; within a few days it is received in full. The log holds their own pictures: a disc-shaped hull about four hundred metres across, dead for millions of years, with spiral ridges across its surface, and a welded cut on one of the ridges. ${log}
 
@@ -217,7 +219,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
   const canEvade = s => s.reserve >= streamDv(s);
   const streamLate = s => (s.streamDays || 0) + burnDays(s) > streamWin(s);   // граница включительна: ровно по окну — вовремя
   const windowLine = (s, lang) => { const ru = lang === 'ru', d = s.streamDays || 0, bd = s.highPower ? (ru ? '6 часов' : '6 hours') : (ru ? '12 суток' : '12 days'), W = streamWin(s), over = d + burnDays(s) - W;
-    return ru ? `Окно — ${days(win(s), 'ru')}: прошло ${d}, манёвр — ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : ' Успеваем.')
+    return ru ? `Окно — ${days(win(s), 'ru')}: ${d ? `прошло ${days(d, 'ru')}` : 'отсчёт только начался'}, манёвр — ${bd}.` + (over > 0 ? ` Не успеваем на ${Math.ceil(over)} сут.` : ' Успеваем.')
       : `Window: ${days(win(s), 'en')} — ${d} gone, manoeuvre ${bd}.` + (over > 0 ? ` Too late by ${Math.ceil(over)} days.` : ' In time.'); };
   // проверка у потока даёт сведения; маршрут — отдельным решением (d.streamRoute)
   function streamCheckEffect(st, k) {
@@ -233,7 +235,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
     const out = [{
       id: 'probe', label: { ru: 'Зонд Тамира', en: "Tamir's probe" },
       known: {
-        ru: s => [probesLeft(s) ? 'Готовый зонд: прямые детекторы, без трат материалов.' : 'Зонд из материалов для высадки: −5% запаса.', `${checkDays(s, 'probe')} суток: прямые детекторы видят опасную полосу ${pctFrom(STREAM.sense.probe, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
+        ru: s => [probesLeft(s) ? 'Готовый зонд: прямые детекторы, без трат материалов.' : 'Зонд из материалов для высадки: −5% запаса.', `${days(checkDays(s, 'probe'), 'ru')}: прямые детекторы видят опасную полосу ${pctFrom(STREAM.sense.probe, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
         en: s => [probesLeft(s) ? 'A ready probe: direct detectors, no materials spent.' : 'A probe from landing materials: −5% of stock.', `${checkDays(s, 'probe')} days: direct detectors see the dangerous band ${pctFrom(STREAM.sense.probe, 'en')}.`, 'Whether to leave is decided on the result.']
       },
       cost: st => { if (!probesLeft(st)) st.materials -= 5; },
@@ -242,7 +244,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
     }].filter(o => probeOK(s)).concat([{
       id: 'kora', label: { ru: 'Разбудить Кору', en: 'Wake Kora' },
       known: {
-        ru: s => ['Её последнее пробуждение: у цели Кору будить будет нельзя.', `${checkDays(s, 'kora')} суток: Кора видит опасную полосу ${pctFrom(STREAM.sense.kora, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
+        ru: s => ['Её последнее пробуждение: у цели Кору будить будет нельзя.', `${days(checkDays(s, 'kora'), 'ru')}: Кора видит опасную полосу ${pctFrom(STREAM.sense.kora, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
         en: s => ['Her last waking: at the target Kora cannot be woken again.', `${checkDays(s, 'kora')} days: Kora sees the dangerous band ${pctFrom(STREAM.sense.kora, 'en')}.`, 'Whether to leave is decided on the result.']
       },
       effect: st => { st.koraLast = true; st.koraAwake += 1; streamCheckEffect(st, 'kora'); },
@@ -251,7 +253,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
     if (s.taught || s.koraYear) out.push({
       id: 'student', label: { ru: s => s.taught ? 'Разбудить учеников Коры' : 'Разбудить Наю Сорн', en: s => s.taught ? "Wake Kora's students" : 'Wake Naya Sorn' },
       known: {
-        ru: s => ['Кора остаётся для цели.', `${checkDays(s, 'student')} суток: видят опасную полосу ${pctFrom(STREAM.sense.student, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
+        ru: s => ['Кора остаётся для цели.', `${days(checkDays(s, 'student'), 'ru')}: видят опасную полосу ${pctFrom(STREAM.sense.student, 'ru')}.`, 'Решать, уходить ли, — по результату.'],
         en: s => ['Kora is kept for the target.', `${checkDays(s, 'student')} days: they see the dangerous band ${pctFrom(STREAM.sense.student, 'en')}.`, 'Whether to leave is decided on the result.']
       },
       effect: st => { streamCheckEffect(st, 'student'); },
@@ -287,7 +289,7 @@ The log's last entry is a woman's voice: to those who come after — do not open
         : (w.residual <= 0 ? `panel ${w.panel} has an open hole — the core dust goes straight into the compartment` : `panel ${w.panel} has ${nf(w.residual, 1, 'en')} kg/m², and the stream's core removes up to ${nf(cl, 1, 'en')}`));
     } else if (breached(s)) r.push(ru ? 'сектор щита, пробитый у облака, держит меньше' : 'the shield sector breached at the cloud holds less');
     if (!s.highPower) r.push(ru ? 'без полного контура быстро уйти из потока нельзя' : 'without the full loop there is no quick way out of the stream');
-    return r.length ? (ru ? 'Если поток ударит: ' : 'If the stream hits: ') + r.join('; ') + '.' : (ru ? 'Если поток ударит — щит цел, контур полный.' : 'If the stream hits — the shield is whole, the loop full.'); };                   // в комплекте два зонда: один остаётся всегда
+    return r.length ? (ru ? 'Если поток ударит: ' : 'If the stream hits: ') + r.join('; ') + '.' : (ru ? 'Если поток ударит, корабль встретит его с целым щитом и полным контуром.' : 'If the stream hits, the ship meets it with a whole shield and a full loop.'); };                   // в комплекте два зонда: один остаётся всегда
   const bad = w => ['hostile', 'ruined', 'none'].includes(w);
   // Акт IV: мир пригоден для высадки (открытый или под куполами); иначе дом — на орбите, спутниках или в пути
   const livable = s => s.mission !== 'supply' && ['open', 'dome'].includes(M.worldOf(s.target));
@@ -349,12 +351,14 @@ The log's last entry is a woman's voice: to those who come after — do not open
   function lastCall(s, lang) {
     const c = s.choices, ru = lang === 'ru', E = s.earlyCouncil;
     const why = E && (E.family === 'signal' ? (ru ? 'сообщения об источнике' : 'the report on the source') : (ru ? 'новых сведений о мирах' : 'new information on the worlds'));
-    if (E && E.choice === 'turn') return ru ? `смену курса с ${nameAt(E.from, 'ru')} на ${nameAt(E.to, 'ru')} после ${why}` : `the course change from ${M.nameOf(E.from, 'en')} to ${M.nameOf(E.to, 'en')} after ${why}`;
-    if (c['d.cloud'] === 'trust') return ru ? 'доверие модели у края облака и полтора года щита' : 'trusting the model at the cloud edge, and a year and a half of shield';
+    if (E && E.choice === 'turn') return ru ? `смена курса с ${nameAt(E.from, 'ru')} на ${nameAt(E.to, 'ru')} после ${why}` : `the course change from ${M.nameOf(E.from, 'en')} to ${M.nameOf(E.to, 'en')} after ${why}`;
+    if (c['d.cloud'] === 'trust') { const h = s.cloudHit, d = s.cloudDead || 0;
+      return ru ? `доверие модели у края облака — ${!h ? 'и то, что край оказался чистым' : d ? `и ${d} ${plural(d, ['погибший', 'погибших', 'погибших'])}` : 'и удар, который выдержал щит'}`
+        : `trusting the model at the cloud edge — ${!h ? 'and the edge turned out clean' : d ? `and the ${d} dead` : 'and a strike the shield withstood'}`; }
     if (c['d.cloud'] === 'manoeuvre') return ru ? 'манёвр у облака и то, чем за него заплатили' : 'the manoeuvre at the cloud and what it cost';
     if (c['d.scout'] === 'launch') return ru ? 'зонд, отправленный вперёд' : 'the probe sent ahead';
     if (c['d.scout'] === 'keep') return ru ? 'зонд, который не стали строить' : 'the probe that was not built';
-    if (c['d.long']) return ru ? `вахту в ${ppl(s.watch)}` : `a watch of ${s.watch}`;
+    if (c['d.long']) return ru ? `вахта в ${ppl(s.watch)}` : `a watch of ${s.watch}`;
     if (E) return ru ? `решение держать курс после ${why}` : `the decision to hold the course after ${why}`;
     return ru ? 'курс, выбранный на Земле' : 'the course chosen on Earth';
   }

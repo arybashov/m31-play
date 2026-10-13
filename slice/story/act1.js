@@ -6,7 +6,8 @@
     const {
       CLOUD, DV, M, NEWS, W, bandBreach, bandHit, brake, cloudBand, crewOf, crewWord, dvPct, edgeLogV5, edgeMonths, edgeOut, eqOf, f1, fb, hasScouts,
       hidden, kms, nameAt, newsCandidates, newsPlan, newsText, nm, nmD, pct, plural, ppl, probeTimes, regHands, reqOf, rescueS, shieldGaugeV5,
-      sleepersAt2, spendPct, stageOff, stageYears, stayOption, taskLabel, thinWatch, turnOption, yrs, yrsEn, yrsG
+      sleepersAt2, spendPct, stageOff, stageYears, stayOption, taskLabel, thinWatch, turnOption, yrs, yrsEn, yrsG,
+      nmG
     } = K;
     return [
     // ------------------------------------------------------------ АКТ I
@@ -42,7 +43,7 @@ For months Earth still shows as a disc in the observatory telescope, and there i
 
 — Не знаю.
 
-После урока Кора не выключает проектор. Она знает, что его нельзя удерживать силой. И думает, как удержать.`,
+После урока Кора не выключает проектор. Она знает, что Дана нельзя удержать силой. И думает, как удержать.`,
         en: `Eleven students. Halfway through the session the projector dies.
 
 "We'll call a technician," says Kora Landis.
@@ -61,7 +62,7 @@ After the lesson Kora leaves the projector on. She knows he can't be held by for
     { id: 's.y2', kind: 'skip', toYear: 2, label: { ru: 'Промотать до года 2', en: 'Skip ahead to year 2' } },
     {
       id: 'a1.queue', illus: 'ring-council', scene: 'ring', kind: 'transcript', year: 2,
-      title: { ru: 'Первый совет смены', en: 'First watch council' },
+      title: { ru: 'Первый Совет смен', en: 'The first Shift Council' },
       text: {
         ru: `Ива Лорн выводит на панель очередь пробуждений.
 
@@ -95,8 +96,8 @@ Feb Irson, the chief engineer, doesn't look up from his list.
       id: 'd.queue', scene: 'ring', kind: 'decision', year: 2,
       title: { ru: 'Кому отдать места в первой вахте?', en: 'Who gets the places on the first watch?' },
       context: {
-        ru: 'Решает совет смены. Годы бодрствования не возвращаются.',
-        en: 'The watch council decides. Waking years do not come back.'
+        ru: 'Решает Совет смен. Годы бодрствования не возвращаются.',
+        en: 'The Shift Council decides. Waking years do not come back.'
       },
       options: [
         {
@@ -164,12 +165,12 @@ For the first time the ship is empty. In the rings you can hear the ventilation 
       text: {
         ru: `Тея Марр показывает совету поддоны с рассадой.
 
-— Резервный агромодуль монтируем в окно без тяги на шестом году. К концу разгона — свежие овощи. Первый урожай — детям вахты.
+— Штатный агромодуль монтируем в окно без тяги на шестом году. К концу разгона — свежие овощи. Первый урожай — детям вахты.
 
 На поддонах подписаны имена.`,
         en: `Teya Marr shows the council trays of seedlings.
 
-"We mount the backup agro module in the no-thrust window in year six. By the end of acceleration — fresh vegetables. The first harvest goes to the watch's children."
+"We mount the standard agro module in the no-thrust window in year six. By the end of acceleration — fresh vegetables. The first harvest goes to the watch's children."
 
 The trays have names on them.`
       }
@@ -186,7 +187,7 @@ The trays have names on them.`
       title: { ru: 'Новые сведения · совет о курсе', en: 'New information · course council' },
       context: {
         ru: s => `Пакет Кольца изменил то, что мы знаем. Курс можно сменить до отделения ступени — к звезде другой заявки; прежнее задание тогда снимается с программы. Наше задание сейчас — ${reqOf(s) ? taskLabel(reqOf(s), 'ru') : '—'}.`,
-        en: s => `The Ring's packet has changed what we know. The course can change before stage separation — to the star of another request; the old task then comes off the programme. Our task now — ${reqOf(s) ? taskLabel(reqOf(s), 'en') : '—'}.`
+        en: s => `The Ring's packet has changed what we know. The course can change before stage separation — to the star of another request; the old task then comes off the programme. Our task now — ${reqOf(s) ? taskLabel(reqOf(s), 'en').replace(/^The /, 'the ') : '—'}.`
       },
       options: s => newsCandidates(s).map(turnOption).concat([stayOption])
     },
@@ -213,20 +214,20 @@ Not established: the largest particle size at the edge. Behind the forward shiel
     {
       id: 'a1.recheck', scene: 'cloud', overlay: 'trajectory', kind: 'transcript', year: 4,
       when: s => M.episode(s) === 'cloud',
-      title: { ru: 'Совет смены · облако на курсе', en: 'Watch council · cloud on course' },
+      title: { ru: 'Совет смен · облако на курсе', en: 'Shift Council · cloud on course' },
       text: {
-        ru: `— Протокол для класса D2 требует ручной проверки, — говорит Орин Дал. — Плотность нити у края у меня на шесть процентов выше, чем у модели. Спектр с такого расстояния не различает, мелкая там пыль или крупная. Мелкая — ничего. Крупная — полтора года ресурса щита.
+        ru: s => `— Протокол для класса D2 требует ручной проверки, — говорит Орин Дал. — Плотность нити у края у меня на шесть процентов выше, чем у модели. Спектр с такого расстояния не различает, мелкая там пыль или крупная. Мелкая — ничего. Крупная — пробьёт щит.
 
 — А манёвр? — спрашивает Дассер.
 
-— Обход края. Три процента резерва — это одна плановая коррекция у цели. И манёвр сдвигает окна без тяги.
+— Обход края. ${f1(3.2 * 0.01 / s.reserveDv, 'ru')}% резерва — это одна плановая коррекция у цели. И манёвр сдвигает окна без тяги.
 
 Тея Марр, стоящая у двери, понимает раньше остальных, что это значит для рассады.`,
-        en: `"The protocol for class D2 requires a manual check," says Orin Dal. "My density for the filament at the edge is six percent above the model's. At this range the spectrum can't tell whether the dust is fine or coarse. Fine means nothing. Coarse means a year and a half of the shield's life."
+        en: s => `"The protocol for class D2 requires a manual check," says Orin Dal. "My density for the filament at the edge is six percent above the model's. At this range the spectrum can't tell whether the dust is fine or coarse. Fine means nothing. Coarse means it breaks through the shield."
 
 "And the manoeuvre?" Dasser asks.
 
-"We go around the edge. Three percent of reserve — one planned correction at the target. And the manoeuvre moves the no-thrust windows."
+"We go around the edge. ${f1(3.2 * 0.01 / s.reserveDv, 'en')}% of reserve — one planned correction at the target. And the manoeuvre moves the no-thrust windows."
 
 Teya Marr, standing by the door, understands before anyone else what that means for the seedlings.`
       }
@@ -238,12 +239,12 @@ Teya Marr, standing by the door, understands before anyone else what that means 
       text: {
         ru: s => `— Проверить можно, — говорит ${s.koraYear ? 'Кора' : 'Ная Сорн'}. — Край облака пройдёт перед фоновой звездой. Крупная пыль гасит её свет сильнее, чем мелкая.
 
-${s.koraYear ? 'Кора на вахте ещё год: наблюдение и разбор — две недели.' : 'Коры на вахте нет; Ная справится одна, но медленнее — три недели.'} Детекторы придётся калибровать из материалов для высадки.
+${s.koraYear ? 'Кору будят на две недели: наблюдение и разбор она ведёт вместе с Наей.' : 'Коры на вахте нет; Ная справится одна, но медленнее — три недели.'} Детекторы придётся калибровать из материалов для высадки.
 
 — Узкую полосу метод может пропустить, — добавляет ${s.koraYear ? 'Кора' : 'Ная'}. — Если звезда погаснет по модели, это не значит, что полосы нет. Это значит, что мы её не увидели.`,
         en: s => `"There's a way to check," says ${s.koraYear ? 'Kora' : 'Naya Sorn'}. "The cloud's edge will pass in front of a background star. Coarse dust dims its light more than fine."
 
-${s.koraYear ? 'Kora is on watch for another year: observation and analysis take two weeks.' : 'Kora is not on watch; Naya can do it alone, but slower — three weeks.'} The detectors will have to be calibrated from the landing materials.
+${s.koraYear ? 'Kora is woken for two weeks: she and Naya run the observation and analysis.' : 'Kora is not on watch; Naya can do it alone, but slower — three weeks.'} The detectors will have to be calibrated from the landing materials.
 
 "The method can miss a narrow band," ${s.koraYear ? 'Kora' : 'Naya'} adds. "If the star dims as the model says, that doesn't mean there's no band. It means we didn't see it."`
       }
@@ -298,7 +299,7 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
           known: {
             ru: s => [`Резерв манёвров: −${f1(3.2 * 0.01 / s.reserveDv, 'ru')}% паспортного — одна плановая коррекция у цели.`,
               s.repairQual ? 'Ремонтники с допуском смонтируют агромодуль под тягой — урожай не сдвинется.'
-                           : 'Монтаж агромодуля уходит на два года: рассада Теи не дождётся модуля.',
+                           : 'Монтаж агромодуля сдвигается на два года: рассада Теи не дождётся модуля.',
               s.measured ? 'Край, по измерению, опасен: манёвр обходит известный риск.' : 'Была ли опасность, скорее всего, так и не узнаем.'],
             en: s => [`Manoeuvre reserve: −${f1(3.2 * 0.01 / s.reserveDv, 'en')}% of rated — one planned correction at the target.`,
               s.repairQual ? 'The qualified repair crew mounts the agro module under thrust — the harvest keeps its date.'
@@ -357,16 +358,16 @@ ${s.koraYear ? 'Kora is on watch for another year: observation and analysis take
       text: {
         ru: s => (hasScouts(s) ? `Феб Ирсон открывает на столе паспорт груза: два зонда-разведчика в трюме, заправленные и собранные.` : `Феб Ирсон кладёт на стол чертёж: сбрасываемый бак ступени, малый термоядерный двигатель из запасных частей, спектрометр.`) + `
 
-— Мы идём к ${nmD(s)} и всё равно придём через ${yrs(s.arrive - 4)}. Зонд не тормозит: он пройдёт систему насквозь за сутки и пришлёт спектры планет лет за сорок до нас.
+— Мы идём к ${nmD(s)} и всё равно придём через ${yrs(s.arrive - 4)}. Зонд не тормозит: он пройдёт систему насквозь за сутки и пришлёт спектры планет за несколько десятилетий до нас.
 
-— Сорок лет знать, куда садиться, — говорит Тея Марр. — Или сорок лет гадать.
+— Десятилетия знать, куда садиться, — говорит Тея Марр. — Или десятилетия гадать.
 
 ` + (hasScouts(s) ? `— Зонд взяли для этого, — говорит Ирсон. — Вопрос только, когда пускать.` : `— Цена — материалы для высадки, — говорит Ирсон. — Каждый килограмм зонда — из запаса на посадочные модули.`),
         en: s => (hasScouts(s) ? `Feb Irson opens the cargo passport on the table: two scout probes in the hold, fuelled and assembled.` : `Feb Irson lays a drawing on the table: a drop tank from the stage, a small fusion motor from spares, a spectrometer.`) + `
 
-"We're going to ${nm(s, 'en')} and we'll still arrive in ${yrsEn(s.arrive - 4)}. A probe doesn't brake: it crosses the system in a day and sends planetary spectra some forty years ahead of us."
+"We're going to ${nm(s, 'en')} and we'll still arrive in ${yrsEn(s.arrive - 4)}. A probe doesn't brake: it crosses the system in a day and sends planetary spectra decades ahead of us."
 
-"Forty years of knowing where to land," says Teya Marr. "Or forty years of guessing."
+"Decades of knowing where to land," says Teya Marr. "Or decades of guessing."
 
 ` + (hasScouts(s) ? `"That's what we brought it for," says Irson. "The only question is when to launch."` : `"The price is landing materials," says Irson. "Every kilogram of probe comes out of the stock for the landers."`)
       }
@@ -418,13 +419,13 @@ Default programme: general survey, no line priority.`
               hasScouts(s) ? (s.repairQual ? 'Допуск есть: выпуск под тягой на шестом году; топливо своё.' : 'Допуска нет: выпуск в окне в конце разгона; топливо своё.')
                 : s.repairQual ? 'Допуск есть: сборка под тягой, зонд заправят из баков ступени. Запуск на шестом году.'
                 : `Допуска нет: сборка в окне в конце разгона, когда баки ступени уже пусты. Топливо зонда — из резерва манёвров, −${f1(dvPct(s, DV.probe), 'ru')}%.`,
-              'Спектры планет придут примерно за сорок лет до прибытия.',
+              `Спектры планет придут примерно за ${yrs(s.arrive - probeTimes(s, s.repairQual ? 6 : 8).data)} до прибытия.`,
               s.koraYear ? 'Программа спектрометра — Коры: кислород, вода, метан.' : 'Программа спектрометра — общая, без приоритета линий.'].concat(rescueS(s) ? ['Данные среды помогут проверить торможение; ни состояние склада, ни будущую площадку они не предскажут.'] : []),
             en: s => [hasScouts(s) ? 'Probe from the cargo kit: landing materials intact.' : 'Landing materials: −10% of stock.',
               hasScouts(s) ? (s.repairQual ? 'Qualified: release under thrust in year six; own fuel.' : 'Not qualified: release in the window at the end of acceleration; own fuel.')
                 : s.repairQual ? 'Qualified: assembly under thrust, fuelled from the stage tanks. Launch in year six.'
                 : `Not qualified: assembly in the window at the end of acceleration, when the stage tanks are already empty. Probe fuel from the manoeuvre reserve, −${f1(dvPct(s, DV.probe), 'en')}%.`,
-              'Planetary spectra arrive about forty years before we do.',
+              `Planetary spectra arrive about ${yrsEn(s.arrive - probeTimes(s, s.repairQual ? 6 : 8).data)} before we do.`,
               s.koraYear ? "Spectrometer programme by Kora: oxygen, water, methane." : 'Spectrometer programme: general, no line priority.'].concat(rescueS(s) ? ['Medium data will help check the braking; they predict neither the state of the store nor the future site.'] : [])
           },
           effect: s => { const kit = hasScouts(s); if (!kit) s.materials -= 10; s.scout = s.repairQual ? 6 : 8; if (!s.repairQual && !kit) spendPct(s, dvPct(s, DV.probe)); s.scoutTuned = s.koraYear; },
@@ -472,7 +473,7 @@ Teya Marr puts away her list of seeds for open ground: there is nothing to measu
 
 — Тогда на вахте ${ppl(thinWatch(s.arrive))}. Коридоры колец неделями будут пустыми.
 
-— Тридцать — это каждая авария на тех, кто окажется рядом, — говорит Ирсон.`,
+— При такой вахте каждая авария — на тех, кто окажется рядом, — говорит Ирсон.`,
         en: s => `The physician puts up a calculation that until now was only run for near targets.
 
 "${yrsEn(s.arrive)}. Forty-eight people on watch means each of us lives ${yrsEn(M.awake(s.arrive, 48, crewOf(s)))} on the road, not thirteen as on the short route. We arrive at ${nm(s, 'en')} ${yrsEn(M.awake(s.arrive, 48, crewOf(s)) - 13)} older."
@@ -483,7 +484,7 @@ Iva Lorn looks at the rows of lights in the anabiosis hall.
 
 "Then ${thinWatch(s.arrive)} on watch. The ring corridors will stand empty for weeks."
 
-"Thirty means every accident falls on whoever happens to be near," says Irson.`
+"With a watch that small, every accident falls on whoever happens to be near," says Irson.`
       }
     },
     {
@@ -576,7 +577,7 @@ Lorn enters herself first.`
 
 — Будет, — говорит Дассер.
 
-— Переживём. — Она помолчала. — Запишите, что это вы нам сказали, а не график.
+— Переживём. — Она молчит. — Запишите, что это вы нам сказали, а не график.
 
 Он записывает. Поддоны с именами переезжают на склад.`,
         en: `"Two years," Teya Marr repeats. "So the first drift watch eats dried and preserved food."
@@ -646,12 +647,12 @@ Whether there was a dangerous layer in the edge we will never know.`)
 
 Рассматривается снаряжение лёгкого корабля поддержки вслед экспедиции: ³He, теплообменники, материалы для высадки.
 
-Форпост Ксилона Ир: передатчик теряет мощность. Специалист дальней связи будет отправлен через два года.`,
+Форпост Ксилона Ир: передатчик теряет мощность. Отправка специалиста дальней связи отложена ещё на два года.`,
         en: s => `The Council of Star Navigation confirms the Forty-First Expedition's safe departure for ${nm(s, 'en')}.
 
 A light support ship to follow the expedition is under consideration: ³He, heat exchangers, landing materials.
 
-Xylona Ir outpost: the transmitter is losing power. A deep-relay specialist will be sent in two years.`
+Xylona Ir outpost: the transmitter is losing power. The deep-relay specialist's departure is postponed another two years.`
       }
     },
     {
@@ -661,8 +662,8 @@ Xylona Ir outpost: the transmitter is losing power. A deep-relay specialist will
       text: {
         ru: s => `Зонд отделён от кормы. ${hasScouts(s) ? 'Топливо — своё, из комплекта.' : 'Топливо — из баков ступени разгона.'}
 Собственная тяга: 14 месяцев. Расчётная скорость: ${fb(probeTimes(s, 6).vp, 'ru')}.
-Пролёт ${nm(s, 'ru')}: около года ${probeTimes(s, 6).flyby}. Спектры на борту: около года ${probeTimes(s, 6).data}.
-Программа спектрометра: ${s.scoutTuned ? 'Коры Ландис — кислород, вода, метан, ночная сторона' : 'общий обзор'}.`,
+Пролёт ${nmG(s)}: около года ${probeTimes(s, 6).flyby}. Спектры на борту: около года ${probeTimes(s, 6).data}.
+Программа спектрометра${s.scoutTuned ? ' Коры Ландис: кислород, вода, метан, ночная сторона' : ': общий обзор'}.`,
         en: s => `Probe separated from the stern. ${hasScouts(s) ? 'Own fuel, from the kit.' : 'Fuel from the acceleration-stage tanks.'}
 Own thrust: 14 months. Design velocity: ${fb(probeTimes(s, 6).vp, 'en')}.
 ${nm(s, 'en')} flyby: around year ${probeTimes(s, 6).flyby}. Spectra on board: around year ${probeTimes(s, 6).data}.
@@ -678,11 +679,11 @@ Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, metha
         ru: s => `Тяга ступени разгона снята. Скорость ${fb(s.beta, 'ru')}.
 Ступень разгона отделена. Последние ${stageOff(s).days} ${plural(stageOff(s).days, ['сутки', 'суток', 'суток'])} тяга шла под углом 10°: ступень уходит вбок, ${kms(stageOff(s).dv)} км/с. Ядро погасило свою боковую скорость — резерв манёвров −${pct(stageOff(s).reservePct, 'ru')}%.
 Ступень пройдёт ${nm(s, 'ru')} в тысяче а.е. в стороне около года ${Math.round(M.ACC + stageYears(s))}, за ${yrs(s.arrive - M.ACC - stageYears(s))} до нас, и уйдёт дальше. По прямой она догнала бы ядро в первые сутки торможения и вошла бы в систему цели на ${fb(s.beta, 'ru')}: ${String(M.STAGE_DRY).replace('.', ',')} тыс. т — ${f1(M.stageMt(s.beta), 'ru')} млн мегатонн.
-Плазменный магнит: включение на году ${Math.round(brake(s))}.
+Плазменный магнит: включение в году ${Math.round(brake(s))}.
 Резерв манёвров: ${pct(s.reserve, 'ru')}% паспортного.
 Цель: ${nm(s, 'ru')} · прибытие около года ${s.arrive}.` +
           (s.materials !== 100 ? `\nМатериалы для высадки: ${Math.round(s.materials)}% запаса.` : '') +
-          (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nКурс изменён на году ${s.earlyCouncil.at}: к ${nameAt(s.target, 'ru')}.` : '') +
+          (s.earlyCouncil && s.earlyCouncil.choice === 'turn' ? `\nКурс изменён в году ${s.earlyCouncil.at}: к ${nameAt(s.target, 'ru')}.` : '') +
           (s.shield ? `\nФронтальный щит: ${shieldGaugeV5(s, 'ru')}.` : ''),
         en: s => `Acceleration-stage thrust cut. Velocity ${fb(s.beta, 'en')}.
 Acceleration stage separated. For the last ${stageOff(s).days} days thrust was angled 10°: the stage drifts off sideways at ${kms(stageOff(s).dv)} km/s. The core cancelled its own sideways velocity — manoeuvre reserve −${pct(stageOff(s).reservePct, 'en')}%.
@@ -701,8 +702,8 @@ Target: ${nm(s, 'en')} · arrival around year ${s.arrive}.` +
       title: { ru: 'Инженерный журнал · зонд', en: 'Engineering log · probe' },
       text: {
         ru: s => `Окно без тяги. ${hasScouts(s) ? 'Зонд из комплекта выпущен от кормы. Топливо — своё.' : 'Зонд собран за девять дней и отделён от кормы. Топливо — из резерва манёвров.'}
-Расчётная скорость: ${fb(probeTimes(s, 8).vp, 'ru')}. Пролёт ${nm(s, 'ru')}: около года ${probeTimes(s, 8).flyby}. Спектры на борту: около года ${probeTimes(s, 8).data}.
-Программа спектрометра: ${s.scoutTuned ? 'Коры Ландис — кислород, вода, метан, ночная сторона' : 'общий обзор'}.`,
+Расчётная скорость: ${fb(probeTimes(s, 8).vp, 'ru')}. Пролёт ${nmG(s)}: около года ${probeTimes(s, 8).flyby}. Спектры на борту: около года ${probeTimes(s, 8).data}.
+Программа спектрометра${s.scoutTuned ? ' Коры Ландис: кислород, вода, метан, ночная сторона' : ': общий обзор'}.`,
         en: s => `Window without thrust. ${hasScouts(s) ? 'The kit probe is released from the stern. Own fuel.' : 'The probe is assembled in nine days and separated from the stern. Fuel from the manoeuvre reserve.'}
 Design velocity: ${fb(probeTimes(s, 8).vp, 'en')}. ${nm(s, 'en')} flyby: around year ${probeTimes(s, 8).flyby}. Spectra on board: around year ${probeTimes(s, 8).data}.
 Spectrometer programme: ${s.scoutTuned ? "Kora Landis's — oxygen, water, methane, night side" : 'general survey'}.`
@@ -754,12 +755,12 @@ Lorn straightens up and, without waiting for morning, moves the observatory watc
 Дал Орин — бодрствовал 8 лет; первый долгий сон.
 Лорн Ива — бодрствовала 8 лет; передаёт совет смене года 8.
 Ландис Кора — бодрствовала ${s.koraAwake} года; группа 7.
-Осгер Дан — ${s.repairQual ? 'ремонтная смена, допуск к монтажу под тягой' : 'ремонтная смена'}; возраст 16.`,
+Осгер Дан — ${s.repairQual ? 'ремонтная смена, допуск к монтажу под тягой' : 'ремонтная смена'}; возраст 22.`,
         en: s => `Dasser, Nil — awake 8 years; first long sleep.
 Dal, Orin — awake 8 years; first long sleep.
 Lorn, Iva — awake 8 years; hands the council to the year-8 watch.
 Landis, Kora — awake ${s.koraAwake} years; group 7.
-Osger, Dan — ${s.repairQual ? 'repair watch, qualified for work under thrust' : 'repair watch'}; age 16.`
+Osger, Dan — ${s.repairQual ? 'repair watch, qualified for work under thrust' : 'repair watch'}; age 22.`
       }
     },
     {

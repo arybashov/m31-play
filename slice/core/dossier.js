@@ -78,7 +78,7 @@
   // аварийная польза — отдельной условной строкой, без частот генератора
   function eqIf(s, opt, lang, d) {
     const ru = lang === 'ru', R = routeSigns(s, d);
-    if (opt === 'dust40' && s.mission === 'contact' && R.cloud) return ru ? 'Если пройдём полосу крупной пыли у облака: удвоенный щит предотвращает пробой; расчётная разница аварийных потерь — 8 человек.' : "If we cross the cloud's coarse-dust band: the doubled shield prevents a breach; the estimated difference in incident losses is 8 people.";
+    if (opt === 'dust40' && s.mission === 'contact' && R.cloud) return ru ? 'Если пройдём полосу крупной пыли у облака: удвоенный щит предотвращает пробой; расчётная разница аварийных потерь — 8 человек.' : "If we cross the cloud's coarse-dust band: the doubled shield prevents a breach; the estimated difference in incident losses is eight people.";
     if (['grid', 'reactor5', 'dual'].includes(opt) && s.mission === 'contact') return ru ? 'Если поселению не хватит энергии и другого источника не будет: энергетический груз предотвращает зимний дефицит; потери без него зависят от выбранного поселения.' : 'If the settlement lacks power and no other source is available: power cargo prevents the winter shortage; losses without it depend on the settlement chosen.';
     return null;
   }
@@ -169,6 +169,7 @@
       if (s.support === 'found' && !s.taught && !s.koraYear && hasIR(s)) { help.push(L('ИК-обсерватория прочитала слабый тепловой след без подготовленного читателя: поддержка найдена.', 'The IR observatory read the faint heat trace without a trained reader: the support ship was found.')); used.add('sensors'); }
       else if (s.support === 'lost') miss.push(L('Слабый след прочитать не удалось: нет подготовленного читателя и ИК-обсерватории.', 'The faint trace could not be read: neither a trained reader nor an IR observatory was available.'));
     }
+    if (had('a3.dark') && hasIR(s)) { help.push(L('ИК-обсерватория вела карликов Тёмной звезды с дальнего подхода: их увидели заранее.', "The IR observatory tracked the Dark Star's dwarfs from afar: they were seen in advance.")); used.add('sensors'); }
     if (had('a3.flare')) {
       if (hasIR(s)) { help.push(L('Раннее ИК-предупреждение о вспышке: корабль развернули заранее, 5% материалов ремонта сохранены.', 'Early IR warning of the flare: the ship turned in time, saving 5% of repair materials.')); used.add('sensors'); }
       else miss.push(L('Раннего ИК-предупреждения о вспышке не было; ремонт потребовал 5% материалов.', 'There was no early IR warning of the flare; repairs used 5% of materials.'));
